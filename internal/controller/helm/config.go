@@ -1,0 +1,107 @@
+/*
+Copyright 2025.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// config.go contains Helm configuration parsing and validation logic.
+// This includes the HelmConfig struct definition and related parsing functions
+// that handle Component.Spec.Config unmarshaling for helm components.
+
+package helm
+
+import (
+	"encoding/json"
+	"fmt"
+
+	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
+)
+
+// HelmConfig represents the configuration structure for Helm components
+// that gets unmarshaled from Component.Spec.Config
+type HelmConfig struct {
+	// Repository specifies the Helm chart repository configuration
+	Repository HelmRepository `json:"repository"`
+
+	// Chart specifies the chart name and version to deploy
+	Chart HelmChart `json:"chart"`
+
+	// Values contains key-value pairs for chart values override
+	// +optional
+	Values map[string]string `json:"values,omitempty"`
+
+	// Namespace specifies the target namespace for chart deployment
+	// If not specified, uses the Component's namespace
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+}
+
+// HelmRepository represents Helm chart repository configuration
+type HelmRepository struct {
+	// URL is the chart repository URL
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=^https?://.*
+	URL string `json:"url"`
+
+	// Name is the repository name for local reference
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+}
+
+// HelmChart represents chart identification and version specification
+type HelmChart struct {
+	// Name is the chart name within the repository
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// Version specifies the chart version to install
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Version string `json:"version"`
+}
+
+// parseHelmConfig unmarshals Component.Spec.Config into HelmConfig struct
+func (r *ComponentReconciler) parseHelmConfig(component *deploymentsv1alpha1.Component) (*HelmConfig, error) {
+	if component.Spec.Config == nil {
+		return nil, fmt.Errorf("config is required for helm components")
+	}
+
+	var config HelmConfig
+	if err := json.Unmarshal(component.Spec.Config.Raw, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse helm config: %w", err)
+	}
+
+	// Validate required fields
+	if config.Repository.URL == "" {
+		return nil, fmt.Errorf("repository.url is required")
+	}
+	if config.Repository.Name == "" {
+		return nil, fmt.Errorf("repository.name is required")
+	}
+	if config.Chart.Name == "" {
+		return nil, fmt.Errorf("chart.name is required")
+	}
+	if config.Chart.Version == "" {
+		return nil, fmt.Errorf("chart.version is required")
+	}
+
+	return &config, nil
+}
+
+// generateReleaseName creates a deterministic release name from Component metadata
+func (r *ComponentReconciler) generateReleaseName(component *deploymentsv1alpha1.Component) string {
+	// Use component name and namespace to ensure uniqueness
+	return fmt.Sprintf("%s-%s", component.Namespace, component.Name)
+}

@@ -18,16 +18,11 @@ package helm
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strings"
-	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
@@ -39,205 +34,12 @@ const (
 
 	// HandlerFinalizer is the finalizer used for claiming Components
 	HandlerFinalizer = "helm.deployment-orchestrator.io/lifecycle"
-
-	// CoordinationFinalizer is the finalizer used for dual finalizer coordination pattern on Components
-	CoordinationFinalizer = "composition.deployment-orchestrator.io/coordination"
 )
-
-// HelmConfig represents the configuration structure for Helm components
-// that gets unmarshaled from Component.Spec.Config
-type HelmConfig struct {
-	// Repository specifies the Helm chart repository configuration
-	Repository HelmRepository `json:"repository"`
-
-	// Chart specifies the chart name and version to deploy
-	Chart HelmChart `json:"chart"`
-
-	// Values contains key-value pairs for chart values override
-	// +optional
-	Values map[string]string `json:"values,omitempty"`
-
-	// Namespace specifies the target namespace for chart deployment
-	// If not specified, uses the Component's namespace
-	// +optional
-	Namespace string `json:"namespace,omitempty"`
-}
-
-// HelmRepository represents Helm chart repository configuration
-type HelmRepository struct {
-	// URL is the chart repository URL
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Pattern=^https?://.*
-	URL string `json:"url"`
-
-	// Name is the repository name for local reference
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
-}
-
-// HelmChart represents chart identification and version specification
-type HelmChart struct {
-	// Name is the chart name within the repository
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
-
-	// Version specifies the chart version to install
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	Version string `json:"version"`
-}
 
 // ComponentReconciler reconciles a Component object for helm handler
 type ComponentReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
-}
-
-// parseHelmConfig unmarshals Component.Spec.Config into HelmConfig struct
-func (r *ComponentReconciler) parseHelmConfig(component *deploymentsv1alpha1.Component) (*HelmConfig, error) {
-	if component.Spec.Config == nil {
-		return nil, fmt.Errorf("config is required for helm components")
-	}
-
-	var config HelmConfig
-	if err := json.Unmarshal(component.Spec.Config.Raw, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse helm config: %w", err)
-	}
-
-	// Validate required fields
-	if config.Repository.URL == "" {
-		return nil, fmt.Errorf("repository.url is required")
-	}
-	if config.Repository.Name == "" {
-		return nil, fmt.Errorf("repository.name is required")
-	}
-	if config.Chart.Name == "" {
-		return nil, fmt.Errorf("chart.name is required")
-	}
-	if config.Chart.Version == "" {
-		return nil, fmt.Errorf("chart.version is required")
-	}
-
-	return &config, nil
-}
-
-// generateReleaseName creates a deterministic release name from Component metadata
-func (r *ComponentReconciler) generateReleaseName(component *deploymentsv1alpha1.Component) string {
-	// Use component name and namespace to ensure uniqueness
-	return fmt.Sprintf("%s-%s", component.Namespace, component.Name)
-}
-
-// hasAnyHandlerFinalizer checks if the Component has any handler-specific finalizer
-func (r *ComponentReconciler) hasAnyHandlerFinalizer(component *deploymentsv1alpha1.Component) bool {
-	for _, finalizer := range component.Finalizers {
-		// Check for handler lifecycle finalizers (excluding coordination finalizer)
-		if strings.HasSuffix(finalizer, ".deployment-orchestrator.io/lifecycle") &&
-			!strings.HasPrefix(finalizer, "composition.") {
-			return true
-		}
-	}
-	return false
-}
-
-// claimComponent atomically claims a Component by adding the handler finalizer
-func (r *ComponentReconciler) claimComponent(ctx context.Context, component *deploymentsv1alpha1.Component) error {
-	log := logf.FromContext(ctx)
-
-	// Add our finalizer for atomic claiming
-	controllerutil.AddFinalizer(component, HandlerFinalizer)
-
-	// Update the Component resource (this is the atomic operation)
-	if err := r.Update(ctx, component); err != nil {
-		return fmt.Errorf("failed to claim component: %w", err)
-	}
-
-	// Update status to reflect claiming
-	component.Status.Phase = deploymentsv1alpha1.ComponentPhaseClaimed
-	component.Status.ClaimedBy = HandlerName
-	now := metav1.Now()
-	component.Status.ClaimedAt = &now
-	component.Status.Message = fmt.Sprintf("Claimed by %s handler", HandlerName)
-
-	// Update status subresource
-	if err := r.Status().Update(ctx, component); err != nil {
-		log.Error(err, "failed to update claimed status", "component", component.Name)
-		return fmt.Errorf("failed to update claimed status: %w", err)
-	}
-
-	log.Info("Successfully claimed component", "component", component.Name, "finalizer", HandlerFinalizer)
-	return nil
-}
-
-// isClaimedByUs checks if this Component is already claimed by this handler
-func (r *ComponentReconciler) isClaimedByUs(component *deploymentsv1alpha1.Component) bool {
-	return controllerutil.ContainsFinalizer(component, HandlerFinalizer)
-}
-
-// handleDeletion implements the deletion protocol for Components being deleted
-func (r *ComponentReconciler) handleDeletion(ctx context.Context, component *deploymentsv1alpha1.Component) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
-
-	// Check if composition coordination finalizer is still present
-	if controllerutil.ContainsFinalizer(component, CoordinationFinalizer) {
-		// Wait for Composition controller to remove coordination finalizer
-		log.Info("Waiting for composition coordination finalizer removal", "component", component.Name)
-		return ctrl.Result{RequeueAfter: time.Second * 5}, nil
-	}
-
-	// Composition has signaled cleanup can proceed
-	if r.isClaimedByUs(component) {
-		log.Info("Beginning component cleanup", "component", component.Name)
-
-		// Update status to Terminating
-		component.Status.Phase = deploymentsv1alpha1.ComponentPhaseTerminating
-		component.Status.Message = fmt.Sprintf("Cleaning up resources via %s handler", HandlerName)
-
-		if err := r.Status().Update(ctx, component); err != nil {
-			log.Error(err, "failed to update terminating status")
-			// Don't return error - continue with cleanup
-		}
-
-		// TODO: Implement actual Helm cleanup in later tasks
-		// For now, just simulate cleanup completion
-
-		// Remove our finalizer to complete cleanup
-		controllerutil.RemoveFinalizer(component, HandlerFinalizer)
-		if err := r.Update(ctx, component); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
-		}
-
-		log.Info("Component cleanup completed", "component", component.Name)
-	}
-
-	return ctrl.Result{}, nil
-}
-
-// claimingProtocol implements the claiming protocol logic
-func (r *ComponentReconciler) claimingProtocol(ctx context.Context, component *deploymentsv1alpha1.Component) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
-
-	// Check if already claimed by us
-	if r.isClaimedByUs(component) {
-		log.V(1).Info("Component already claimed by this handler", "component", component.Name)
-		return ctrl.Result{}, nil
-	}
-
-	// Check if claimed by different handler
-	if r.hasAnyHandlerFinalizer(component) {
-		log.V(1).Info("Component claimed by different handler, skipping", "component", component.Name)
-		return ctrl.Result{}, nil
-	}
-
-	// Component is available for claiming
-	log.Info("Claiming available component", "component", component.Name)
-	if err := r.claimComponent(ctx, component); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	// Successfully claimed - continue processing in this reconciliation
-	return ctrl.Result{}, nil
 }
 
 // +kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
