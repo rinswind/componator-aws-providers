@@ -20,13 +20,28 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
+)
+
+const (
+	// HandlerName is the identifier for this helm handler
+	HandlerName = "helm"
+
+	// HandlerFinalizer is the finalizer used for claiming Components
+	HandlerFinalizer = "helm.deployment-orchestrator.io/lifecycle"
+
+	// CoordinationFinalizer is the finalizer used for dual finalizer coordination pattern on Components
+	CoordinationFinalizer = "composition.deployment-orchestrator.io/coordination"
 )
 
 // HelmConfig represents the configuration structure for Helm components
@@ -114,6 +129,117 @@ func (r *ComponentReconciler) generateReleaseName(component *deploymentsv1alpha1
 	return fmt.Sprintf("%s-%s", component.Namespace, component.Name)
 }
 
+// hasAnyHandlerFinalizer checks if the Component has any handler-specific finalizer
+func (r *ComponentReconciler) hasAnyHandlerFinalizer(component *deploymentsv1alpha1.Component) bool {
+	for _, finalizer := range component.Finalizers {
+		// Check for handler lifecycle finalizers (excluding coordination finalizer)
+		if strings.HasSuffix(finalizer, ".deployment-orchestrator.io/lifecycle") &&
+			!strings.HasPrefix(finalizer, "composition.") {
+			return true
+		}
+	}
+	return false
+}
+
+// claimComponent atomically claims a Component by adding the handler finalizer
+func (r *ComponentReconciler) claimComponent(ctx context.Context, component *deploymentsv1alpha1.Component) error {
+	log := logf.FromContext(ctx)
+
+	// Add our finalizer for atomic claiming
+	controllerutil.AddFinalizer(component, HandlerFinalizer)
+
+	// Update the Component resource (this is the atomic operation)
+	if err := r.Update(ctx, component); err != nil {
+		return fmt.Errorf("failed to claim component: %w", err)
+	}
+
+	// Update status to reflect claiming
+	component.Status.Phase = deploymentsv1alpha1.ComponentPhaseClaimed
+	component.Status.ClaimedBy = HandlerName
+	now := metav1.Now()
+	component.Status.ClaimedAt = &now
+	component.Status.Message = fmt.Sprintf("Claimed by %s handler", HandlerName)
+
+	// Update status subresource
+	if err := r.Status().Update(ctx, component); err != nil {
+		log.Error(err, "failed to update claimed status", "component", component.Name)
+		return fmt.Errorf("failed to update claimed status: %w", err)
+	}
+
+	log.Info("Successfully claimed component", "component", component.Name, "finalizer", HandlerFinalizer)
+	return nil
+}
+
+// isClaimedByUs checks if this Component is already claimed by this handler
+func (r *ComponentReconciler) isClaimedByUs(component *deploymentsv1alpha1.Component) bool {
+	return controllerutil.ContainsFinalizer(component, HandlerFinalizer)
+}
+
+// handleDeletion implements the deletion protocol for Components being deleted
+func (r *ComponentReconciler) handleDeletion(ctx context.Context, component *deploymentsv1alpha1.Component) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	// Check if composition coordination finalizer is still present
+	if controllerutil.ContainsFinalizer(component, CoordinationFinalizer) {
+		// Wait for Composition controller to remove coordination finalizer
+		log.Info("Waiting for composition coordination finalizer removal", "component", component.Name)
+		return ctrl.Result{RequeueAfter: time.Second * 5}, nil
+	}
+
+	// Composition has signaled cleanup can proceed
+	if r.isClaimedByUs(component) {
+		log.Info("Beginning component cleanup", "component", component.Name)
+
+		// Update status to Terminating
+		component.Status.Phase = deploymentsv1alpha1.ComponentPhaseTerminating
+		component.Status.Message = fmt.Sprintf("Cleaning up resources via %s handler", HandlerName)
+
+		if err := r.Status().Update(ctx, component); err != nil {
+			log.Error(err, "failed to update terminating status")
+			// Don't return error - continue with cleanup
+		}
+
+		// TODO: Implement actual Helm cleanup in later tasks
+		// For now, just simulate cleanup completion
+
+		// Remove our finalizer to complete cleanup
+		controllerutil.RemoveFinalizer(component, HandlerFinalizer)
+		if err := r.Update(ctx, component); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
+		}
+
+		log.Info("Component cleanup completed", "component", component.Name)
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// claimingProtocol implements the claiming protocol logic
+func (r *ComponentReconciler) claimingProtocol(ctx context.Context, component *deploymentsv1alpha1.Component) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	// Check if already claimed by us
+	if r.isClaimedByUs(component) {
+		log.V(1).Info("Component already claimed by this handler", "component", component.Name)
+		return ctrl.Result{}, nil
+	}
+
+	// Check if claimed by different handler
+	if r.hasAnyHandlerFinalizer(component) {
+		log.V(1).Info("Component claimed by different handler, skipping", "component", component.Name)
+		return ctrl.Result{}, nil
+	}
+
+	// Component is available for claiming
+	log.Info("Claiming available component", "component", component.Name)
+	if err := r.claimComponent(ctx, component); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Successfully claimed - continue processing in this reconciliation
+	return ctrl.Result{}, nil
+}
+
 // +kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components/finalizers,verbs=update
@@ -135,17 +261,42 @@ func (r *ComponentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Only process components for this handler
-	if component.Spec.Handler != "helm" {
+	if component.Spec.Handler != HandlerName {
 		return ctrl.Result{}, nil
 	}
 
 	log.Info("Reconciling helm component", "component", component.Name)
 
+	// Handle deletion if Component is being deleted
+	if component.DeletionTimestamp != nil {
+		return r.handleDeletion(ctx, &component)
+	}
+
+	// Implement claiming protocol
+	if result, err := r.claimingProtocol(ctx, &component); err != nil {
+		return result, err
+	}
+
+	// At this point, component should be claimed by us
+	if !r.isClaimedByUs(&component) {
+		// This shouldn't happen, but if it does, skip processing
+		log.V(1).Info("Component not claimed by us, skipping", "component", component.Name)
+		return ctrl.Result{}, nil
+	}
+
 	// Parse the Helm configuration from Component.Spec.Config
 	config, err := r.parseHelmConfig(&component)
 	if err != nil {
 		log.Error(err, "failed to parse helm configuration")
-		// TODO: Update component status to Failed with error message
+
+		// Update component status to Failed with error message
+		component.Status.Phase = deploymentsv1alpha1.ComponentPhaseFailed
+		component.Status.Message = fmt.Sprintf("Configuration error: %v", err)
+
+		if statusErr := r.Status().Update(ctx, &component); statusErr != nil {
+			log.Error(statusErr, "failed to update failed status")
+		}
+
 		return ctrl.Result{}, err
 	}
 
@@ -166,11 +317,8 @@ func (r *ComponentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		"targetNamespace", targetNamespace,
 		"valuesCount", len(config.Values))
 
-	// TODO: Implement helm-specific reconciliation logic here
-	// 1. Check if component is claimed by this controller
-	// 2. Implement claiming protocol if not claimed
-	// 3. Deploy/update helm chart based on component config
-	// 4. Update component status
+	// TODO: Implement helm-specific deployment logic in later tasks
+	// For now, just log that the component is claimed and ready for deployment
 
 	return ctrl.Result{}, nil
 }

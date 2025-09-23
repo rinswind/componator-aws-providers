@@ -199,14 +199,25 @@ var _ = Describe("Helm Controller", func() {
 				},
 			}
 
-			result, err := reconciler.Reconcile(ctx, req)
-
+			// Reconciliation should claim and then fail on config parsing
+			_, err := reconciler.Reconcile(ctx, req)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("config is required for helm components"))
-			Expect(result).To(Equal(reconcile.Result{}))
+
+			// Check that status was updated to Failed
+			var updatedComponent deploymentsv1alpha1.Component
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "test-helm-component-no-config",
+				Namespace: "default",
+			}, &updatedComponent)).To(Succeed())
+
+			// Should be claimed but failed
+			Expect(updatedComponent.Finalizers).To(ContainElement("helm.deployment-orchestrator.io/lifecycle"))
+			Expect(updatedComponent.Status.Phase).To(Equal(deploymentsv1alpha1.ComponentPhaseFailed))
+			Expect(updatedComponent.Status.Message).To(ContainSubstring("Configuration error"))
 
 			// Cleanup
-			Expect(k8sClient.Delete(ctx, component)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &updatedComponent)).To(Succeed())
 		})
 
 		It("should ignore non-helm components", func() {
@@ -268,6 +279,321 @@ var _ = Describe("Helm Controller", func() {
 			// Should not return error (client.IgnoreNotFound)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
+		})
+	})
+
+	Context("Claiming Protocol", func() {
+		It("should claim an unclaimed helm component", func() {
+			// Create a test component with valid config
+			configJSON := `{
+				"repository": {
+					"url": "https://charts.bitnami.com/bitnami",
+					"name": "bitnami"
+				},
+				"chart": {
+					"name": "nginx",
+					"version": "15.4.4"
+				}
+			}`
+
+			component := &deploymentsv1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-claim-component",
+					Namespace: "default",
+				},
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "test-component",
+					Handler: "helm",
+					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
+				},
+				Status: deploymentsv1alpha1.ComponentStatus{
+					Phase: deploymentsv1alpha1.ComponentPhasePending,
+				},
+			}
+
+			// Create component in test environment
+			Expect(k8sClient.Create(ctx, component)).To(Succeed())
+
+			// Create reconciler
+			reconciler := &ComponentReconciler{
+				Client: k8sClient,
+				Scheme: scheme.Scheme,
+			}
+
+			// Test reconciliation
+			req := reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      "test-claim-component",
+					Namespace: "default",
+				},
+			}
+
+			// First reconciliation should claim the component
+			_, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Refresh component to check status
+			var updatedComponent deploymentsv1alpha1.Component
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "test-claim-component",
+				Namespace: "default",
+			}, &updatedComponent)).To(Succeed())
+
+			// Verify claiming
+			Expect(updatedComponent.Finalizers).To(ContainElement("helm.deployment-orchestrator.io/lifecycle"))
+			Expect(updatedComponent.Status.Phase).To(Equal(deploymentsv1alpha1.ComponentPhaseClaimed))
+			Expect(updatedComponent.Status.ClaimedBy).To(Equal("helm"))
+			Expect(updatedComponent.Status.ClaimedAt).NotTo(BeNil())
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, &updatedComponent)).To(Succeed())
+		})
+
+		It("should skip components already claimed by different handlers", func() {
+			// Create a test component already claimed by rds handler
+			component := &deploymentsv1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-claimed-component",
+					Namespace:  "default",
+					Finalizers: []string{"rds.deployment-orchestrator.io/lifecycle"},
+				},
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "test-component",
+					Handler: "helm", // This is for helm but already claimed by rds
+				},
+			}
+
+			// Create component in test environment
+			Expect(k8sClient.Create(ctx, component)).To(Succeed())
+
+			// Create reconciler
+			reconciler := &ComponentReconciler{
+				Client: k8sClient,
+				Scheme: scheme.Scheme,
+			}
+
+			// Test reconciliation
+			req := reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      "test-claimed-component",
+					Namespace: "default",
+				},
+			}
+
+			// Reconciliation should skip claiming
+			_, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Refresh component to verify no changes
+			var updatedComponent deploymentsv1alpha1.Component
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "test-claimed-component",
+				Namespace: "default",
+			}, &updatedComponent)).To(Succeed())
+
+			// Should still only have rds finalizer
+			Expect(updatedComponent.Finalizers).To(ContainElement("rds.deployment-orchestrator.io/lifecycle"))
+			Expect(updatedComponent.Finalizers).NotTo(ContainElement("helm.deployment-orchestrator.io/lifecycle"))
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, &updatedComponent)).To(Succeed())
+		})
+
+		It("should handle already claimed components by same handler", func() {
+			// Create a test component already claimed by helm handler
+			configJSON := `{
+				"repository": {
+					"url": "https://charts.bitnami.com/bitnami",
+					"name": "bitnami"
+				},
+				"chart": {
+					"name": "nginx",
+					"version": "15.4.4"
+				}
+			}`
+
+			component := &deploymentsv1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-owned-component",
+					Namespace:  "default",
+					Finalizers: []string{"helm.deployment-orchestrator.io/lifecycle"},
+				},
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "test-component",
+					Handler: "helm",
+					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
+				},
+				Status: deploymentsv1alpha1.ComponentStatus{
+					Phase:     deploymentsv1alpha1.ComponentPhaseClaimed,
+					ClaimedBy: "helm",
+				},
+			}
+
+			// Create component in test environment
+			Expect(k8sClient.Create(ctx, component)).To(Succeed())
+
+			// Create reconciler
+			reconciler := &ComponentReconciler{
+				Client: k8sClient,
+				Scheme: scheme.Scheme,
+			}
+
+			// Test reconciliation
+			req := reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      "test-owned-component",
+					Namespace: "default",
+				},
+			}
+
+			// Reconciliation should proceed with already claimed component
+			_, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, component)).To(Succeed())
+		})
+	})
+
+	Context("Deletion Protocol", func() {
+		It("should wait for coordination finalizer removal", func() {
+			// Create a test component with coordination finalizer
+			configJSON := `{
+				"repository": {
+					"url": "https://charts.bitnami.com/bitnami",
+					"name": "bitnami"
+				},
+				"chart": {
+					"name": "nginx",
+					"version": "15.4.4"
+				}
+			}`
+
+			component := &deploymentsv1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-deletion-component",
+					Namespace: "default",
+					Finalizers: []string{
+						"helm.deployment-orchestrator.io/lifecycle",
+						"composition.deployment-orchestrator.io/coordination",
+					},
+				},
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "test-component",
+					Handler: "helm",
+					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
+				},
+				Status: deploymentsv1alpha1.ComponentStatus{
+					Phase:     deploymentsv1alpha1.ComponentPhaseClaimed,
+					ClaimedBy: "helm",
+				},
+			}
+
+			// Create component in test environment
+			Expect(k8sClient.Create(ctx, component)).To(Succeed())
+
+			// Mark component for deletion
+			Expect(k8sClient.Delete(ctx, component)).To(Succeed())
+
+			// Create reconciler
+			reconciler := &ComponentReconciler{
+				Client: k8sClient,
+				Scheme: scheme.Scheme,
+			}
+
+			// Test reconciliation
+			req := reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      "test-deletion-component",
+					Namespace: "default",
+				},
+			}
+
+			// Should wait for coordination finalizer removal
+			result, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+
+			// Component should still have both finalizers
+			var updatedComponent deploymentsv1alpha1.Component
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "test-deletion-component",
+				Namespace: "default",
+			}, &updatedComponent)).To(Succeed())
+
+			Expect(updatedComponent.Finalizers).To(ContainElement("helm.deployment-orchestrator.io/lifecycle"))
+			Expect(updatedComponent.Finalizers).To(ContainElement("composition.deployment-orchestrator.io/coordination"))
+
+			// Cleanup by removing finalizers manually
+			updatedComponent.Finalizers = []string{}
+			Expect(k8sClient.Update(ctx, &updatedComponent)).To(Succeed())
+		})
+
+		It("should proceed with cleanup when coordination finalizer is removed", func() {
+			// Create a test component without coordination finalizer
+			configJSON := `{
+				"repository": {
+					"url": "https://charts.bitnami.com/bitnami",
+					"name": "bitnami"
+				},
+				"chart": {
+					"name": "nginx",
+					"version": "15.4.4"
+				}
+			}`
+
+			component := &deploymentsv1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-cleanup-component",
+					Namespace:  "default",
+					Finalizers: []string{"helm.deployment-orchestrator.io/lifecycle"},
+				},
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "test-component",
+					Handler: "helm",
+					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
+				},
+				Status: deploymentsv1alpha1.ComponentStatus{
+					Phase:     deploymentsv1alpha1.ComponentPhaseClaimed,
+					ClaimedBy: "helm",
+				},
+			}
+
+			// Create component in test environment
+			Expect(k8sClient.Create(ctx, component)).To(Succeed())
+
+			// Mark component for deletion
+			Expect(k8sClient.Delete(ctx, component)).To(Succeed())
+
+			// Create reconciler
+			reconciler := &ComponentReconciler{
+				Client: k8sClient,
+				Scheme: scheme.Scheme,
+			}
+
+			// Test reconciliation
+			req := reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      "test-cleanup-component",
+					Namespace: "default",
+				},
+			}
+
+			// Should proceed with cleanup
+			_, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Component should have finalizer removed and be deleted
+			var updatedComponent deploymentsv1alpha1.Component
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "test-cleanup-component",
+				Namespace: "default",
+			}, &updatedComponent)
+
+			// Component should be deleted or have no finalizers
+			if err == nil {
+				Expect(updatedComponent.Finalizers).NotTo(ContainElement("helm.deployment-orchestrator.io/lifecycle"))
+			}
 		})
 	})
 })
