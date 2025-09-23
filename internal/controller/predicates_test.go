@@ -102,7 +102,7 @@ func TestComponentHandlerPredicate(t *testing.T) {
 				t.Errorf("CreateEvent filter failed: expected %v, got %v", tt.expectFiltered, createResult)
 			}
 
-			// Test UpdateEvent  
+			// Test UpdateEvent
 			updateResult := predicate.Update(event.UpdateEvent{
 				ObjectOld: &deploymentsv1alpha1.Component{},
 				ObjectNew: tt.component,

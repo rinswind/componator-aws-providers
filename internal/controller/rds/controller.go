@@ -25,8 +25,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 	controllerutils "github.com/rinswind/deployment-handlers/internal/controller"
+	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 
 // ComponentReconciler reconciles a Component object for rds handler
