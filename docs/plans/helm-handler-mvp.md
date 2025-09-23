@@ -110,6 +110,7 @@ Follow claiming protocol specification from Protocol Requirements section.
 **Core Protocol Implementation**:
 
 - ✅ Handler filtering for `spec.handler == "helm"` components only
+- ✅ **Resource Discovery Phase**: SetupWithManager uses predicates to only watch Components with handler "helm"
 - ✅ Atomic claiming using `helm.deployment-orchestrator.io/lifecycle` finalizer
 - ✅ Conflict detection preventing claims on components with other handler finalizers
 - ✅ Proper deletion timestamp handling with `handleDeletion()` method
@@ -129,13 +130,21 @@ Follow claiming protocol specification from Protocol Requirements section.
 - ✅ Remove handler finalizer to complete deletion process
 - ✅ Proper dual-finalizer coordination pattern implementation
 
+**Resource Discovery Optimization**:
+
+- ✅ **SetupWithManager implements Resource Discovery Phase** per claiming protocol
+- ✅ Predicate filtering ensures controller only watches Components with `spec.handler == "helm"`
+- ✅ Reduces unnecessary reconciliation events for non-helm Components
+- ✅ Consistent pattern applied to both helm and rds controllers
+
 **Test Coverage**:
 
-- ✅ **22 comprehensive test cases** covering all protocol scenarios
+- ✅ **24 comprehensive test cases** covering all protocol scenarios
 - ✅ **Claiming Protocol Tests**: Unclaimed component claiming, conflict detection, already-owned handling
 - ✅ **Deletion Protocol Tests**: Coordination finalizer waiting, cleanup execution
 - ✅ **Error Handling Tests**: Invalid configuration handling with proper status updates
 - ✅ **Handler Filtering Tests**: Non-helm component rejection, component not found handling
+- ✅ **Resource Discovery Tests**: Predicate filtering validation for different handler types
 
 **Architecture Compliance**:
 
@@ -144,6 +153,7 @@ Follow claiming protocol specification from Protocol Requirements section.
 - ✅ Implements proper status state transitions (Pending → Claimed → Failed)
 - ✅ Handles atomic operations with Kubernetes conflict resolution
 - ✅ Proper separation of claiming, configuration parsing, and deployment logic
+- ✅ **Resource Discovery Phase** implementation per claiming protocol specification
 
 The claiming protocol implementation is production-ready and fully compliant with the deployment-orchestrator architecture specifications.
 

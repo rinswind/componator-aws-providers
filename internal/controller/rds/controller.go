@@ -22,7 +22,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
@@ -70,9 +73,34 @@ func (r *ComponentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 
 // SetupWithManager sets up the controller with the Manager.
+// Implements Resource Discovery Phase by only watching Components with handler "rds"
 func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Create predicate to filter Components by handler
+	handlerPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			component, ok := e.Object.(*deploymentsv1alpha1.Component)
+			return ok && component.Spec.Handler == "rds"
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			component, ok := e.ObjectNew.(*deploymentsv1alpha1.Component)
+			return ok && component.Spec.Handler == "rds"
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			component, ok := e.Object.(*deploymentsv1alpha1.Component)
+			return ok && component.Spec.Handler == "rds"
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			component, ok := e.Object.(*deploymentsv1alpha1.Component)
+			return ok && component.Spec.Handler == "rds"
+		},
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&deploymentsv1alpha1.Component{}).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 5,
+		}).
+		WithEventFilter(handlerPredicate).
 		Named("rds-component").
 		Complete(r)
 }
