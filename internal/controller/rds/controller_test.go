@@ -18,18 +18,32 @@ package rds
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/scheme"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
+)
+
+var (
+	ctx       context.Context
+	cancel    context.CancelFunc
+	testEnv   *envtest.Environment
+	cfg       *rest.Config
+	k8sClient client.Client
 )
 
 func TestRDSController(t *testing.T) {
@@ -37,14 +51,69 @@ func TestRDSController(t *testing.T) {
 	RunSpecs(t, "RDS Controller Suite")
 }
 
+var _ = BeforeSuite(func() {
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	ctx, cancel = context.WithCancel(context.TODO())
+
+	var err error
+	err = deploymentsv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	By("bootstrapping test environment")
+	testEnv = &envtest.Environment{
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "..", "deployment-operator", "config", "crd", "bases")},
+		ErrorIfCRDPathMissing: false,
+	}
+
+	// Retrieve the first found binary directory to allow running tests from IDEs
+	if getFirstFoundEnvTestBinaryDir() != "" {
+		testEnv.BinaryAssetsDirectory = getFirstFoundEnvTestBinaryDir()
+	}
+
+	// cfg is defined in this file globally.
+	cfg, err = testEnv.Start()
+	Expect(err).NotTo(HaveOccurred())
+	Expect(cfg).NotTo(BeNil())
+
+	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred())
+	Expect(k8sClient).NotTo(BeNil())
+})
+
+var _ = AfterSuite(func() {
+	By("tearing down the test environment")
+	cancel()
+	err := testEnv.Stop()
+	Expect(err).NotTo(HaveOccurred())
+})
+
+// getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
+// ENVTEST-based tests depend on specific binaries, usually located in paths set by
+// controller-runtime. When running tests directly (e.g., via an IDE) without using
+// Makefile targets, the 'BinaryAssetsDirectory' must be explicitly configured.
+//
+// This function streamlines the process by finding the required binaries, similar to
+// setting the 'KUBEBUILDER_ASSETS' environment variable. To ensure the binaries are
+// properly set up, run 'make setup-envtest' beforehand.
+func getFirstFoundEnvTestBinaryDir() string {
+	basePath := filepath.Join("..", "..", "..", "bin", "k8s")
+	entries, err := os.ReadDir(basePath)
+	if err != nil {
+		logf.Log.Error(err, "Failed to read directory", "path", basePath)
+		return ""
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			return filepath.Join(basePath, entry.Name())
+		}
+	}
+	return ""
+}
+
 var _ = Describe("RDS Controller", func() {
 	Context("When reconciling a Component", func() {
 		It("should handle rds components", func() {
-			// Setup scheme
-			s := scheme.Scheme
-			err := deploymentsv1alpha1.AddToScheme(s)
-			Expect(err).NotTo(HaveOccurred())
-
 			// Create a test component
 			component := &deploymentsv1alpha1.Component{
 				ObjectMeta: metav1.ObjectMeta{
@@ -57,16 +126,13 @@ var _ = Describe("RDS Controller", func() {
 				},
 			}
 
-			// Create fake client with the component
-			client := fake.NewClientBuilder().
-				WithScheme(s).
-				WithObjects(component).
-				Build()
+			// Create component in test environment
+			Expect(k8sClient.Create(ctx, component)).To(Succeed())
 
 			// Create reconciler
 			reconciler := &ComponentReconciler{
-				Client: client,
-				Scheme: s,
+				Client: k8sClient,
+				Scheme: scheme.Scheme,
 			}
 
 			// Test reconciliation
@@ -77,19 +143,16 @@ var _ = Describe("RDS Controller", func() {
 				},
 			}
 
-			ctx := context.Background()
 			result, err := reconciler.Reconcile(ctx, req)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, component)).To(Succeed())
 		})
 
 		It("should ignore non-rds components", func() {
-			// Setup scheme
-			s := scheme.Scheme
-			err := deploymentsv1alpha1.AddToScheme(s)
-			Expect(err).NotTo(HaveOccurred())
-
 			// Create a test component with different handler
 			component := &deploymentsv1alpha1.Component{
 				ObjectMeta: metav1.ObjectMeta{
@@ -102,16 +165,13 @@ var _ = Describe("RDS Controller", func() {
 				},
 			}
 
-			// Create fake client with the component
-			client := fake.NewClientBuilder().
-				WithScheme(s).
-				WithObjects(component).
-				Build()
+			// Create component in test environment
+			Expect(k8sClient.Create(ctx, component)).To(Succeed())
 
 			// Create reconciler
 			reconciler := &ComponentReconciler{
-				Client: client,
-				Scheme: s,
+				Client: k8sClient,
+				Scheme: scheme.Scheme,
 			}
 
 			// Test reconciliation
@@ -122,11 +182,13 @@ var _ = Describe("RDS Controller", func() {
 				},
 			}
 
-			ctx := context.Background()
 			result, err := reconciler.Reconcile(ctx, req)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, component)).To(Succeed())
 		})
 	})
 })

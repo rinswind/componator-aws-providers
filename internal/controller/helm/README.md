@@ -50,6 +50,7 @@ Component configuration for Helm deployments is passed through the `spec.config`
 ### Configuration Examples
 
 **Minimal Configuration**:
+
 ```json
 {
   "repository": {
@@ -64,6 +65,7 @@ Component configuration for Helm deployments is passed through the `spec.config`
 ```
 
 **Configuration with Values Override**:
+
 ```json
 {
   "repository": {
@@ -84,6 +86,7 @@ Component configuration for Helm deployments is passed through the `spec.config`
 ```
 
 **Configuration for Different Repository**:
+
 ```json
 {
   "repository": {
@@ -105,6 +108,7 @@ Component configuration for Helm deployments is passed through the `spec.config`
 Helm releases are automatically named using the pattern: `{namespace}-{component-name}`
 
 This ensures:
+
 - **Uniqueness**: Same component name in different namespaces get different releases
 - **Deterministic**: Same component always gets the same release name
 - **Traceable**: Easy to identify which Component created which release
