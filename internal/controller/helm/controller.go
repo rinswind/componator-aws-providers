@@ -18,6 +18,8 @@ package helm
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -27,10 +29,89 @@ import (
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 
+// HelmConfig represents the configuration structure for Helm components
+// that gets unmarshaled from Component.Spec.Config
+type HelmConfig struct {
+	// Repository specifies the Helm chart repository configuration
+	Repository HelmRepository `json:"repository"`
+
+	// Chart specifies the chart name and version to deploy
+	Chart HelmChart `json:"chart"`
+
+	// Values contains key-value pairs for chart values override
+	// +optional
+	Values map[string]string `json:"values,omitempty"`
+
+	// Namespace specifies the target namespace for chart deployment
+	// If not specified, uses the Component's namespace
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+}
+
+// HelmRepository represents Helm chart repository configuration
+type HelmRepository struct {
+	// URL is the chart repository URL
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=^https?://.*
+	URL string `json:"url"`
+
+	// Name is the repository name for local reference
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+}
+
+// HelmChart represents chart identification and version specification
+type HelmChart struct {
+	// Name is the chart name within the repository
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// Version specifies the chart version to install
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Version string `json:"version"`
+}
+
 // ComponentReconciler reconciles a Component object for helm handler
 type ComponentReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+}
+
+// parseHelmConfig unmarshals Component.Spec.Config into HelmConfig struct
+func (r *ComponentReconciler) parseHelmConfig(component *deploymentsv1alpha1.Component) (*HelmConfig, error) {
+	if component.Spec.Config == nil {
+		return nil, fmt.Errorf("config is required for helm components")
+	}
+
+	var config HelmConfig
+	if err := json.Unmarshal(component.Spec.Config.Raw, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse helm config: %w", err)
+	}
+
+	// Validate required fields
+	if config.Repository.URL == "" {
+		return nil, fmt.Errorf("repository.url is required")
+	}
+	if config.Repository.Name == "" {
+		return nil, fmt.Errorf("repository.name is required")
+	}
+	if config.Chart.Name == "" {
+		return nil, fmt.Errorf("chart.name is required")
+	}
+	if config.Chart.Version == "" {
+		return nil, fmt.Errorf("chart.version is required")
+	}
+
+	return &config, nil
+}
+
+// generateReleaseName creates a deterministic release name from Component metadata
+func (r *ComponentReconciler) generateReleaseName(component *deploymentsv1alpha1.Component) string {
+	// Use component name and namespace to ensure uniqueness
+	return fmt.Sprintf("%s-%s", component.Namespace, component.Name)
 }
 
 // +kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
@@ -59,6 +140,31 @@ func (r *ComponentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	log.Info("Reconciling helm component", "component", component.Name)
+
+	// Parse the Helm configuration from Component.Spec.Config
+	config, err := r.parseHelmConfig(&component)
+	if err != nil {
+		log.Error(err, "failed to parse helm configuration")
+		// TODO: Update component status to Failed with error message
+		return ctrl.Result{}, err
+	}
+
+	// Generate deterministic release name
+	releaseName := r.generateReleaseName(&component)
+
+	// Determine target namespace (use config.Namespace if specified, otherwise component namespace)
+	targetNamespace := component.Namespace
+	if config.Namespace != "" {
+		targetNamespace = config.Namespace
+	}
+
+	log.Info("Parsed helm configuration",
+		"repository", config.Repository.URL,
+		"chart", config.Chart.Name,
+		"version", config.Chart.Version,
+		"releaseName", releaseName,
+		"targetNamespace", targetNamespace,
+		"valuesCount", len(config.Values))
 
 	// TODO: Implement helm-specific reconciliation logic here
 	// 1. Check if component is claimed by this controller

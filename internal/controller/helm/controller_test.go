@@ -14,6 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// controller_test.go contains tests for the Helm controller's reconciliation logic.
+// Configuration parsing tests are in config_test.go for better organization.
+
 package helm
 
 import (
@@ -22,6 +25,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -39,13 +43,24 @@ func TestHelmController(t *testing.T) {
 
 var _ = Describe("Helm Controller", func() {
 	Context("When reconciling a Component", func() {
-		It("should handle helm components", func() {
+		It("should handle helm components with valid config", func() {
 			// Setup scheme
 			s := scheme.Scheme
 			err := deploymentsv1alpha1.AddToScheme(s)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Create a test component
+			// Create a test component with valid config
+			configJSON := `{
+				"repository": {
+					"url": "https://charts.bitnami.com/bitnami",
+					"name": "bitnami"
+				},
+				"chart": {
+					"name": "nginx",
+					"version": "15.4.4"
+				}
+			}`
+
 			component := &deploymentsv1alpha1.Component{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-helm-component",
@@ -54,6 +69,7 @@ var _ = Describe("Helm Controller", func() {
 				Spec: deploymentsv1alpha1.ComponentSpec{
 					Name:    "test-component",
 					Handler: "helm",
+					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
 				},
 			}
 
@@ -81,6 +97,53 @@ var _ = Describe("Helm Controller", func() {
 			result, err := reconciler.Reconcile(ctx, req)
 
 			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+		})
+
+		It("should fail with helm components that have invalid config", func() {
+			// Setup scheme
+			s := scheme.Scheme
+			err := deploymentsv1alpha1.AddToScheme(s)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Create a test component without config
+			component := &deploymentsv1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-helm-component-no-config",
+					Namespace: "default",
+				},
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "test-component",
+					Handler: "helm",
+					// Config is nil
+				},
+			}
+
+			// Create fake client with the component
+			client := fake.NewClientBuilder().
+				WithScheme(s).
+				WithObjects(component).
+				Build()
+
+			// Create reconciler
+			reconciler := &ComponentReconciler{
+				Client: client,
+				Scheme: s,
+			}
+
+			// Test reconciliation
+			req := reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      "test-helm-component-no-config",
+					Namespace: "default",
+				},
+			}
+
+			ctx := context.Background()
+			result, err := reconciler.Reconcile(ctx, req)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("config is required for helm components"))
 			Expect(result).To(Equal(reconcile.Result{}))
 		})
 
@@ -125,6 +188,39 @@ var _ = Describe("Helm Controller", func() {
 			ctx := context.Background()
 			result, err := reconciler.Reconcile(ctx, req)
 
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+		})
+
+		It("should handle component not found gracefully", func() {
+			// Setup scheme
+			s := scheme.Scheme
+			err := deploymentsv1alpha1.AddToScheme(s)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Create fake client without any components
+			client := fake.NewClientBuilder().
+				WithScheme(s).
+				Build()
+
+			// Create reconciler
+			reconciler := &ComponentReconciler{
+				Client: client,
+				Scheme: s,
+			}
+
+			// Test reconciliation for non-existent component
+			req := reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      "non-existent-component",
+					Namespace: "default",
+				},
+			}
+
+			ctx := context.Background()
+			result, err := reconciler.Reconcile(ctx, req)
+
+			// Should not return error (client.IgnoreNotFound)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 		})

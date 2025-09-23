@@ -80,16 +80,26 @@ Add Helm v3 client libraries to go.mod:
 
 **Implementation Status**: All Helm v3 dependencies successfully added (commit 18a6fd2). Project compiles without errors and all existing tests pass.
 
-### Task 2: Define Configuration Schema
+### Task 2: Define Configuration Schema ✅ COMPLETED
 
 Create Go struct for Component.Spec.Config unmarshaling:
 
-- Chart reference with repository, name, version fields
-- Values map for string key-value overrides
-- Optional namespace field for target deployment
-- JSON tags for proper unmarshaling
+- ✅ Chart reference with repository, name, version fields
+- ✅ Values map for string key-value overrides
+- ✅ Optional namespace field for target deployment
+- ✅ JSON tags for proper unmarshaling
 
-Component.Spec.Config should unmarshal to structured configuration enabling chart installation with repository URL, chart coordinates, and values override.
+**Implementation Status**: Configuration schema implemented with HelmConfig struct including:
+- HelmRepository struct with URL and Name fields
+- HelmChart struct with Name and Version fields  
+- Values map for chart values override
+- Optional Namespace field
+- parseHelmConfig() method for JSON unmarshaling from Component.Spec.Config
+- generateReleaseName() method for deterministic release naming
+- Comprehensive test coverage for configuration parsing and validation
+- Updated README with detailed configuration examples and schema documentation
+
+Component.Spec.Config unmarshals to structured HelmConfig enabling chart installation with repository URL, chart coordinates, and values override. Supports both minimal configuration (repository + chart) and full configuration with values and namespace override.
 
 ### Task 3: Implement Claiming Protocol
 
