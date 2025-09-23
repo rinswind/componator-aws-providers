@@ -39,7 +39,7 @@ type ComponentReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// For RDS components, this means deploying and managing RDS instances via Terraform.
+// For RDS components, this means deploying and managing RDS instances via AWS RDS SDK.
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
@@ -63,7 +63,7 @@ func (r *ComponentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// TODO: Implement RDS-specific reconciliation logic here
 	// 1. Check if component is claimed by this controller
 	// 2. Implement claiming protocol if not claimed
-	// 3. Deploy/update RDS instance via Terraform based on component config
+	// 3. Deploy/update RDS instance via AWS RDS SDK based on component config
 	// 4. Update component status
 
 	return ctrl.Result{}, nil

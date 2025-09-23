@@ -20,7 +20,7 @@ This project implements multiple controllers for different component handlers, e
 ### RDS Controller (`rds.ComponentReconciler`)
 - **Package**: `internal/controller/rds`
 - Handles `Component` resources with `spec.handler: "rds"`
-- Responsible for deploying and managing RDS instances via Terraform
+- Responsible for deploying and managing RDS instances via AWS RDS SDK
 - Location: `internal/controller/rds/controller.go`
 
 ## Usage

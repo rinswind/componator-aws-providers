@@ -4,13 +4,13 @@ This package contains the Kubernetes controller responsible for handling `Compon
 
 ## Purpose
 
-The RDS controller manages the deployment and lifecycle of AWS RDS instances via Terraform based on Component specifications. It implements the component handler interface for RDS-based deployments.
+The RDS controller manages the deployment and lifecycle of AWS RDS instances via the AWS RDS SDK based on Component specifications. It implements the component handler interface for RDS-based deployments.
 
 ## Controller Logic
 
 - **Filtering**: Only processes Components where `spec.handler == "rds"`
 - **Claiming**: Implements the claiming protocol to ensure exclusive ownership
-- **Deployment**: Manages RDS instance creation and updates via Terraform
+- **Deployment**: Manages RDS instance creation and updates via AWS RDS SDK
 - **Status**: Reports deployment status back to the Component resource
 
 ## Configuration
@@ -25,14 +25,16 @@ Component configuration for RDS deployments is passed through the `spec.config` 
 
 ## Dependencies
 
-- Terraform provider for AWS RDS
-- AWS SDK for Go
+- AWS SDK for Go (v2)
+- AWS RDS service client
 - `sigs.k8s.io/controller-runtime` - Controller framework
 - Component CRD from `deployment-operator`
 
-## Terraform Integration
+## AWS RDS SDK Integration
 
-This controller uses Terraform as the backend for RDS provisioning, ensuring:
-- Consistent infrastructure-as-code practices
-- State management and drift detection
-- Integration with existing Terraform workflows
+This controller uses the AWS RDS SDK directly for RDS provisioning, providing:
+
+- Direct AWS API interaction for RDS operations
+- Efficient resource management and status monitoring
+- Native AWS error handling and retry logic
+- Integration with AWS IAM and VPC configurations
