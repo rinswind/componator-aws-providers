@@ -19,7 +19,14 @@ package helm
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
+	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/cli"
+	"helm.sh/helm/v3/pkg/getter"
+	"helm.sh/helm/v3/pkg/repo"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
@@ -60,8 +67,73 @@ func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, compone
 		"targetNamespace", targetNamespace,
 		"valuesCount", len(config.Values))
 
-	// TODO: Implement actual Helm deployment logic in later tasks
-	// For now, just return success after configuration parsing and validation
+	// Initialize Helm settings and action configuration
+	settings := cli.New()
+	actionConfig := new(action.Configuration)
+
+	// Initialize the action configuration with Kubernetes client
+	if err := actionConfig.Init(settings.RESTClientGetter(), targetNamespace, "secrets", func(format string, v ...interface{}) {
+		log.Info(fmt.Sprintf(format, v...))
+	}); err != nil {
+		return nil, fmt.Errorf("failed to initialize helm action configuration: %w", err)
+	}
+
+	// Check if release already exists
+	getAction := action.NewGet(actionConfig)
+	getAction.Version = 0 // Get latest version
+	if rel, err := getAction.Run(releaseName); err == nil && rel != nil {
+		log.Info("Release already exists, skipping installation", "releaseName", releaseName, "version", rel.Version)
+		annotations := map[string]string{
+			DeploymentNamespaceAnnotation:   targetNamespace,
+			DeploymentReleaseNameAnnotation: releaseName,
+		}
+		return annotations, nil
+	}
+
+	// Prepare the chart locator path - for public repos, we use repo/chart format
+	chartRef := fmt.Sprintf("%s/%s", config.Repository.Name, config.Chart.Name)
+
+	// Add repository if not already added
+	if err := r.addHelmRepository(settings, config.Repository.Name, config.Repository.URL); err != nil {
+		return nil, fmt.Errorf("failed to add helm repository: %w", err)
+	}
+
+	// Create install action
+	installAction := action.NewInstall(actionConfig)
+	installAction.ReleaseName = releaseName
+	installAction.Namespace = targetNamespace
+	installAction.CreateNamespace = true
+	installAction.Version = config.Chart.Version
+	installAction.Wait = true
+
+	// Load the chart
+	cp, err := installAction.ChartPathOptions.LocateChart(chartRef, settings)
+	if err != nil {
+		return nil, fmt.Errorf("failed to locate chart %s: %w", chartRef, err)
+	}
+
+	chart, err := loader.Load(cp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load chart from %s: %w", cp, err)
+	}
+
+	// Convert config values to map[string]interface{}
+	vals := make(map[string]interface{})
+	for key, value := range config.Values {
+		vals[key] = value
+	}
+
+	// Install the chart
+	rel, err := installAction.Run(chart, vals)
+	if err != nil {
+		return nil, fmt.Errorf("failed to install helm release %s: %w", releaseName, err)
+	}
+
+	log.Info("Successfully installed helm release",
+		"releaseName", releaseName,
+		"namespace", targetNamespace,
+		"version", rel.Version,
+		"status", rel.Info.Status.String())
 
 	// Return annotations that should be set on the Component
 	annotations := map[string]string{
@@ -70,6 +142,59 @@ func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, compone
 	}
 
 	return annotations, nil
+}
+
+// addHelmRepository adds a Helm chart repository if not already present
+func (r *ComponentReconciler) addHelmRepository(settings *cli.EnvSettings, name, url string) error {
+	// Get repositories file path
+	repoFile := settings.RepositoryConfig
+	if repoFile == "" {
+		repoFile = filepath.Join(settings.RepositoryCache, "repositories.yaml")
+	}
+
+	// Ensure cache directory exists
+	if err := os.MkdirAll(settings.RepositoryCache, 0755); err != nil {
+		return fmt.Errorf("failed to create repository cache directory: %w", err)
+	}
+
+	// Load existing repositories
+	f, err := repo.LoadFile(repoFile)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to load repository file: %w", err)
+	}
+	if f == nil {
+		f = repo.NewFile()
+	}
+
+	// Check if repository already exists
+	if f.Has(name) {
+		return nil // Repository already added
+	}
+
+	// Add the repository
+	c := repo.Entry{
+		Name: name,
+		URL:  url,
+	}
+
+	// Download and verify the repository index
+	chartRepo, err := repo.NewChartRepository(&c, getter.All(settings))
+	if err != nil {
+		return fmt.Errorf("failed to create chart repository: %w", err)
+	}
+
+	// Download the index file
+	if _, err := chartRepo.DownloadIndexFile(); err != nil {
+		return fmt.Errorf("failed to download repository index: %w", err)
+	}
+
+	// Add to repository file and save
+	f.Update(&c)
+	if err := f.WriteFile(repoFile, 0644); err != nil {
+		return fmt.Errorf("failed to write repository file: %w", err)
+	}
+
+	return nil
 }
 
 // performHelmCleanup handles all Helm-specific cleanup operations
@@ -92,11 +217,40 @@ func (r *ComponentReconciler) performHelmCleanup(ctx context.Context, component 
 		"releaseName", releaseName,
 		"targetNamespace", targetNamespace)
 
-	// TODO: Implement actual Helm uninstallation logic in later tasks
-	// This should include:
-	// - helm uninstall <releaseName> --namespace <targetNamespace>
-	// - Wait for resources to be cleaned up
-	// - Handle cases where release doesn't exist (already cleaned up)
+	// Initialize Helm settings and action configuration
+	settings := cli.New()
+	actionConfig := new(action.Configuration)
+
+	// Initialize the action configuration with Kubernetes client
+	if err := actionConfig.Init(settings.RESTClientGetter(), targetNamespace, "secrets", func(format string, v ...interface{}) {
+		log.Info(fmt.Sprintf(format, v...))
+	}); err != nil {
+		return fmt.Errorf("failed to initialize helm action configuration: %w", err)
+	}
+
+	// Check if release exists
+	getAction := action.NewGet(actionConfig)
+	getAction.Version = 0 // Get latest version
+	if _, err := getAction.Run(releaseName); err != nil {
+		// Release doesn't exist, which is fine for cleanup
+		log.Info("Release not found, cleanup already complete", "releaseName", releaseName)
+		return nil
+	}
+
+	// Create uninstall action
+	uninstallAction := action.NewUninstall(actionConfig)
+	uninstallAction.Wait = true
+
+	// Uninstall the release
+	res, err := uninstallAction.Run(releaseName)
+	if err != nil {
+		return fmt.Errorf("failed to uninstall helm release %s: %w", releaseName, err)
+	}
+
+	log.Info("Successfully uninstalled helm release",
+		"releaseName", releaseName,
+		"namespace", targetNamespace,
+		"info", res.Info)
 
 	return nil
 }

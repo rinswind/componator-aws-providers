@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -115,7 +116,14 @@ func (r *ComponentReconciler) handleCreation(ctx context.Context, component *dep
 	annotations, err := r.performHelmDeployment(ctx, component)
 	if err != nil {
 		log.Error(err, "failed to perform helm deployment")
-		util.SetFailedStatus(component, HandlerName, fmt.Sprintf("Deployment error: %v", err))
+		// Categorize the error type
+		var errorType string
+		if strings.Contains(fmt.Sprintf("%v", err), "failed to parse helm configuration") {
+			errorType = "Configuration error"
+		} else {
+			errorType = "Deployment error"
+		}
+		util.SetFailedStatus(component, HandlerName, fmt.Sprintf("%s: %v", errorType, err))
 		return ctrl.Result{}, r.Status().Update(ctx, component)
 	}
 
