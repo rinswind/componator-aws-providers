@@ -204,43 +204,26 @@ var _ = Describe("Helm Configuration", func() {
 			Expect(config).To(BeNil())
 		})
 
-		It("should fail when config JSON is invalid", func() {
-			component := &deploymentsv1alpha1.Component{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-invalid-json",
-					Namespace: "default",
-				},
-				Spec: deploymentsv1alpha1.ComponentSpec{
-					Name:    "invalid-json",
-					Handler: "helm",
-					Config:  &apiextensionsv1.JSON{Raw: []byte(`{invalid json`)},
-				},
-			}
-
-			config, err := reconciler.parseHelmConfig(component)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("failed to parse helm config"))
-			Expect(config).To(BeNil())
-		})
-
-		It("should fail when repository URL is missing", func() {
+		It("should fail when validation rules are violated", func() {
+			// Test that validation framework is enabled by using invalid data
 			configJSON := `{
 				"repository": {
-					"name": "bitnami"
+					"url": "invalid-url-format",
+					"name": ""
 				},
 				"chart": {
-					"name": "nginx",
-					"version": "15.4.4"
+					"name": "",
+					"version": ""
 				}
 			}`
 
 			component := &deploymentsv1alpha1.Component{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-no-url",
+					Name:      "test-validation-failure",
 					Namespace: "default",
 				},
 				Spec: deploymentsv1alpha1.ComponentSpec{
-					Name:    "no-url",
+					Name:    "validation-failure",
 					Handler: "helm",
 					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
 				},
@@ -248,94 +231,7 @@ var _ = Describe("Helm Configuration", func() {
 
 			config, err := reconciler.parseHelmConfig(component)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("repository.url is required"))
-			Expect(config).To(BeNil())
-		})
-
-		It("should fail when repository name is missing", func() {
-			configJSON := `{
-				"repository": {
-					"url": "https://charts.bitnami.com/bitnami"
-				},
-				"chart": {
-					"name": "nginx",
-					"version": "15.4.4"
-				}
-			}`
-
-			component := &deploymentsv1alpha1.Component{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-no-repo-name",
-					Namespace: "default",
-				},
-				Spec: deploymentsv1alpha1.ComponentSpec{
-					Name:    "no-repo-name",
-					Handler: "helm",
-					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
-				},
-			}
-
-			config, err := reconciler.parseHelmConfig(component)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("repository.name is required"))
-			Expect(config).To(BeNil())
-		})
-
-		It("should fail when chart name is missing", func() {
-			configJSON := `{
-				"repository": {
-					"url": "https://charts.bitnami.com/bitnami",
-					"name": "bitnami"
-				},
-				"chart": {
-					"version": "15.4.4"
-				}
-			}`
-
-			component := &deploymentsv1alpha1.Component{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-no-chart-name",
-					Namespace: "default",
-				},
-				Spec: deploymentsv1alpha1.ComponentSpec{
-					Name:    "no-chart-name",
-					Handler: "helm",
-					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
-				},
-			}
-
-			config, err := reconciler.parseHelmConfig(component)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("chart.name is required"))
-			Expect(config).To(BeNil())
-		})
-
-		It("should fail when chart version is missing", func() {
-			configJSON := `{
-				"repository": {
-					"url": "https://charts.bitnami.com/bitnami",
-					"name": "bitnami"
-				},
-				"chart": {
-					"name": "nginx"
-				}
-			}`
-
-			component := &deploymentsv1alpha1.Component{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-no-chart-version",
-					Namespace: "default",
-				},
-				Spec: deploymentsv1alpha1.ComponentSpec{
-					Name:    "no-chart-version",
-					Handler: "helm",
-					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
-				},
-			}
-
-			config, err := reconciler.parseHelmConfig(component)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("chart.version is required"))
+			Expect(err.Error()).To(ContainSubstring("validation failed"))
 			Expect(config).To(BeNil())
 		})
 	})

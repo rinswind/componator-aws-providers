@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/go-playground/validator/v10"
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 
@@ -51,12 +52,12 @@ type HelmRepository struct {
 	// URL is the chart repository URL
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=^https?://.*
-	URL string `json:"url"`
+	URL string `json:"url" validate:"required,url"`
 
 	// Name is the repository name for local reference
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
+	Name string `json:"name" validate:"required,min=1"`
 }
 
 // HelmChart represents chart identification and version specification
@@ -64,12 +65,12 @@ type HelmChart struct {
 	// Name is the chart name within the repository
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
+	Name string `json:"name" validate:"required,min=1"`
 
 	// Version specifies the chart version to install
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
-	Version string `json:"version"`
+	Version string `json:"version" validate:"required,min=1"`
 }
 
 // parseHelmConfig unmarshals Component.Spec.Config into HelmConfig struct
@@ -83,18 +84,10 @@ func (r *ComponentReconciler) parseHelmConfig(component *deploymentsv1alpha1.Com
 		return nil, fmt.Errorf("failed to parse helm config: %w", err)
 	}
 
-	// Validate required fields
-	if config.Repository.URL == "" {
-		return nil, fmt.Errorf("repository.url is required")
-	}
-	if config.Repository.Name == "" {
-		return nil, fmt.Errorf("repository.name is required")
-	}
-	if config.Chart.Name == "" {
-		return nil, fmt.Errorf("chart.name is required")
-	}
-	if config.Chart.Version == "" {
-		return nil, fmt.Errorf("chart.version is required")
+	// Validate configuration using validator framework
+	validate := validator.New()
+	if err := validate.Struct(&config); err != nil {
+		return nil, fmt.Errorf("helm config validation failed: %w", err)
 	}
 
 	return &config, nil
