@@ -102,14 +102,6 @@ func (r *ComponentReconciler) handleCreation(ctx context.Context, component *dep
 		return ctrl.Result{}, r.Status().Update(ctx, component)
 	}
 
-	// Parse the Helm configuration from Component.Spec.Config
-	config, err := r.parseHelmConfig(component)
-	if err != nil {
-		log.Error(err, "failed to parse helm configuration")
-		util.SetFailedStatus(component, HandlerName, fmt.Sprintf("Configuration error: %v", err))
-		return ctrl.Result{}, r.Status().Update(ctx, component)
-	}
-
 	// Set deploying status if not already set
 	if !util.IsPhase(component, deploymentsv1alpha1.ComponentPhaseDeploying) {
 		util.SetDeployingStatus(component, HandlerName)
@@ -118,25 +110,13 @@ func (r *ComponentReconciler) handleCreation(ctx context.Context, component *dep
 		}
 	}
 
-	// Generate deterministic release name
-	releaseName := r.generateReleaseName(component)
-
-	// Determine target namespace (use config.Namespace if specified, otherwise component namespace)
-	targetNamespace := component.Namespace
-	if config.Namespace != "" {
-		targetNamespace = config.Namespace
+	// Perform Helm deployment operations
+	if err := r.performHelmDeployment(ctx, component); err != nil {
+		log.Error(err, "failed to perform helm deployment")
+		util.SetFailedStatus(component, HandlerName, fmt.Sprintf("Deployment error: %v", err))
+		return ctrl.Result{}, r.Status().Update(ctx, component)
 	}
 
-	log.Info("Parsed helm configuration",
-		"repository", config.Repository.URL,
-		"chart", config.Chart.Name,
-		"version", config.Chart.Version,
-		"releaseName", releaseName,
-		"targetNamespace", targetNamespace,
-		"valuesCount", len(config.Values))
-
-	// TODO: Implement actual Helm deployment logic in later tasks
-	// For now, just mark as ready after claiming and configuration parsing
 	if !util.IsReady(component) {
 		util.SetReadyStatus(component)
 		return ctrl.Result{}, r.Status().Update(ctx, component)
@@ -166,8 +146,15 @@ func (r *ComponentReconciler) handleDeletion(ctx context.Context, component *dep
 		}
 	}
 
-	// TODO: Implement actual Helm cleanup in later tasks
-	// For now, just simulate cleanup completion
+	// Perform Helm cleanup operations
+	if err := r.performHelmCleanup(ctx, component); err != nil {
+		log.Error(err, "failed to perform helm cleanup")
+		// Set failed status but continue with finalizer removal to avoid blocking deletion
+		util.SetFailedStatus(component, HandlerName, fmt.Sprintf("Cleanup error: %v", err))
+		if statusErr := r.Status().Update(ctx, component); statusErr != nil {
+			log.Error(statusErr, "failed to update failed status during cleanup")
+		}
+	}
 
 	// Remove our finalizer to complete cleanup
 	util.RemoveHandlerFinalizer(component, HandlerName)
