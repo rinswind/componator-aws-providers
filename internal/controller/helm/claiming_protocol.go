@@ -33,6 +33,37 @@ import (
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 
+// claimingProtocol implements the claiming protocol logic
+func (r *ComponentReconciler) claimingProtocol(ctx context.Context, component *deploymentsv1alpha1.Component) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	// Check if already claimed by us
+	if r.isClaimedByUs(component) {
+		log.V(1).Info("Component already claimed by this handler", "component", component.Name)
+		return ctrl.Result{}, nil
+	}
+
+	// Check if claimed by different handler
+	if r.hasAnyHandlerFinalizer(component) {
+		log.V(1).Info("Component claimed by different handler, skipping", "component", component.Name)
+		return ctrl.Result{}, nil
+	}
+
+	// Component is available for claiming
+	log.Info("Claiming available component", "component", component.Name)
+	if err := r.claimComponent(ctx, component); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Successfully claimed - continue processing in this reconciliation
+	return ctrl.Result{}, nil
+}
+
+// isClaimedByUs checks if this Component is already claimed by this handler
+func (r *ComponentReconciler) isClaimedByUs(component *deploymentsv1alpha1.Component) bool {
+	return controllerutil.ContainsFinalizer(component, HandlerFinalizer)
+}
+
 // hasAnyHandlerFinalizer checks if the Component has any handler-specific finalizer
 func (r *ComponentReconciler) hasAnyHandlerFinalizer(component *deploymentsv1alpha1.Component) bool {
 	for _, finalizer := range component.Finalizers {
@@ -72,35 +103,4 @@ func (r *ComponentReconciler) claimComponent(ctx context.Context, component *dep
 
 	log.Info("Successfully claimed component", "component", component.Name, "finalizer", HandlerFinalizer)
 	return nil
-}
-
-// isClaimedByUs checks if this Component is already claimed by this handler
-func (r *ComponentReconciler) isClaimedByUs(component *deploymentsv1alpha1.Component) bool {
-	return controllerutil.ContainsFinalizer(component, HandlerFinalizer)
-}
-
-// claimingProtocol implements the claiming protocol logic
-func (r *ComponentReconciler) claimingProtocol(ctx context.Context, component *deploymentsv1alpha1.Component) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
-
-	// Check if already claimed by us
-	if r.isClaimedByUs(component) {
-		log.V(1).Info("Component already claimed by this handler", "component", component.Name)
-		return ctrl.Result{}, nil
-	}
-
-	// Check if claimed by different handler
-	if r.hasAnyHandlerFinalizer(component) {
-		log.V(1).Info("Component claimed by different handler, skipping", "component", component.Name)
-		return ctrl.Result{}, nil
-	}
-
-	// Component is available for claiming
-	log.Info("Claiming available component", "component", component.Name)
-	if err := r.claimComponent(ctx, component); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	// Successfully claimed - continue processing in this reconciliation
-	return ctrl.Result{}, nil
 }

@@ -35,8 +35,9 @@ You are working on **Kubernetes Component Handler Controllers** that implement s
 - `../deployment-operator/docs/architecture/composition.md` - Root orchestrator resource patterns
 - `../deployment-operator/docs/architecture/README.md` - System overview and relationships
 
-### Reference Implementation:
-- `../deployment-operator/internal/controller/helpers_components_test.go` - ComponentHandlerSimulator provides interface specification for component handler teams
+### Implementation Support:
+- `../deployment-operator/handler/util` - Handler utilities for protocol compliance, finalizer management, and status updates
+- `../deployment-operator/handler/simulator` - ComponentHandlerSimulator provides interface specification for component handler teams
 
 ## Development Rules
 
@@ -45,6 +46,137 @@ You are working on **Kubernetes Component Handler Controllers** that implement s
 - All handler implementations must follow the three core protocols exactly
 - Resource claiming, status updates, and finalizer patterns are strictly defined
 - State transitions and coordination patterns are protocol-specified
+- Use `../deployment-operator/handler/util` package for standardized protocol compliance
+
+## Handler Utilities Usage
+
+All handlers must use the `../deployment-operator/handler/util` package for protocol compliance:
+
+### Protocol Validation:
+```go
+validator := util.NewClaimingProtocolValidator("handler-name")
+
+// Check if we should process this component
+if validator.ShouldIgnore(component) {
+    return ctrl.Result{}, nil
+}
+
+// Validate claiming eligibility
+if err := validator.CanClaim(component); err != nil {
+    return ctrl.Result{}, err
+}
+
+// Validate deletion eligibility
+if err := validator.CanDelete(component); err != nil {
+    return ctrl.Result{RequeueAfter: time.Second * 5}, nil
+}
+```
+
+### Finalizer Management:
+```go
+// Add handler finalizer during claiming
+util.AddHandlerFinalizer(component, "handler-name")
+
+// Check finalizer status
+if util.HasHandlerFinalizer(component, "handler-name") {
+    // Component is claimed by this handler
+}
+
+// Remove finalizer during cleanup
+util.RemoveHandlerFinalizer(component, "handler-name")
+```
+
+### Status Updates:
+```go
+// Update status through deployment lifecycle
+util.SetClaimedStatus(component, "handler-name")
+util.SetDeployingStatus(component, "handler-name")
+util.SetReadyStatus(component)
+util.SetFailedStatus(component, "handler-name", "error description")
+util.SetTerminatingStatus(component, "handler-name")
+
+// Check status conditions
+if util.IsTerminating(component) {
+    // Handle deletion
+}
+```
+
+## Handler Implementation Structure
+
+### Standard Directory Layout:
+```
+internal/controller/{handler-name}/
+├── controller.go      # Main controller implementation
+├── controller_test.go # Unit tests
+└── README.md         # Handler-specific documentation
+```
+
+### Required Controller Structure:
+```go
+import (
+    "github.com/rinswind/deployment-operator/handler/util"
+)
+
+type ComponentReconciler struct {
+    client.Client
+    Scheme *runtime.Scheme
+    HandlerName string
+}
+
+func (r *ComponentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    // 1. Fetch Component
+    component := &v1alpha1.Component{}
+    if err := r.Get(ctx, req.NamespacedName, component); err != nil {
+        return ctrl.Result{}, client.IgnoreNotFound(err)
+    }
+
+    // 2. Create protocol validator
+    validator := util.NewClaimingProtocolValidator(r.HandlerName)
+    
+    // 3. Filter by handler name
+    if validator.ShouldIgnore(component) {
+        return ctrl.Result{}, nil
+    }
+
+    // 4. Handle deletion if DeletionTimestamp set
+    if util.IsTerminating(component) {
+        return r.handleDeletion(ctx, component, validator)
+    }
+
+    // 5. Implement claiming protocol and creation/deployment logic
+    return r.handleCreation(ctx, component, validator)
+}
+```
+
+### Registration in main.go:
+```go
+// Register each handler controller
+if err := (&handlername.ComponentReconciler{
+    Client: mgr.GetClient(),
+    Scheme: mgr.GetScheme(),
+    HandlerName: "handler-name",
+}).SetupWithManager(mgr); err != nil {
+    setupLog.Error(err, "unable to create controller", "controller", "HandlerName")
+    os.Exit(1)
+}
+```
+
+## Component Handler Interface
+
+All component handlers in this project must implement:
+
+### Core Lifecycle Methods:
+- **Claiming**: Use handler-specific finalizers for atomic resource discovery
+- **Creation**: React immediately when Component resources are created
+- **Deployment**: Implement actual infrastructure deployment (Terraform, Helm, etc.)
+- **Status Updates**: Report deployment progress through Component status
+- **Deletion**: Implement cleanup when coordination finalizer is removed
+
+### Required Patterns:
+- **Handler Filtering**: Only process Components where `spec.handler` matches handler name
+- **Finalizer Management**: Add/remove handler-specific finalizers following protocol
+- **Status Phases**: Use ComponentPhase enum values (Pending, Claimed, Deploying, Ready, Failed, Terminating)
+- **Error Handling**: Set Failed phase with descriptive messages on errors
 
 ### 2. Component Handler Implementation Focus
 
@@ -68,6 +200,13 @@ You are working on **Kubernetes Component Handler Controllers** that implement s
 - **Handler isolation**: Each handler operates independently on its assigned Component resources
 - **Consistent patterns**: All handlers should follow the same implementation patterns
 
+## Documentation Hierarchy
+
+- **Architecture docs** (`../deployment-operator/docs/architecture/`): **Primary reference** - detailed specifications for protocol compliance
+- **Handler utilities** (`../deployment-operator/handler/util`): **Implementation tools** - standardized functions for protocol compliance
+- **Reference implementation** (`../deployment-operator/internal/controller/helpers_components_test.go`): **Implementation patterns** - ComponentHandlerSimulator shows correct handler behavior
+- **Handler documentation** (`internal/controller/*/README.md`): **Handler-specific guidance** - individual handler implementation details
+
 ## Implementation Workflow
 
 ### For Major Implementation Work
@@ -76,68 +215,6 @@ You are working on **Kubernetes Component Handler Controllers** that implement s
 1. **Review architecture docs**: Use `../deployment-operator/docs/architecture/` for protocol specifications and constraints
 2. **Focus on Component Handlers**: Implement deployment logic, not orchestration logic
 3. **Test protocol compliance**: Validate implementation against ComponentHandlerSimulator patterns
-
-### Documentation Hierarchy
-
-- **Architecture docs** (`../deployment-operator/docs/architecture/`): **Primary reference** - detailed specifications for protocol compliance
-- **Reference implementation** (`../deployment-operator/internal/controller/helpers_components_test.go`): **Implementation patterns** - ComponentHandlerSimulator shows correct handler behavior
-- **Handler documentation** (`internal/controller/*/README.md`): **Handler-specific guidance** - individual handler implementation details
-
-## Component Handler Interface
-
-All component handlers in this project must implement:
-
-### Core Lifecycle Methods:
-- **Claiming**: Use handler-specific finalizers for atomic resource discovery
-- **Creation**: React immediately when Component resources are created
-- **Deployment**: Implement actual infrastructure deployment (Terraform, Helm, etc.)
-- **Status Updates**: Report deployment progress through Component status
-- **Deletion**: Implement cleanup when coordination finalizer is removed
-
-### Required Patterns:
-- **Handler Filtering**: Only process Components where `spec.handler` matches handler name
-- **Finalizer Management**: Add/remove handler-specific finalizers following protocol
-- **Status Phases**: Use ComponentPhase enum values (Pending, Claimed, Deploying, Ready, Failed, Terminating)
-- **Error Handling**: Set Failed phase with descriptive messages on errors
-
-## Handler Implementation Structure
-
-### Standard Directory Layout:
-```
-internal/controller/{handler-name}/
-├── controller.go      # Main controller implementation
-├── controller_test.go # Unit tests
-└── README.md         # Handler-specific documentation
-```
-
-### Required Controller Structure:
-```go
-type ComponentReconciler struct {
-    client.Client
-    Scheme *runtime.Scheme
-}
-
-func (r *ComponentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    // 1. Fetch Component
-    // 2. Filter by handler name
-    // 3. Handle deletion if DeletionTimestamp set
-    // 4. Implement claiming protocol
-    // 5. Implement creation/deployment logic
-    // 6. Update status appropriately
-}
-```
-
-### Registration in main.go:
-```go
-// Register each handler controller
-if err := (&handlername.ComponentReconciler{
-    Client: mgr.GetClient(),
-    Scheme: mgr.GetScheme(),
-}).SetupWithManager(mgr); err != nil {
-    setupLog.Error(err, "unable to create controller", "controller", "HandlerName")
-    os.Exit(1)
-}
-```
 
 ## Current Handlers
 
@@ -164,12 +241,13 @@ if err := (&handlername.ComponentReconciler{
 6. **Update RBAC**: Add required permissions if needed
 
 ### Protocol Compliance Checklist:
-- [ ] Handler filters Components by `spec.handler` field
-- [ ] Implements claiming protocol with handler-specific finalizer
+- [ ] Handler filters Components by `spec.handler` field using `util.ClaimingProtocolValidator.ShouldIgnore()`
+- [ ] Implements claiming protocol with handler-specific finalizer using `util.AddHandlerFinalizer()`
+- [ ] Uses `util.ClaimingProtocolValidator.CanClaim()` to validate claiming eligibility
 - [ ] Reacts immediately to Component creation
-- [ ] Updates status through all deployment phases
-- [ ] Handles deletion coordination with composition finalizer
-- [ ] Sets Failed status with descriptive messages on errors
+- [ ] Updates status through all deployment phases using `util.SetClaimedStatus()`, `util.SetDeployingStatus()`, `util.SetReadyStatus()`
+- [ ] Handles deletion coordination using `util.ClaimingProtocolValidator.CanDelete()` and `util.RemoveHandlerFinalizer()`
+- [ ] Sets Failed status with descriptive messages using `util.SetFailedStatus()`
 - [ ] Includes integration tests validating protocol compliance
 
 ## Common Tasks Reference
