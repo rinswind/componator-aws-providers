@@ -20,11 +20,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/getter"
+	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/repo"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -82,7 +84,12 @@ func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, compone
 	getAction.Version = 0 // Get latest version
 	if rel, err := getAction.Run(releaseName); err == nil && rel != nil {
 		log.Info("Release already exists, skipping installation", "releaseName", releaseName, "version", rel.Version)
-		return map[string]string{}, nil
+		// Return the same annotations that would be set during installation
+		annotations := map[string]string{
+			DeploymentNamespaceAnnotation:   targetNamespace,
+			DeploymentReleaseNameAnnotation: releaseName,
+		}
+		return annotations, nil
 	}
 
 	// Create install action
@@ -91,7 +98,8 @@ func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, compone
 	installAction.Namespace = targetNamespace
 	installAction.CreateNamespace = true
 	installAction.Version = config.Chart.Version
-	installAction.Wait = true
+	installAction.Wait = false               // Async deployment - don't block reconcile loop
+	installAction.Timeout = 30 * time.Second // Quick timeout for install operation itself
 
 	// Set up repository configuration properly for ephemeral containers
 	// This creates temporary repository files that Helm can use normally
@@ -239,7 +247,8 @@ func (r *ComponentReconciler) performHelmCleanup(ctx context.Context, component 
 
 	// Create uninstall action
 	uninstallAction := action.NewUninstall(actionConfig)
-	uninstallAction.Wait = true
+	uninstallAction.Wait = false               // Async uninstall - don't block reconcile loop
+	uninstallAction.Timeout = 30 * time.Second // Quick timeout for uninstall operation itself
 
 	// Uninstall the release
 	res, err := uninstallAction.Run(releaseName)
@@ -253,4 +262,61 @@ func (r *ComponentReconciler) performHelmCleanup(ctx context.Context, component 
 		"info", res.Info)
 
 	return nil
+}
+
+// checkHelmReleaseReadiness verifies if a Helm release and its resources are ready
+func (r *ComponentReconciler) checkHelmReleaseReadiness(ctx context.Context, component *deploymentsv1alpha1.Component) (bool, error) {
+	log := logf.FromContext(ctx)
+
+	// Get release name from stored annotation
+	releaseName := component.Annotations[DeploymentReleaseNameAnnotation]
+	if releaseName == "" {
+		return false, fmt.Errorf("release name annotation %s not found", DeploymentReleaseNameAnnotation)
+	}
+
+	// Get target namespace from stored annotation
+	targetNamespace := component.Annotations[DeploymentNamespaceAnnotation]
+	if targetNamespace == "" {
+		return false, fmt.Errorf("target namespace annotation %s not found", DeploymentNamespaceAnnotation)
+	}
+
+	// Initialize Helm settings and action configuration
+	settings := cli.New()
+	actionConfig := &action.Configuration{}
+
+	// Initialize the action configuration with Kubernetes client
+	if err := actionConfig.Init(settings.RESTClientGetter(), targetNamespace, "secrets", func(format string, v ...any) {
+		log.Info(fmt.Sprintf(format, v...))
+	}); err != nil {
+		return false, fmt.Errorf("failed to initialize helm action configuration: %w", err)
+	}
+
+	// Get release status
+	statusAction := action.NewStatus(actionConfig)
+	rel, err := statusAction.Run(releaseName)
+	if err != nil {
+		return false, fmt.Errorf("failed to get release status: %w", err)
+	}
+
+	// Check if release is ready (deployed and not in a transitional state)
+	if rel.Info.Status.IsPending() {
+		log.Info("Release is in pending state", "status", rel.Info.Status.String())
+		return false, nil
+	}
+
+	if rel.Info.Status == release.StatusFailed {
+		return false, fmt.Errorf("helm release is in failed state: %s", rel.Info.Status.String())
+	}
+
+	if rel.Info.Status != release.StatusDeployed {
+		log.Info("Release not yet deployed", "status", rel.Info.Status.String())
+		return false, nil
+	}
+
+	log.Info("Helm release is ready",
+		"releaseName", releaseName,
+		"status", rel.Info.Status.String(),
+		"version", rel.Version)
+
+	return true, nil
 }

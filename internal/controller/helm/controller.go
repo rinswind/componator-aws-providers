@@ -142,8 +142,22 @@ func (r *ComponentReconciler) handleCreation(ctx context.Context, component *dep
 	}
 
 	if !util.IsReady(component) {
-		util.SetReadyStatus(component)
-		return ctrl.Result{}, r.Status().Update(ctx, component)
+		// Check if deployed resources are actually ready
+		ready, err := r.checkHelmReleaseReadiness(ctx, component)
+		if err != nil {
+			log.Error(err, "failed to check helm release readiness")
+			util.SetFailedStatus(component, HandlerName, fmt.Sprintf("readiness check failed: %v", err))
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Status().Update(ctx, component)
+		}
+
+		if ready {
+			util.SetReadyStatus(component)
+			return ctrl.Result{}, r.Status().Update(ctx, component)
+		} else {
+			// Resources not ready yet, requeue for another check
+			log.Info("Helm release resources not ready yet, checking again in 10 seconds")
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
 	}
 
 	return ctrl.Result{}, nil
