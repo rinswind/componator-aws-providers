@@ -39,173 +39,60 @@ You are working on **Kubernetes Component Handler Controllers** that implement s
 - `../deployment-operator/handler/util` - Handler utilities for protocol compliance, finalizer management, and status updates
 - `../deployment-operator/handler/simulator` - ComponentHandlerSimulator provides interface specification for component handler teams
 
+## Documentation Hierarchy
+
+- **Architecture docs** (`../deployment-operator/docs/architecture/`): **Primary reference** - detailed specifications for protocol compliance
+- **Handler utilities** (`../deployment-operator/handler/util`): **Implementation tools** - standardized functions for protocol compliance
+- **Reference implementation** (`../deployment-operator/handler/simulator`): **Implementation patterns** - ComponentHandlerSimulator shows correct handler behavior
+- **Handler documentation** (`internal/controller/README.md`): **Complete implementation guide** - detailed examples and patterns for handler development
+- **Individual handler docs** (`internal/controller/*/README.md`): **Handler-specific guidance** - technology-specific implementation details
+
 ## Development Rules
 
-### 1. Protocol Compliance is Mandatory
+### Protocol Compliance is Mandatory
 
 - All handler implementations must follow the three core protocols exactly
 - Resource claiming, status updates, and finalizer patterns are strictly defined
 - State transitions and coordination patterns are protocol-specified
 - Use `../deployment-operator/handler/util` package for standardized protocol compliance
 
-## Handler Utilities Usage
+### Implementation Requirements
 
-All handlers must use the `../deployment-operator/handler/util` package for protocol compliance:
+- **Handler Filtering**: Each handler filters Components by `spec.handler` field matching the handler name
+- **Finalizer Management**: All handlers must implement handler-specific finalizers for atomic claiming
+- **Status Management**: Status updates must follow ComponentPhase enum values and include proper conditions  
+- **Error Handling**: Must set Failed states with detailed messages
+- **Testing**: Integration tests using envtest for protocol compliance
 
-### Protocol Validation:
-```go
-validator := util.NewClaimingProtocolValidator("handler-name")
+### Handler Utilities Package
 
-// Check if we should process this component
-if validator.ShouldIgnore(component) {
-    return ctrl.Result{}, nil
-}
+All handlers must use `../deployment-operator/handler/util` package which provides:
+- **ClaimingProtocolValidator** - Validates claiming and deletion protocols
+- **Finalizer Management** - Standard finalizer patterns and operations  
+- **Status Updates** - Consistent Component status management
+- **Testing Support** - Integration with ComponentHandlerSimulator
 
-// Validate claiming eligibility
-if err := validator.CanClaim(component); err != nil {
-    return ctrl.Result{}, err
-}
-
-// Validate deletion eligibility
-if err := validator.CanDelete(component); err != nil {
-    return ctrl.Result{RequeueAfter: time.Second * 5}, nil
-}
-```
-
-### Finalizer Management:
-```go
-// Add handler finalizer during claiming
-util.AddHandlerFinalizer(component, "handler-name")
-
-// Check finalizer status
-if util.HasHandlerFinalizer(component, "handler-name") {
-    // Component is claimed by this handler
-}
-
-// Remove finalizer during cleanup
-util.RemoveHandlerFinalizer(component, "handler-name")
-```
-
-### Status Updates:
-```go
-// Update status through deployment lifecycle
-util.SetClaimedStatus(component, "handler-name")
-util.SetDeployingStatus(component, "handler-name")
-util.SetReadyStatus(component)
-util.SetFailedStatus(component, "handler-name", "error description")
-util.SetTerminatingStatus(component, "handler-name")
-
-// Check status conditions
-if util.IsTerminating(component) {
-    // Handle deletion
-}
-```
-
-## Handler Implementation Structure
-
-### Standard Directory Layout:
-```
-internal/controller/{handler-name}/
-├── controller.go      # Main controller implementation
-├── controller_test.go # Unit tests
-└── README.md         # Handler-specific documentation
-```
-
-### Required Controller Structure:
-```go
-import (
-    "github.com/rinswind/deployment-operator/handler/util"
-)
-
-type ComponentReconciler struct {
-    client.Client
-    Scheme *runtime.Scheme
-    HandlerName string
-}
-
-func (r *ComponentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    // 1. Fetch Component
-    component := &v1alpha1.Component{}
-    if err := r.Get(ctx, req.NamespacedName, component); err != nil {
-        return ctrl.Result{}, client.IgnoreNotFound(err)
-    }
-
-    // 2. Create protocol validator
-    validator := util.NewClaimingProtocolValidator(r.HandlerName)
-    
-    // 3. Filter by handler name
-    if validator.ShouldIgnore(component) {
-        return ctrl.Result{}, nil
-    }
-
-    // 4. Handle deletion if DeletionTimestamp set
-    if util.IsTerminating(component) {
-        return r.handleDeletion(ctx, component, validator)
-    }
-
-    // 5. Implement claiming protocol and creation/deployment logic
-    return r.handleCreation(ctx, component, validator)
-}
-```
-
-### Registration in main.go:
-```go
-// Register each handler controller
-if err := (&handlername.ComponentReconciler{
-    Client: mgr.GetClient(),
-    Scheme: mgr.GetScheme(),
-    HandlerName: "handler-name",
-}).SetupWithManager(mgr); err != nil {
-    setupLog.Error(err, "unable to create controller", "controller", "HandlerName")
-    os.Exit(1)
-}
-```
-
-## Component Handler Interface
-
-All component handlers in this project must implement:
-
-### Core Lifecycle Methods:
-- **Claiming**: Use handler-specific finalizers for atomic resource discovery
-- **Creation**: React immediately when Component resources are created
-- **Deployment**: Implement actual infrastructure deployment (Terraform, Helm, etc.)
-- **Status Updates**: Report deployment progress through Component status
-- **Deletion**: Implement cleanup when coordination finalizer is removed
-
-### Required Patterns:
-- **Handler Filtering**: Only process Components where `spec.handler` matches handler name
-- **Finalizer Management**: Add/remove handler-specific finalizers following protocol
-- **Status Phases**: Use ComponentPhase enum values (Pending, Claimed, Deploying, Ready, Failed, Terminating)
-- **Error Handling**: Set Failed phase with descriptive messages on errors
-
-### 2. Component Handler Implementation Focus
-
-- **Implementation only**: Process Component resources and deploy underlying infrastructure
-- **Handler-specific logic**: Focus on actual deployment technologies (Terraform, Helm, etc.)
-- **Status reporting**: Update Component status to reflect deployment state
-- **Cleanup handling**: Respond to coordination finalizer removal for proper cleanup
-
-### 3. Required Implementation Standards
-
-- Each handler filters Components by `spec.handler` field matching the handler name
-- All handlers must implement handler-specific finalizers for atomic claiming
-- Status updates must include proper Kubernetes conditions and phases
-- Error handling must set Failed states with detailed messages
-- Integration tests using envtest for protocol compliance
-
-### 4. Multi-Handler Architecture
+### Multi-Handler Architecture
 
 - **Multiple handlers per project**: This repository contains multiple component handlers (helm, rds, future handlers)
 - **Shared controller infrastructure**: All handlers share the same manager and RBAC setup
 - **Handler isolation**: Each handler operates independently on its assigned Component resources
-- **Consistent patterns**: All handlers should follow the same implementation patterns
+- **Consistent patterns**: All handlers follow the same implementation patterns
 
-## Documentation Hierarchy
+### Implementation Scope
 
-- **Architecture docs** (`../deployment-operator/docs/architecture/`): **Primary reference** - detailed specifications for protocol compliance
-- **Handler utilities** (`../deployment-operator/handler/util`): **Implementation tools** - standardized functions for protocol compliance
-- **Reference implementation** (`../deployment-operator/internal/controller/helpers_components_test.go`): **Implementation patterns** - ComponentHandlerSimulator shows correct handler behavior
-- **Handler documentation** (`internal/controller/*/README.md`): **Handler-specific guidance** - individual handler implementation details
+- **Component handlers only**: Process Component resources and deploy underlying infrastructure
+- **Handler-specific logic**: Focus on actual deployment technologies (Terraform, Helm, etc.)
+- **Status reporting**: Update Component status to reflect deployment state
+- **Cleanup handling**: Respond to coordination finalizer removal for proper cleanup
+
+### Implementation Details
+
+See `internal/controller/README.md` for complete implementation guidance:
+- Handler utilities usage examples
+- Full controller reconcile loop structure  
+- Protocol compliance implementation patterns
+- Testing patterns with ComponentHandlerSimulator
 
 ## Implementation Workflow
 
@@ -218,37 +105,19 @@ All component handlers in this project must implement:
 
 ## Current Handlers
 
-### Helm Controller (`internal/controller/helm/`)
-- **Handler Name**: `"helm"`
-- **Purpose**: Deploy and manage Helm charts
-- **Technology**: Helm 3 client libraries
-- **Resources**: Helm releases, ConfigMaps, Secrets
+- **Helm Handler** (`internal/controller/helm/`) - Deploy and manage Helm charts
+- **RDS Handler** (`internal/controller/rds/`) - Deploy and manage RDS instances
 
-### RDS Controller (`internal/controller/rds/`)
-- **Handler Name**: `"rds"`
-- **Purpose**: Deploy and manage RDS instances
-- **Technology**: Terraform providers
-- **Resources**: RDS instances, security groups, subnets
+See project `README.md` for multi-handler registration and setup details.
 
 ## Adding New Handlers
 
-### Implementation Steps:
-1. **Create handler directory**: `internal/controller/{handler-name}/`
-2. **Implement ComponentReconciler**: Follow standard controller structure
-3. **Add unit tests**: Test claiming, deployment, and deletion protocols
-4. **Add README**: Document handler-specific behavior
-5. **Register in main.go**: Add controller setup
-6. **Update RBAC**: Add required permissions if needed
+1. Create handler directory: `internal/controller/{handler-name}/`
+2. Implement ComponentReconciler following patterns in `internal/controller/README.md`
+3. Register controller in `cmd/main.go`
+4. Add integration tests validating protocol compliance
 
-### Protocol Compliance Checklist:
-- [ ] Handler filters Components by `spec.handler` field using `util.ClaimingProtocolValidator.ShouldIgnore()`
-- [ ] Implements claiming protocol with handler-specific finalizer using `util.AddHandlerFinalizer()`
-- [ ] Uses `util.ClaimingProtocolValidator.CanClaim()` to validate claiming eligibility
-- [ ] Reacts immediately to Component creation
-- [ ] Updates status through all deployment phases using `util.SetClaimedStatus()`, `util.SetDeployingStatus()`, `util.SetReadyStatus()`
-- [ ] Handles deletion coordination using `util.ClaimingProtocolValidator.CanDelete()` and `util.RemoveHandlerFinalizer()`
-- [ ] Sets Failed status with descriptive messages using `util.SetFailedStatus()`
-- [ ] Includes integration tests validating protocol compliance
+Protocol compliance is mandatory - use handler utilities and follow established patterns.
 
 ## Common Tasks Reference
 
