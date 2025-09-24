@@ -27,6 +27,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/rinswind/deployment-operator/handler/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
@@ -116,12 +117,26 @@ var _ = Describe("Helm Controller", func() {
 				},
 			}
 
-			// Reconciliation should claim and then fail on config parsing
+			// First reconciliation should claim the component
 			_, err := reconciler.Reconcile(ctx, req)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("config is required for helm components"))
+			Expect(err).NotTo(HaveOccurred())
 
-			// Check that status was updated to Failed
+			// Check that component is claimed after first reconciliation
+			var claimedComponent deploymentsv1alpha1.Component
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "test-helm-component-no-config",
+				Namespace: "default",
+			}, &claimedComponent)).To(Succeed())
+
+			Expect(claimedComponent.Finalizers).To(ContainElement(util.MakeHandlerFinalizer(HandlerName)))
+			Expect(claimedComponent.Status.Phase).To(Equal(deploymentsv1alpha1.ComponentPhaseClaimed))
+			Expect(claimedComponent.Status.ClaimedBy).To(Equal(HandlerName))
+
+			// Second reconciliation should fail on config validation
+			_, err = reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred()) // Controller should handle errors gracefully by setting status
+
+			// Check that status was updated to Failed after second reconciliation
 			var updatedComponent deploymentsv1alpha1.Component
 			Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name:      "test-helm-component-no-config",
@@ -129,7 +144,7 @@ var _ = Describe("Helm Controller", func() {
 			}, &updatedComponent)).To(Succeed())
 
 			// Should be claimed but failed
-			Expect(updatedComponent.Finalizers).To(ContainElement("helm.deployment-orchestrator.io/lifecycle"))
+			Expect(updatedComponent.Finalizers).To(ContainElement(util.MakeHandlerFinalizer(HandlerName)))
 			Expect(updatedComponent.Status.Phase).To(Equal(deploymentsv1alpha1.ComponentPhaseFailed))
 			Expect(updatedComponent.Status.Message).To(ContainSubstring("Configuration error"))
 
