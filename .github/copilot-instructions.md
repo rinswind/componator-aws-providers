@@ -41,11 +41,10 @@ You are working on **Kubernetes Component Handler Controllers** that implement s
 
 ## Documentation Hierarchy
 
-- **Architecture docs** (`../deployment-operator/docs/architecture/`): **Primary reference** - detailed specifications for protocol compliance
-- **Handler utilities** (`../deployment-operator/handler/util`): **Implementation tools** - standardized functions for protocol compliance
-- **Reference implementation** (`../deployment-operator/handler/simulator`): **Implementation patterns** - ComponentHandlerSimulator shows correct handler behavior
-- **Handler documentation** (`internal/controller/README.md`): **Complete implementation guide** - detailed examples and patterns for handler development
-- **Individual handler docs** (`internal/controller/*/README.md`): **Handler-specific guidance** - technology-specific implementation details
+- **Architecture docs** (`../deployment-operator/docs/architecture/`): Protocol specifications and system design
+- **Handler utilities** (`../deployment-operator/handler/util`): Implementation tools for protocol compliance  
+- **Handler documentation** (`internal/controller/README.md`): Complete implementation guide with examples and patterns
+- **Individual handler docs** (`internal/controller/*/README.md`): Handler-specific implementation details
 
 ## Development Rules
 
@@ -64,14 +63,6 @@ You are working on **Kubernetes Component Handler Controllers** that implement s
 - **Error Handling**: Must set Failed states with detailed messages
 - **Testing**: Integration tests using envtest for protocol compliance
 
-### Handler Utilities Package
-
-All handlers must use `../deployment-operator/handler/util` package which provides:
-- **ClaimingProtocolValidator** - Validates claiming and deletion protocols
-- **Finalizer Management** - Standard finalizer patterns and operations  
-- **Status Updates** - Consistent Component status management
-- **Testing Support** - Integration with ComponentHandlerSimulator
-
 ### Multi-Handler Architecture
 
 - **Multiple handlers per project**: This repository contains multiple component handlers (helm, rds, future handlers)
@@ -79,29 +70,18 @@ All handlers must use `../deployment-operator/handler/util` package which provid
 - **Handler isolation**: Each handler operates independently on its assigned Component resources
 - **Consistent patterns**: All handlers follow the same implementation patterns
 
-### Implementation Scope
-
-- **Component handlers only**: Process Component resources and deploy underlying infrastructure
-- **Handler-specific logic**: Focus on actual deployment technologies (Terraform, Helm, etc.)
-- **Status reporting**: Update Component status to reflect deployment state
-- **Cleanup handling**: Respond to coordination finalizer removal for proper cleanup
-
 ### Implementation Details
 
-See `internal/controller/README.md` for complete implementation guidance:
-- Handler utilities usage examples
-- Full controller reconcile loop structure  
-- Protocol compliance implementation patterns
-- Testing patterns with ComponentHandlerSimulator
+See `internal/controller/README.md` for complete implementation guidance including handler utilities usage, controller patterns, and testing approaches.
 
 ## Implementation Workflow
 
 ### For Major Implementation Work
 
 0. **Ask for implementation permission**: "Should I implement these changes?" before proceeding with any code modifications
-1. **Review architecture docs**: Use `../deployment-operator/docs/architecture/` for protocol specifications and constraints
-2. **Focus on Component Handlers**: Implement deployment logic, not orchestration logic
-3. **Test protocol compliance**: Validate implementation against ComponentHandlerSimulator patterns
+1. **Review architecture docs**: Use `../deployment-operator/docs/architecture/` for protocol specifications
+2. **Focus on Component Handlers**: Implement deployment logic, not orchestration logic  
+3. **Test protocol compliance**: Follow patterns in `internal/controller/README.md`
 
 ## Current Handlers
 
@@ -117,14 +97,11 @@ See project `README.md` for multi-handler registration and setup details.
 3. Register controller in `cmd/main.go`
 4. Add integration tests validating protocol compliance
 
-Protocol compliance is mandatory - use handler utilities and follow established patterns.
-
 ## Common Tasks Reference
 
-- **Adding Handlers**: Follow handler implementation structure and protocol patterns
-- **Testing Handlers**: Use ComponentHandlerSimulator patterns for protocol compliance
+- **Adding Handlers**: Follow implementation patterns in `internal/controller/README.md`
+- **Testing Handlers**: Use integration tests with envtest for protocol compliance
 - **Debugging Issues**: Check Component status phases and finalizer coordination
-- **Protocol Compliance**: Validate against architecture specifications and reference implementation
 - **Status Updates**: Follow ComponentPhase enum and condition patterns
 
 ## External Dependencies
