@@ -51,7 +51,7 @@ type HelmConfig struct {
 type HelmRepository struct {
 	// URL is the chart repository URL
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Pattern=^https?://.*
+	// +kubebuilder:validation:Pattern=`^https?://.*`
 	URL string `json:"url" validate:"required,url"`
 
 	// Name is the repository name for local reference
