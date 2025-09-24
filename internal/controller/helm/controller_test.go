@@ -132,11 +132,23 @@ var _ = Describe("Helm Controller", func() {
 			Expect(claimedComponent.Status.Phase).To(Equal(deploymentsv1alpha1.ComponentPhaseClaimed))
 			Expect(claimedComponent.Status.ClaimedBy).To(Equal(HandlerName))
 
-			// Second reconciliation should fail on config validation
+			// Second reconciliation should set deploying status
 			_, err = reconciler.Reconcile(ctx, req)
 			Expect(err).NotTo(HaveOccurred()) // Controller should handle errors gracefully by setting status
 
-			// Check that status was updated to Failed after second reconciliation
+			// Check that status was updated to Deploying after second reconciliation
+			var deployingComponent deploymentsv1alpha1.Component
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "test-helm-component-no-config",
+				Namespace: "default",
+			}, &deployingComponent)).To(Succeed())
+			Expect(deployingComponent.Status.Phase).To(Equal(deploymentsv1alpha1.ComponentPhaseDeploying))
+
+			// Third reconciliation should fail on config validation
+			_, err = reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred()) // Controller should handle errors gracefully by setting status
+
+			// Check that status was updated to Failed after third reconciliation
 			var updatedComponent deploymentsv1alpha1.Component
 			Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name:      "test-helm-component-no-config",
@@ -146,7 +158,7 @@ var _ = Describe("Helm Controller", func() {
 			// Should be claimed but failed
 			Expect(updatedComponent.Finalizers).To(ContainElement(util.MakeHandlerFinalizer(HandlerName)))
 			Expect(updatedComponent.Status.Phase).To(Equal(deploymentsv1alpha1.ComponentPhaseFailed))
-			Expect(updatedComponent.Status.Message).To(ContainSubstring("Configuration error"))
+			Expect(updatedComponent.Status.Message).To(ContainSubstring("failed to parse helm configuration"))
 
 			// Cleanup
 			Expect(k8sClient.Delete(ctx, &updatedComponent)).To(Succeed())

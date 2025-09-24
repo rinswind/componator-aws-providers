@@ -19,7 +19,6 @@ package helm
 import (
 	"context"
 	"fmt"
-	"maps"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -103,12 +102,20 @@ func (r *ComponentReconciler) handleCreation(ctx context.Context, component *dep
 		return ctrl.Result{}, r.Status().Update(ctx, component)
 	}
 
+	// Check if we should skip deployment due to unchanged spec in Failed state
+	if util.IsFailed(component) && !util.ShouldRetryFailedDeployment(component) {
+		log.Info("Skipping deployment - component failed with unchanged spec",
+			"component", component.Name,
+			"generation", component.Generation,
+			"observedGeneration", component.Status.ObservedGeneration)
+		return ctrl.Result{}, nil
+	}
+
 	// Set deploying status if not already set
 	if !util.IsPhase(component, deploymentsv1alpha1.ComponentPhaseDeploying) {
 		util.SetDeployingStatus(component, HandlerName)
-		if err := r.Status().Update(ctx, component); err != nil {
-			return ctrl.Result{}, err
-		}
+		// Bail out to make the status visible, but requeue immediately to continue with deployment
+		return ctrl.Result{RequeueAfter: 1 * time.Second}, r.Status().Update(ctx, component)
 	}
 
 	// Perform Helm deployment operations
@@ -130,9 +137,7 @@ func (r *ComponentReconciler) handleCreation(ctx context.Context, component *dep
 	if needsUpdate := r.ensureAnnotations(component, annotations); needsUpdate {
 		log.Info("Storing deployment metadata in annotations", "annotations", annotations)
 		if err := r.Update(ctx, component); err != nil {
-			log.Error(err, "failed to update component annotations")
-			util.SetFailedStatus(component, HandlerName, fmt.Sprintf("Annotation update error: %v", err))
-			return ctrl.Result{}, r.Status().Update(ctx, component)
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -146,23 +151,22 @@ func (r *ComponentReconciler) handleCreation(ctx context.Context, component *dep
 
 // ensureAnnotations compares desired annotations with current annotations
 // and updates the component if changes are needed. Returns true if update was needed.
+// This function is safe - it only modifies the component when an update is actually needed.
 func (r *ComponentReconciler) ensureAnnotations(component *deploymentsv1alpha1.Component, desiredAnnotations map[string]string) bool {
+	if len(desiredAnnotations) == 0 {
+		return false
+	}
+
 	if component.Annotations == nil {
 		component.Annotations = make(map[string]string)
 	}
 
-	// Check if any desired annotations are missing or different
 	needsUpdate := false
 	for key, value := range desiredAnnotations {
 		if component.Annotations[key] != value {
 			needsUpdate = true
-			break
+			component.Annotations[key] = value
 		}
-	}
-
-	// Only update if changes are needed
-	if needsUpdate {
-		maps.Copy(component.Annotations, desiredAnnotations)
 	}
 
 	return needsUpdate

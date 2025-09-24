@@ -82,11 +82,7 @@ func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, compone
 	getAction.Version = 0 // Get latest version
 	if rel, err := getAction.Run(releaseName); err == nil && rel != nil {
 		log.Info("Release already exists, skipping installation", "releaseName", releaseName, "version", rel.Version)
-		annotations := map[string]string{
-			DeploymentNamespaceAnnotation:   targetNamespace,
-			DeploymentReleaseNameAnnotation: releaseName,
-		}
-		return annotations, nil
+		return map[string]string{}, nil
 	}
 
 	// Create install action

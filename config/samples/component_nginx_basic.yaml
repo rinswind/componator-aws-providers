@@ -18,7 +18,10 @@ spec:
       name: nginx
       version: "18.2.4"
     values:
+      service.type: "ClusterIP"
       replicaCount: 1
-      service:
-        type: ClusterIP
-        port: 80
+
+      # replicaCount: 1
+      # service:
+      #   type: ClusterIP
+      #   port: 80
