@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart/loader"
@@ -69,7 +68,7 @@ func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, compone
 
 	// Initialize Helm settings and action configuration
 	settings := cli.New()
-	actionConfig := new(action.Configuration)
+	actionConfig := &action.Configuration{}
 
 	// Initialize the action configuration with Kubernetes client
 	if err := actionConfig.Init(settings.RESTClientGetter(), targetNamespace, "secrets", func(format string, v ...interface{}) {
@@ -90,14 +89,6 @@ func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, compone
 		return annotations, nil
 	}
 
-	// Prepare the chart locator path - for public repos, we use repo/chart format
-	chartRef := fmt.Sprintf("%s/%s", config.Repository.Name, config.Chart.Name)
-
-	// Add repository if not already added
-	if err := r.addHelmRepository(settings, config.Repository.Name, config.Repository.URL); err != nil {
-		return nil, fmt.Errorf("failed to add helm repository: %w", err)
-	}
-
 	// Create install action
 	installAction := action.NewInstall(actionConfig)
 	installAction.ReleaseName = releaseName
@@ -106,7 +97,15 @@ func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, compone
 	installAction.Version = config.Chart.Version
 	installAction.Wait = true
 
-	// Load the chart
+	// Set up repository configuration properly for ephemeral containers
+	// This creates temporary repository files that Helm can use normally
+	if err := r.setupHelmRepository(settings, config.Repository.Name, config.Repository.URL); err != nil {
+		return nil, fmt.Errorf("failed to setup helm repository: %w", err)
+	}
+
+	// Use Helm's standard chart resolution with repo/chart format
+	// Now that repository is properly configured, this will work as expected
+	chartRef := fmt.Sprintf("%s/%s", config.Repository.Name, config.Chart.Name)
 	cp, err := installAction.ChartPathOptions.LocateChart(chartRef, settings)
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate chart %s: %w", chartRef, err)
@@ -144,55 +143,60 @@ func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, compone
 	return annotations, nil
 }
 
-// addHelmRepository adds a Helm chart repository if not already present
-func (r *ComponentReconciler) addHelmRepository(settings *cli.EnvSettings, name, url string) error {
-	// Get repositories file path
-	repoFile := settings.RepositoryConfig
-	if repoFile == "" {
-		repoFile = filepath.Join(settings.RepositoryCache, "repositories.yaml")
+// setupHelmRepository configures a Helm repository properly for ephemeral containers
+// This creates the necessary repository configuration files that Helm expects
+func (r *ComponentReconciler) setupHelmRepository(settings *cli.EnvSettings, repoName, repoURL string) error {
+	// Create temporary directories for Helm configuration
+	tempConfigDir, err := os.MkdirTemp("", "helm-config-")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary config directory: %w", err)
 	}
 
-	// Ensure cache directory exists
-	if err := os.MkdirAll(settings.RepositoryCache, 0755); err != nil {
-		return fmt.Errorf("failed to create repository cache directory: %w", err)
+	tempCacheDir, err := os.MkdirTemp("", "helm-cache-")
+	if err != nil {
+		os.RemoveAll(tempConfigDir)
+		return fmt.Errorf("failed to create temporary cache directory: %w", err)
 	}
 
-	// Load existing repositories
-	f, err := repo.LoadFile(repoFile)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to load repository file: %w", err)
-	}
-	if f == nil {
-		f = repo.NewFile()
+	// Configure Helm settings to use our temporary directories
+	settings.RepositoryConfig = tempConfigDir + "/repositories.yaml"
+	settings.RepositoryCache = tempCacheDir
+
+	// Load or create repository file
+	repoFile := repo.NewFile()
+
+	// Create repository entry
+	repoEntry := &repo.Entry{
+		Name: repoName,
+		URL:  repoURL,
 	}
 
-	// Check if repository already exists
-	if f.Has(name) {
-		return nil // Repository already added
-	}
-
-	// Add the repository
-	c := repo.Entry{
-		Name: name,
-		URL:  url,
-	}
-
-	// Download and verify the repository index
-	chartRepo, err := repo.NewChartRepository(&c, getter.All(settings))
+	// Create chart repository instance for index download
+	chartRepo, err := repo.NewChartRepository(repoEntry, getter.All(settings))
 	if err != nil {
 		return fmt.Errorf("failed to create chart repository: %w", err)
 	}
 
-	// Download the index file
-	if _, err := chartRepo.DownloadIndexFile(); err != nil {
+	// Set the cache path
+	chartRepo.CachePath = settings.RepositoryCache
+
+	// Download the repository index - this validates the repo and caches the index
+	_, err = chartRepo.DownloadIndexFile()
+	if err != nil {
 		return fmt.Errorf("failed to download repository index: %w", err)
 	}
 
-	// Add to repository file and save
-	f.Update(&c)
-	if err := f.WriteFile(repoFile, 0644); err != nil {
-		return fmt.Errorf("failed to write repository file: %w", err)
+	// Add repository to the configuration file
+	repoFile.Update(repoEntry)
+
+	// Write the repository configuration file
+	if err := repoFile.WriteFile(settings.RepositoryConfig, 0644); err != nil {
+		return fmt.Errorf("failed to write repository configuration: %w", err)
 	}
+
+	// Note: We don't clean up tempConfigDir and tempCacheDir here because
+	// Helm will need them for the duration of the chart operations
+	// The calling code should handle cleanup if needed, or rely on OS cleanup
 
 	return nil
 }
@@ -219,7 +223,7 @@ func (r *ComponentReconciler) performHelmCleanup(ctx context.Context, component 
 
 	// Initialize Helm settings and action configuration
 	settings := cli.New()
-	actionConfig := new(action.Configuration)
+	actionConfig := &action.Configuration{}
 
 	// Initialize the action configuration with Kubernetes client
 	if err := actionConfig.Init(settings.RESTClientGetter(), targetNamespace, "secrets", func(format string, v ...interface{}) {

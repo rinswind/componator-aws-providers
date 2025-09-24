@@ -3,7 +3,7 @@
 **Goal**: Configuration schema, claiming protocol, test infrastructure  
 **Status**: Production ready, 13/13 tests passing
 
-### Phase 2: Helm Integration ✅ COMPLETE
+## Phase 2: Helm Integration ✅ COMPLETE
 
 **Goal**: Replace TODO stubs with actual Helm operations  
 **Files**: `internal/controller/helm/operations.go`  
