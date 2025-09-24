@@ -19,6 +19,7 @@ package helm
 import (
 	"context"
 	"fmt"
+	"maps"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -111,10 +112,21 @@ func (r *ComponentReconciler) handleCreation(ctx context.Context, component *dep
 	}
 
 	// Perform Helm deployment operations
-	if err := r.performHelmDeployment(ctx, component); err != nil {
+	annotations, err := r.performHelmDeployment(ctx, component)
+	if err != nil {
 		log.Error(err, "failed to perform helm deployment")
 		util.SetFailedStatus(component, HandlerName, fmt.Sprintf("Deployment error: %v", err))
 		return ctrl.Result{}, r.Status().Update(ctx, component)
+	}
+
+	// Update annotations if needed to avoid unnecessary reconcile loops
+	if needsUpdate := r.ensureAnnotations(component, annotations); needsUpdate {
+		log.Info("Storing deployment metadata in annotations", "annotations", annotations)
+		if err := r.Update(ctx, component); err != nil {
+			log.Error(err, "failed to update component annotations")
+			util.SetFailedStatus(component, HandlerName, fmt.Sprintf("Annotation update error: %v", err))
+			return ctrl.Result{}, r.Status().Update(ctx, component)
+		}
 	}
 
 	if !util.IsReady(component) {
@@ -123,6 +135,30 @@ func (r *ComponentReconciler) handleCreation(ctx context.Context, component *dep
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// ensureAnnotations compares desired annotations with current annotations
+// and updates the component if changes are needed. Returns true if update was needed.
+func (r *ComponentReconciler) ensureAnnotations(component *deploymentsv1alpha1.Component, desiredAnnotations map[string]string) bool {
+	if component.Annotations == nil {
+		component.Annotations = make(map[string]string)
+	}
+
+	// Check if any desired annotations are missing or different
+	needsUpdate := false
+	for key, value := range desiredAnnotations {
+		if component.Annotations[key] != value {
+			needsUpdate = true
+			break
+		}
+	}
+
+	// Only update if changes are needed
+	if needsUpdate {
+		maps.Copy(component.Annotations, desiredAnnotations)
+	}
+
+	return needsUpdate
 }
 
 // handleDeletion implements the deletion protocol for Components being deleted

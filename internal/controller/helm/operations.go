@@ -25,18 +25,26 @@ import (
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 
-// performHelmDeployment handles all Helm-specific deployment operations
-func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, component *deploymentsv1alpha1.Component) error {
-	log := logf.FromContext(ctx)
+const (
+	// DeploymentNamespaceAnnotation stores the actual namespace where Helm release was deployed
+	DeploymentNamespaceAnnotation = "helm.deployment-orchestrator.io/target-namespace"
+	// DeploymentReleaseNameAnnotation stores the actual release name used for Helm deployment
+	DeploymentReleaseNameAnnotation = "helm.deployment-orchestrator.io/release-name"
+)
 
-	// Generate deterministic release name
-	releaseName := r.generateReleaseName(component)
+// performHelmDeployment handles all Helm-specific deployment operations
+// Returns a map of annotations that should be set on the Component
+func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, component *deploymentsv1alpha1.Component) (map[string]string, error) {
+	log := logf.FromContext(ctx)
 
 	// Parse the Helm configuration from Component.Spec.Config
 	config, err := r.parseHelmConfig(component)
 	if err != nil {
-		return fmt.Errorf("failed to parse helm configuration: %w", err)
+		return nil, fmt.Errorf("failed to parse helm configuration: %w", err)
 	}
+
+	// Generate deterministic release name
+	releaseName := r.generateReleaseName(component)
 
 	// Determine target namespace (use config.Namespace if specified, otherwise component namespace)
 	targetNamespace := component.Namespace
@@ -55,21 +63,29 @@ func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, compone
 	// TODO: Implement actual Helm deployment logic in later tasks
 	// For now, just return success after configuration parsing and validation
 
-	return nil
+	// Return annotations that should be set on the Component
+	annotations := map[string]string{
+		DeploymentNamespaceAnnotation:   targetNamespace,
+		DeploymentReleaseNameAnnotation: releaseName,
+	}
+
+	return annotations, nil
 }
 
 // performHelmCleanup handles all Helm-specific cleanup operations
 func (r *ComponentReconciler) performHelmCleanup(ctx context.Context, component *deploymentsv1alpha1.Component) error {
 	log := logf.FromContext(ctx)
 
-	// Generate deterministic release name (same as deployment)
-	releaseName := r.generateReleaseName(component)
+	// Get release name from stored annotation
+	releaseName := component.Annotations[DeploymentReleaseNameAnnotation]
+	if releaseName == "" {
+		return fmt.Errorf("release name annotation %s not found - component may not have been properly deployed", DeploymentReleaseNameAnnotation)
+	}
 
-	// Determine target namespace - we need this to clean up from the correct namespace
-	// Try to get it from config, but don't fail cleanup if config is invalid
-	targetNamespace := component.Namespace
-	if config, err := r.parseHelmConfig(component); err == nil && config.Namespace != "" {
-		targetNamespace = config.Namespace
+	// Get target namespace from stored annotation
+	targetNamespace := component.Annotations[DeploymentNamespaceAnnotation]
+	if targetNamespace == "" {
+		return fmt.Errorf("target namespace annotation %s not found - component may not have been properly deployed", DeploymentNamespaceAnnotation)
 	}
 
 	log.Info("Performing helm cleanup",
