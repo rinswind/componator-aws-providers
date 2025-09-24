@@ -71,7 +71,7 @@ func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, compone
 	actionConfig := &action.Configuration{}
 
 	// Initialize the action configuration with Kubernetes client
-	if err := actionConfig.Init(settings.RESTClientGetter(), targetNamespace, "secrets", func(format string, v ...interface{}) {
+	if err := actionConfig.Init(settings.RESTClientGetter(), targetNamespace, "secrets", func(format string, v ...any) {
 		log.Info(fmt.Sprintf(format, v...))
 	}); err != nil {
 		return nil, fmt.Errorf("failed to initialize helm action configuration: %w", err)
@@ -116,8 +116,8 @@ func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, compone
 		return nil, fmt.Errorf("failed to load chart from %s: %w", cp, err)
 	}
 
-	// Convert config values to map[string]interface{}
-	vals := make(map[string]interface{})
+	// Convert config values to map[string]any
+	vals := make(map[string]any)
 	for key, value := range config.Values {
 		vals[key] = value
 	}
@@ -226,7 +226,7 @@ func (r *ComponentReconciler) performHelmCleanup(ctx context.Context, component 
 	actionConfig := &action.Configuration{}
 
 	// Initialize the action configuration with Kubernetes client
-	if err := actionConfig.Init(settings.RESTClientGetter(), targetNamespace, "secrets", func(format string, v ...interface{}) {
+	if err := actionConfig.Init(settings.RESTClientGetter(), targetNamespace, "secrets", func(format string, v ...any) {
 		log.Info(fmt.Sprintf(format, v...))
 	}); err != nil {
 		return fmt.Errorf("failed to initialize helm action configuration: %w", err)

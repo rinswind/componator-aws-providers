@@ -39,7 +39,7 @@ type HelmConfig struct {
 
 	// Values contains key-value pairs for chart values override
 	// +optional
-	Values map[string]string `json:"values,omitempty"`
+	Values map[string]any `json:"values,omitempty"`
 
 	// Namespace specifies the target namespace for chart deployment
 	// If not specified, uses the Component's namespace

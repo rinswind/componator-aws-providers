@@ -1,0 +1,58 @@
+apiVersion: deployment-orchestrator.io/v1alpha1
+kind: Component
+metadata:
+  name: nginx-advanced
+  namespace: default
+  labels:
+    app.kubernetes.io/name: nginx-advanced
+    app.kubernetes.io/component: web-server
+    app.kubernetes.io/managed-by: deployment-handlers
+spec:
+  name: nginx-advanced
+  handler: helm
+  config: |
+    repository:
+      name: bitnami
+      url: https://repo.broadcom.com/bitnami-files
+    chart:
+      name: nginx
+      version: "18.2.4"
+    values:
+      replicaCount: 3
+      image:
+        pullPolicy: Always
+      service:
+        type: LoadBalancer
+        port: 80
+        annotations:
+          service.beta.kubernetes.io/aws-load-balancer-type: nlb
+      ingress:
+        enabled: true
+        ingressClassName: nginx
+        hostname: nginx.example.com
+        tls: true
+        selfSigned: true
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+        requests:
+          cpu: 250m
+          memory: 256Mi
+      autoscaling:
+        enabled: true
+        minReplicas: 2
+        maxReplicas: 10
+        targetCPUUtilizationPercentage: 70
+      podSecurityContext:
+        fsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 1001

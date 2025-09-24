@@ -1,0 +1,65 @@
+apiVersion: deployment-orchestrator.io/v1alpha1
+kind: Component
+metadata:
+  name: wordpress-blog
+  namespace: default
+  labels:
+    app.kubernetes.io/name: wordpress-blog
+    app.kubernetes.io/component: cms
+    app.kubernetes.io/managed-by: deployment-handlers
+spec:
+  name: wordpress
+  handler: helm
+  config: |
+    repository:
+      name: bitnami
+      url: https://repo.broadcom.com/bitnami-files
+    chart:
+      name: wordpress
+      version: "23.1.40"
+    values:
+      wordpressUsername: admin
+      wordpressPassword: changeme123!
+      wordpressEmail: admin@example.com
+      wordpressFirstName: Admin
+      wordpressLastName: User
+      wordpressBlogName: My Awesome Blog
+      service:
+        type: LoadBalancer
+        port: 80
+      ingress:
+        enabled: true
+        ingressClassName: nginx
+        hostname: blog.example.com
+        tls: true
+        selfSigned: true
+      persistence:
+        enabled: true
+        size: 10Gi
+        storageClass: gp2
+      resources:
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+        requests:
+          cpu: 500m
+          memory: 512Mi
+      mariadb:
+        enabled: true
+        auth:
+          rootPassword: rootpassword123!
+          database: wordpress
+          username: wordpress
+          password: wordpressdb123!
+        primary:
+          persistence:
+            enabled: true
+            size: 8Gi
+            storageClass: gp2
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 250m
+              memory: 256Mi

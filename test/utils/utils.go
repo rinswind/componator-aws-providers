@@ -25,6 +25,11 @@ import (
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 
 const (
@@ -223,4 +228,33 @@ func UncommentCode(filename, target, prefix string) error {
 	}
 
 	return nil
+}
+
+// SetupK8sClient creates a Kubernetes client using the current kubeconfig
+func SetupK8sClient() (client.Client, error) {
+	// Load kubeconfig from default location
+	kubeconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		clientcmd.NewDefaultClientConfigLoadingRules(),
+		&clientcmd.ConfigOverrides{},
+	)
+
+	config, err := kubeconfig.ClientConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load kubeconfig: %w", err)
+	}
+
+	// Register our API types with the scheme
+	s := scheme.Scheme
+	err = deploymentsv1alpha1.AddToScheme(s)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add deployment API types to scheme: %w", err)
+	}
+
+	// Create controller-runtime client
+	k8sClient, err := client.New(config, client.Options{Scheme: s})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+
+	return k8sClient, nil
 }

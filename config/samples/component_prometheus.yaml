@@ -1,0 +1,82 @@
+apiVersion: deployment-orchestrator.io/v1alpha1
+kind: Component
+metadata:
+  name: prometheus-monitoring
+  namespace: default
+  labels:
+    app.kubernetes.io/name: prometheus-monitoring
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/managed-by: deployment-handlers
+spec:
+  name: prometheus
+  handler: helm
+  config: |
+    repository:
+      name: prometheus-community
+      url: https://prometheus-community.github.io/helm-charts
+    chart:
+      name: kube-prometheus-stack
+      version: "65.1.1"
+    namespace: monitoring
+    values:
+      prometheus:
+        prometheusSpec:
+          retention: 30d
+          storageSpec:
+            volumeClaimTemplate:
+              spec:
+                storageClassName: gp2
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 50Gi
+          resources:
+            limits:
+              cpu: 2000m
+              memory: 4Gi
+            requests:
+              cpu: 1000m
+              memory: 2Gi
+        ingress:
+          enabled: true
+          ingressClassName: nginx
+          hosts:
+            - prometheus.example.com
+          tls:
+            - secretName: prometheus-tls
+              hosts:
+                - prometheus.example.com
+      grafana:
+        adminPassword: admin123!
+        persistence:
+          enabled: true
+          size: 10Gi
+          storageClassName: gp2
+        ingress:
+          enabled: true
+          ingressClassName: nginx
+          hosts:
+            - grafana.example.com
+          tls:
+            - secretName: grafana-tls
+              hosts:
+                - grafana.example.com
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 250m
+            memory: 256Mi
+      alertmanager:
+        alertmanagerSpec:
+          storage:
+            volumeClaimTemplate:
+              spec:
+                storageClassName: gp2
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 10Gi

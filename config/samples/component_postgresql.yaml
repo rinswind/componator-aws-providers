@@ -1,0 +1,61 @@
+apiVersion: deployment-orchestrator.io/v1alpha1
+kind: Component
+metadata:
+  name: postgresql-db
+  namespace: default
+  labels:
+    app.kubernetes.io/name: postgresql-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: deployment-handlers
+spec:
+  name: postgres
+  handler: helm
+  config: |
+    repository:
+      name: bitnami
+      url: https://repo.broadcom.com/bitnami-files
+    chart:
+      name: postgresql
+      version: "16.2.1"
+    values:
+      auth:
+        postgresPassword: postgres123!
+        username: appuser
+        password: appuser123!
+        database: application
+      architecture: standalone
+      primary:
+        persistence:
+          enabled: true
+          size: 20Gi
+          storageClass: gp2
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+          requests:
+            cpu: 500m
+            memory: 512Mi
+        extendedConfiguration: |
+          max_connections = 200
+          shared_buffers = 256MB
+          effective_cache_size = 512MB
+          work_mem = 2MB
+          maintenance_work_mem = 64MB
+          checkpoint_completion_target = 0.9
+          wal_buffers = 16MB
+          default_statistics_target = 100
+      metrics:
+        enabled: true
+        serviceMonitor:
+          enabled: true
+          namespace: monitoring
+      networkPolicy:
+        enabled: true
+        allowExternal: false
+      backup:
+        enabled: false
+        cronjob:
+          schedule: "0 2 * * *"
+          storage:
+            size: 50Gi

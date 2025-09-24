@@ -44,7 +44,7 @@ Component configuration for Helm deployments is passed through the `spec.config`
 
 ### Optional Fields
 
-- **values**: Key-value pairs for chart values override (all values must be strings)
+- **values**: Key-value pairs for chart values override (supports any JSON type: strings, numbers, booleans, objects, arrays)
 - **namespace**: Target namespace for chart deployment (defaults to Component namespace)
 
 ### Configuration Examples

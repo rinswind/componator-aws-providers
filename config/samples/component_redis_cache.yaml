@@ -1,0 +1,58 @@
+apiVersion: deployment-orchestrator.io/v1alpha1
+kind: Component
+metadata:
+  name: redis-cache
+  namespace: default
+  labels:
+    app.kubernetes.io/name: redis-cache
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/managed-by: deployment-handlers
+spec:
+  name: redis
+  handler: helm
+  config: |
+    repository:
+      name: bitnami
+      url: https://repo.broadcom.com/bitnami-files
+    chart:
+      name: redis
+      version: "20.2.1"
+    namespace: cache-system
+    values:
+      auth:
+        enabled: true
+        password: redis123!
+      architecture: standalone
+      master:
+        persistence:
+          enabled: true
+          size: 8Gi
+          storageClass: gp2
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 250m
+            memory: 256Mi
+      metrics:
+        enabled: true
+        serviceMonitor:
+          enabled: true
+          namespace: monitoring
+      networkPolicy:
+        enabled: true
+        allowExternal: false
+      podSecurityContext:
+        enabled: true
+        fsGroup: 1001
+        runAsUser: 1001
+        runAsNonRoot: true
+      containerSecurityContext:
+        enabled: true
+        runAsUser: 1001
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
