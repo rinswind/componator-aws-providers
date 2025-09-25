@@ -115,3 +115,29 @@ func gatherHelmReleaseResources(ctx context.Context, rel *release.Release) (kube
 
 	return resourceList, nil
 }
+
+// extractReleaseInfo gets the release name and target namespace based on the operation mode
+// For installs: generates release name and determines namespace from component/config
+// For upgrades: extracts release name and namespace from component annotations
+func extractReleaseInfo(component *deploymentsv1alpha1.Component, config *HelmConfig) (string, string, error) {
+	if config != nil {
+		// For installs: generate name and determine namespace
+		releaseName := generateReleaseName(component)
+		targetNamespace := component.Namespace
+		if config.Namespace != "" {
+			targetNamespace = config.Namespace
+		}
+		return releaseName, targetNamespace, nil
+	} else {
+		// For upgrades: get from annotations
+		releaseName := component.Annotations[DeploymentReleaseNameAnnotation]
+		if releaseName == "" {
+			return "", "", fmt.Errorf("release name annotation %s not found - component may not have been properly deployed", DeploymentReleaseNameAnnotation)
+		}
+		targetNamespace := component.Annotations[DeploymentNamespaceAnnotation]
+		if targetNamespace == "" {
+			return "", "", fmt.Errorf("target namespace annotation %s not found - component may not have been properly deployed", DeploymentNamespaceAnnotation)
+		}
+		return releaseName, targetNamespace, nil
+	}
+}

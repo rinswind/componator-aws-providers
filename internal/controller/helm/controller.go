@@ -189,8 +189,33 @@ func (r *ComponentReconciler) handleCreation(
 			return ctrl.Result{}, nil
 		}
 
-		// TODO: Start upgrade and set back to Deploying
-		return ctrl.Result{}, nil
+		// Start upgrade and set back to Deploying
+		log.Info("Component is dirty, starting helm upgrade")
+
+		annotations, err := startHelmReleaseUpgrade(ctx, component)
+		if err != nil {
+			log.Error(err, "failed to perform helm upgrade")
+			util.SetFailedStatus(component, HandlerName, err.Error())
+			return ctrl.Result{}, r.Status().Update(ctx, component)
+		}
+
+		util.SetDeployingStatus(component, HandlerName)
+		if err := r.Status().Update(ctx, component); err != nil {
+			log.Error(err, "failed to update deploying status")
+			return ctrl.Result{}, err
+		}
+
+		// Update annotations if needed to avoid unnecessary reconcile loops
+		if needsUpdate := r.ensureAnnotations(component, annotations); needsUpdate {
+			log.Info("Storing deployment metadata in annotations", "annotations", annotations)
+			if err := r.Update(ctx, component); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+
+		// Start waiting for upgrade to complete
+		log.Info("Started upgrade, checking again in 10 seconds")
+		return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
 	}
 
 	return ctrl.Result{}, fmt.Errorf("Component in unexpected phase: %s", component.Status.Phase)

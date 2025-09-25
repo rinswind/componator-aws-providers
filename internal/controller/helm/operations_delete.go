@@ -36,16 +36,10 @@ import (
 func startHelmReleaseDeletion(ctx context.Context, component *deploymentsv1alpha1.Component) error {
 	log := logf.FromContext(ctx)
 
-	// Get release name from stored annotation
-	releaseName := component.Annotations[DeploymentReleaseNameAnnotation]
-	if releaseName == "" {
-		return fmt.Errorf("release name annotation %s not found - component may not have been properly deployed", DeploymentReleaseNameAnnotation)
-	}
-
-	// Get target namespace from stored annotation
-	targetNamespace := component.Annotations[DeploymentNamespaceAnnotation]
-	if targetNamespace == "" {
-		return fmt.Errorf("target namespace annotation %s not found - component may not have been properly deployed", DeploymentNamespaceAnnotation)
+	// Extract release name and target namespace from annotations
+	releaseName, targetNamespace, err := extractReleaseInfo(component, nil)
+	if err != nil {
+		return err
 	}
 
 	log.Info("Performing helm cleanup",

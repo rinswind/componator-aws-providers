@@ -20,6 +20,8 @@ limitations under the License.
 package helm
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -65,8 +67,10 @@ var _ = Describe("Helm Controller", func() {
 
 			// Create reconciler
 			reconciler := &ComponentReconciler{
-				Client: k8sClient,
-				Scheme: scheme.Scheme,
+				Client:         k8sClient,
+				Scheme:         scheme.Scheme,
+				claimValidator: util.NewClaimingProtocolValidator("helm"),
+				requeuePeriod:  10 * time.Second,
 			}
 
 			// Test reconciliation
@@ -105,8 +109,10 @@ var _ = Describe("Helm Controller", func() {
 
 			// Create reconciler
 			reconciler := &ComponentReconciler{
-				Client: k8sClient,
-				Scheme: scheme.Scheme,
+				Client:         k8sClient,
+				Scheme:         scheme.Scheme,
+				claimValidator: util.NewClaimingProtocolValidator("helm"),
+				requeuePeriod:  10 * time.Second,
 			}
 
 			// Test reconciliation
@@ -182,8 +188,10 @@ var _ = Describe("Helm Controller", func() {
 
 			// Create reconciler
 			reconciler := &ComponentReconciler{
-				Client: k8sClient,
-				Scheme: scheme.Scheme,
+				Client:         k8sClient,
+				Scheme:         scheme.Scheme,
+				claimValidator: util.NewClaimingProtocolValidator("helm"),
+				requeuePeriod:  10 * time.Second,
 			}
 
 			// Test reconciliation
@@ -196,7 +204,7 @@ var _ = Describe("Helm Controller", func() {
 
 			result, err := reconciler.Reconcile(ctx, req)
 
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).To(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
 			// Cleanup
