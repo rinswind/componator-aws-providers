@@ -136,19 +136,19 @@ var _ = Describe("Helm Controller", func() {
 			_, err = reconciler.Reconcile(ctx, req)
 			Expect(err).NotTo(HaveOccurred()) // Controller should handle errors gracefully by setting status
 
-			// Check that status was updated to Deploying after second reconciliation
+			// Check that status was updated to Failed immediately due to config error
 			var deployingComponent deploymentsv1alpha1.Component
 			Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name:      "test-helm-component-no-config",
 				Namespace: "default",
 			}, &deployingComponent)).To(Succeed())
-			Expect(deployingComponent.Status.Phase).To(Equal(deploymentsv1alpha1.ComponentPhaseDeploying))
+			Expect(deployingComponent.Status.Phase).To(Equal(deploymentsv1alpha1.ComponentPhaseFailed))
 
-			// Third reconciliation should fail on config validation
+			// Third reconciliation should remain in Failed state
 			_, err = reconciler.Reconcile(ctx, req)
 			Expect(err).NotTo(HaveOccurred()) // Controller should handle errors gracefully by setting status
 
-			// Check that status was updated to Failed after third reconciliation
+			// Check that status remains Failed after third reconciliation
 			var updatedComponent deploymentsv1alpha1.Component
 			Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name:      "test-helm-component-no-config",

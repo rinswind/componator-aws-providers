@@ -57,7 +57,7 @@ var _ = Describe("Helm Configuration", func() {
 		})
 
 		It("should parse valid helm configuration", func() {
-			// Create component with valid helm config
+			// Create component with valid helm config using nested YAML structure
 			configJSON := `{
 				"repository": {
 					"url": "https://charts.bitnami.com/bitnami",
@@ -68,8 +68,10 @@ var _ = Describe("Helm Configuration", func() {
 					"version": "15.4.4"
 				},
 				"values": {
-					"service.type": "LoadBalancer",
-					"replicaCount": "3"
+					"service": {
+						"type": "LoadBalancer"
+					},
+					"replicaCount": 3
 				},
 				"namespace": "web"
 			}`
@@ -95,8 +97,14 @@ var _ = Describe("Helm Configuration", func() {
 			Expect(config.Chart.Name).To(Equal("nginx"))
 			Expect(config.Chart.Version).To(Equal("15.4.4"))
 			Expect(config.Namespace).To(Equal("web"))
-			Expect(config.Values).To(HaveKeyWithValue("service.type", "LoadBalancer"))
-			Expect(config.Values).To(HaveKeyWithValue("replicaCount", "3"))
+
+			// Test nested values structure
+			serviceConfig, exists := config.Values["service"]
+			Expect(exists).To(BeTrue())
+			serviceMap, ok := serviceConfig.(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(serviceMap).To(HaveKeyWithValue("type", "LoadBalancer"))
+			Expect(config.Values).To(HaveKeyWithValue("replicaCount", float64(3))) // JSON numbers are float64
 		})
 
 		It("should parse minimal helm configuration", func() {
@@ -136,8 +144,8 @@ var _ = Describe("Helm Configuration", func() {
 			Expect(config.Values).To(BeEmpty())
 		})
 
-		It("should parse configuration with complex values", func() {
-			// Create component with complex values configuration
+		It("should parse configuration with complex nested values", func() {
+			// Create component with complex nested values configuration
 			configJSON := `{
 				"repository": {
 					"url": "https://charts.bitnami.com/bitnami",
@@ -148,11 +156,23 @@ var _ = Describe("Helm Configuration", func() {
 					"version": "12.12.10"
 				},
 				"values": {
-					"auth.postgresPassword": "mysecretpassword",
-					"auth.database": "myapp",
-					"persistence.size": "20Gi",
-					"metrics.enabled": "true",
-					"primary.resources.requests.memory": "256Mi"
+					"auth": {
+						"postgresPassword": "mysecretpassword",
+						"database": "myapp"
+					},
+					"persistence": {
+						"size": "20Gi"
+					},
+					"metrics": {
+						"enabled": true
+					},
+					"primary": {
+						"resources": {
+							"requests": {
+								"memory": "256Mi"
+							}
+						}
+					}
 				},
 				"namespace": "database"
 			}`
@@ -178,11 +198,36 @@ var _ = Describe("Helm Configuration", func() {
 			Expect(config.Chart.Name).To(Equal("postgresql"))
 			Expect(config.Chart.Version).To(Equal("12.12.10"))
 			Expect(config.Namespace).To(Equal("database"))
-			Expect(config.Values).To(HaveKeyWithValue("auth.postgresPassword", "mysecretpassword"))
-			Expect(config.Values).To(HaveKeyWithValue("auth.database", "myapp"))
-			Expect(config.Values).To(HaveKeyWithValue("persistence.size", "20Gi"))
-			Expect(config.Values).To(HaveKeyWithValue("metrics.enabled", "true"))
-			Expect(config.Values).To(HaveKeyWithValue("primary.resources.requests.memory", "256Mi"))
+
+			// Test nested auth values
+			authConfig, exists := config.Values["auth"]
+			Expect(exists).To(BeTrue())
+			authMap, ok := authConfig.(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(authMap).To(HaveKeyWithValue("postgresPassword", "mysecretpassword"))
+			Expect(authMap).To(HaveKeyWithValue("database", "myapp"))
+
+			// Test nested persistence values
+			persistenceConfig, exists := config.Values["persistence"]
+			Expect(exists).To(BeTrue())
+			persistenceMap, ok := persistenceConfig.(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(persistenceMap).To(HaveKeyWithValue("size", "20Gi"))
+
+			// Test deeply nested primary.resources.requests.memory
+			primaryConfig, exists := config.Values["primary"]
+			Expect(exists).To(BeTrue())
+			primaryMap, ok := primaryConfig.(map[string]any)
+			Expect(ok).To(BeTrue())
+			resourcesConfig, exists := primaryMap["resources"]
+			Expect(exists).To(BeTrue())
+			resourcesMap, ok := resourcesConfig.(map[string]any)
+			Expect(ok).To(BeTrue())
+			requestsConfig, exists := resourcesMap["requests"]
+			Expect(exists).To(BeTrue())
+			requestsMap, ok := requestsConfig.(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(requestsMap).To(HaveKeyWithValue("memory", "256Mi"))
 		})
 
 		It("should fail when config is nil", func() {

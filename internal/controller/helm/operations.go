@@ -164,11 +164,8 @@ func performHelmDeployment(ctx context.Context, component *deploymentsv1alpha1.C
 		return nil, fmt.Errorf("failed to load chart from %s: %w", cp, err)
 	}
 
-	// Convert config values to map[string]any
-	vals := make(map[string]any)
-	for key, value := range config.Values {
-		vals[key] = value
-	}
+	// Use config values directly - already in correct nested format for Helm
+	vals := config.Values
 
 	// Install the chart
 	rel, err := installAction.Run(chart, vals)
