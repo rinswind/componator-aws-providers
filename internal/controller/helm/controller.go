@@ -138,21 +138,21 @@ func (r *ComponentReconciler) handleCreation(
 
 	// 3. If Deploying -> check progress
 	if util.IsDeploying(component) {
-		rel, err := getHelmReleaseStatus(ctx, component)
+		rel, err := getHelmRelease(ctx, component)
 		if err != nil {
 			log.Error(err, "failed to check helm release readiness")
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, r.Status().Update(ctx, component)
 		}
 
 		// Build ResourceList from release manifest for non-blocking status checking
-		resourceList, err := buildResourceListFromRelease(ctx, rel)
+		resourceList, err := gatherHelmReleaseResources(ctx, rel)
 		if err != nil {
 			log.Error(err, "failed to build resource list from release")
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
 
 		// Use non-blocking readiness check
-		ready, err := checkResourcesReady(ctx, resourceList)
+		ready, err := checkHelmReleaseState(ctx, resourceList)
 		if err != nil {
 			log.Error(err, "deployment failed")
 			util.SetFailedStatus(component, HandlerName, err.Error())
@@ -170,27 +170,7 @@ func (r *ComponentReconciler) handleCreation(
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
-	// 4. If dirty -> start upgrade
-	if util.IsDirty(component) {
-		log.Info("Component is dirty, starting upgrade")
-		// TODO: Perform helm upgrade here
-
-		return ctrl.Result{}, nil
-	}
-
-	// 5. If in terminal state -> do nothing
-	if util.IsReady(component) {
-		if !util.IsDirty(component) {
-			// Nothing to do
-			return ctrl.Result{}, nil
-		}
-
-		// TODO: Start upgrade and set to Deploying
-		log.Info("Component is in terminal state, nothing to do")
-		return ctrl.Result{}, nil
-	}
-
-	// 5. If in terminal state -> check if dirty
+	// 4. If in terminal state -> check if dirty
 	if util.IsReady(component) || util.IsFailed(component) {
 		if !util.IsDirty(component) {
 			// Nothing to do
@@ -198,7 +178,6 @@ func (r *ComponentReconciler) handleCreation(
 		}
 
 		// TODO: Start upgrade and set back to Deploying
-		log.Info("Component is in terminal state, nothing to do")
 		return ctrl.Result{}, nil
 	}
 

@@ -71,6 +71,24 @@ func generateReleaseName(component *deploymentsv1alpha1.Component) string {
 	return fmt.Sprintf("%s-%s", component.Namespace, component.Name)
 }
 
+// setupHelmActionConfig creates and initializes Helm settings and action configuration
+// This is a common pattern used across multiple Helm operations
+func setupHelmActionConfig(ctx context.Context, namespace string) (*cli.EnvSettings, *action.Configuration, error) {
+	log := logf.FromContext(ctx)
+
+	settings := cli.New()
+	actionConfig := &action.Configuration{}
+
+	// Initialize the action configuration with Kubernetes client
+	if err := actionConfig.Init(settings.RESTClientGetter(), namespace, "secrets", func(format string, v ...any) {
+		log.Info(fmt.Sprintf(format, v...))
+	}); err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize helm action configuration: %w", err)
+	}
+
+	return settings, actionConfig, nil
+}
+
 // performHelmDeployment handles all Helm-specific deployment operations
 // Returns a map of annotations that should be set on the Component
 func performHelmDeployment(ctx context.Context, component *deploymentsv1alpha1.Component) (map[string]string, error) {
@@ -100,14 +118,9 @@ func performHelmDeployment(ctx context.Context, component *deploymentsv1alpha1.C
 		"valuesCount", len(config.Values))
 
 	// Initialize Helm settings and action configuration
-	settings := cli.New()
-	actionConfig := &action.Configuration{}
-
-	// Initialize the action configuration with Kubernetes client
-	if err := actionConfig.Init(settings.RESTClientGetter(), targetNamespace, "secrets", func(format string, v ...any) {
-		log.Info(fmt.Sprintf(format, v...))
-	}); err != nil {
-		return nil, fmt.Errorf("failed to initialize helm action configuration: %w", err)
+	settings, actionConfig, err := setupHelmActionConfig(ctx, targetNamespace)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check if release already exists
@@ -257,14 +270,9 @@ func performHelmCleanup(ctx context.Context, component *deploymentsv1alpha1.Comp
 		"targetNamespace", targetNamespace)
 
 	// Initialize Helm settings and action configuration
-	settings := cli.New()
-	actionConfig := &action.Configuration{}
-
-	// Initialize the action configuration with Kubernetes client
-	if err := actionConfig.Init(settings.RESTClientGetter(), targetNamespace, "secrets", func(format string, v ...any) {
-		log.Info(fmt.Sprintf(format, v...))
-	}); err != nil {
-		return fmt.Errorf("failed to initialize helm action configuration: %w", err)
+	_, actionConfig, err := setupHelmActionConfig(ctx, targetNamespace)
+	if err != nil {
+		return err
 	}
 
 	// Check if release exists
@@ -296,10 +304,7 @@ func performHelmCleanup(ctx context.Context, component *deploymentsv1alpha1.Comp
 }
 
 // checkHelmReleaseReadiness verifies if a Helm release and its resources are ready
-func getHelmReleaseStatus(ctx context.Context, component *deploymentsv1alpha1.Component) (*release.Release, error) {
-
-	log := logf.FromContext(ctx)
-
+func getHelmRelease(ctx context.Context, component *deploymentsv1alpha1.Component) (*release.Release, error) {
 	// Get release name from stored annotation
 	releaseName := component.Annotations[DeploymentReleaseNameAnnotation]
 	if releaseName == "" {
@@ -313,14 +318,9 @@ func getHelmReleaseStatus(ctx context.Context, component *deploymentsv1alpha1.Co
 	}
 
 	// Initialize Helm settings and action configuration
-	settings := cli.New()
-	actionConfig := &action.Configuration{}
-
-	// Initialize the action configuration with Kubernetes client
-	if err := actionConfig.Init(settings.RESTClientGetter(), targetNamespace, "secrets", func(format string, v ...any) {
-		log.Info(fmt.Sprintf(format, v...))
-	}); err != nil {
-		return nil, fmt.Errorf("failed to initialize helm action configuration: %w", err)
+	_, actionConfig, err := setupHelmActionConfig(ctx, targetNamespace)
+	if err != nil {
+		return nil, err
 	}
 
 	// Get release status
@@ -333,33 +333,9 @@ func getHelmReleaseStatus(ctx context.Context, component *deploymentsv1alpha1.Co
 	return rel, nil
 }
 
-func checkReleaseStatus(ctx context.Context, rel *release.Release) (bool, error) {
-	log := logf.FromContext(ctx)
-
-	if rel.Info.Status.IsPending() {
-		log.Info("Release is in pending state", "status", rel.Info.Status.String())
-		return false, nil
-	}
-
-	if rel.Info.Status == release.StatusFailed {
-		return false, fmt.Errorf("helm release is in failed state: %s", rel.Info.Status.String())
-	}
-
-	if rel.Info.Status == release.StatusDeployed {
-		log.Info("Helm release is deployed",
-			"releaseName", rel.Name,
-			"status", rel.Info.Status.String(),
-			"version", rel.Version)
-
-		return true, nil
-	}
-
-	return false, fmt.Errorf("unexpected release state: %s", rel.Info.Status.String())
-}
-
-// buildResourceListFromRelease extracts Kubernetes resources from a Helm release manifest
+// gatherHelmReleaseResources extracts Kubernetes resources from a Helm release manifest
 // and builds a ResourceList for status checking
-func buildResourceListFromRelease(ctx context.Context, rel *release.Release) (kube.ResourceList, error) {
+func gatherHelmReleaseResources(ctx context.Context, rel *release.Release) (kube.ResourceList, error) {
 	log := logf.FromContext(ctx)
 
 	if rel.Manifest == "" {
@@ -368,14 +344,9 @@ func buildResourceListFromRelease(ctx context.Context, rel *release.Release) (ku
 	}
 
 	// Initialize Helm settings and action configuration to get access to kube.Client
-	settings := cli.New()
-	actionConfig := &action.Configuration{}
-
-	// Initialize with the same namespace as the release
-	if err := actionConfig.Init(settings.RESTClientGetter(), rel.Namespace, "secrets", func(format string, v ...any) {
-		log.V(1).Info(fmt.Sprintf(format, v...))
-	}); err != nil {
-		return nil, fmt.Errorf("failed to initialize helm action configuration: %w", err)
+	_, actionConfig, err := setupHelmActionConfig(ctx, rel.Namespace)
+	if err != nil {
+		return nil, err
 	}
 
 	// Get the KubeClient from the action configuration
@@ -394,8 +365,8 @@ func buildResourceListFromRelease(ctx context.Context, rel *release.Release) (ku
 	return resourceList, nil
 }
 
-// checkResourcesReady performs non-blocking readiness checks on Kubernetes resources
-func checkResourcesReady(ctx context.Context, resourceList kube.ResourceList) (bool, error) {
+// checkHelmReleaseState performs non-blocking readiness checks on Kubernetes resources
+func checkHelmReleaseState(ctx context.Context, resourceList kube.ResourceList) (bool, error) {
 	log := logf.FromContext(ctx)
 
 	if len(resourceList) == 0 {
@@ -446,11 +417,9 @@ func checkResourcesReady(ctx context.Context, resourceList kube.ResourceList) (b
 		}
 	}
 
-	allReady := notReadyCount == 0
+	allReady := (notReadyCount == 0)
 	if !allReady {
-		log.Info("Some resources not ready",
-			"notReady", notReadyCount,
-			"total", len(resourceList))
+		log.Info("Some resources not ready", "notReady", notReadyCount, "total", len(resourceList))
 	} else {
 		log.Info("All resources ready", "total", len(resourceList))
 	}
