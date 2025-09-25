@@ -110,7 +110,7 @@ func (r *ComponentReconciler) handleCreation(
 	if util.IsClaimed(component) {
 		log.Info("Starting deployment of component")
 
-		annotations, err := performHelmDeployment(ctx, component)
+		annotations, err := startHelmReleaseDeployment(ctx, component)
 		if err != nil {
 			log.Error(err, "failed to perform helm deployment")
 			util.SetFailedStatus(component, HandlerName, err.Error())
@@ -152,7 +152,7 @@ func (r *ComponentReconciler) handleCreation(
 		}
 
 		// Use non-blocking readiness check
-		ready, err := checkHelmReleaseState(ctx, resourceList)
+		ready, err := checkHelmReleaseReady(ctx, rel.Namespace, resourceList)
 		if err != nil {
 			log.Error(err, "deployment failed")
 			util.SetFailedStatus(component, HandlerName, err.Error())
@@ -219,27 +219,44 @@ func (r *ComponentReconciler) handleDeletion(ctx context.Context, component *dep
 		return ctrl.Result{RequeueAfter: time.Second * 5}, nil
 	}
 
-	// Set terminating status if not already set
+	// 1. If Terminating status not set -> initiate deletion
 	if !util.IsTerminating(component) {
 		log.Info("Beginning component cleanup", "component", component.Name)
 		util.SetTerminatingStatus(component, HandlerName)
 		if err := r.Status().Update(ctx, component); err != nil {
 			log.Error(err, "failed to update terminating status")
-			// Don't return error - continue with cleanup
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
+
+		// Start async helm cleanup
+		if err := startHelmReleaseDeletion(ctx, component); err != nil {
+			log.Error(err, "failed to start helm cleanup")
+			util.SetFailedStatus(component, HandlerName, fmt.Sprintf("Cleanup initiation failed: %v", err))
+			if statusErr := r.Status().Update(ctx, component); statusErr != nil {
+				log.Error(statusErr, "failed to update failed status")
+			}
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
+
+		log.Info("Started cleanup, checking again in 10 seconds")
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
-	// Perform Helm cleanup operations
-	if err := performHelmCleanup(ctx, component); err != nil {
-		log.Error(err, "failed to perform helm cleanup")
-		// Set failed status but continue with finalizer removal to avoid blocking deletion
-		util.SetFailedStatus(component, HandlerName, fmt.Sprintf("Cleanup error: %v", err))
-		if statusErr := r.Status().Update(ctx, component); statusErr != nil {
-			log.Error(statusErr, "failed to update failed status during cleanup")
-		}
+	// 2. If Terminating -> check deletion progress
+	deleted, err := checkHelmReleaseDeleted(ctx, component)
+	if err != nil {
+		log.Error(err, "deletion failed")
+		util.SetFailedStatus(component, HandlerName, err.Error())
+		return ctrl.Result{}, r.Status().Update(ctx, component)
 	}
 
-	// Remove our finalizer to complete cleanup
+	if !deleted {
+		log.Info("Deletion in progress, checking again in 10 seconds")
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+
+	// 3. Deletion complete -> remove finalizer
+	log.Info("Helm release deletion completed")
 	util.RemoveHandlerFinalizer(component, HandlerName)
 	if err := r.Update(ctx, component); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)

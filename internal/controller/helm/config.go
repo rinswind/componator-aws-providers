@@ -74,7 +74,7 @@ type HelmChart struct {
 }
 
 // parseHelmConfig unmarshals Component.Spec.Config into HelmConfig struct
-func (r *ComponentReconciler) parseHelmConfig(component *deploymentsv1alpha1.Component) (*HelmConfig, error) {
+func parseHelmConfig(component *deploymentsv1alpha1.Component) (*HelmConfig, error) {
 	if component.Spec.Config == nil {
 		return nil, fmt.Errorf("config is required for helm components")
 	}
@@ -94,7 +94,7 @@ func (r *ComponentReconciler) parseHelmConfig(component *deploymentsv1alpha1.Com
 }
 
 // generateReleaseName creates a deterministic release name from Component metadata
-func (r *ComponentReconciler) generateReleaseName(component *deploymentsv1alpha1.Component) string {
+func generateReleaseName(component *deploymentsv1alpha1.Component) string {
 	// Use component name and namespace to ensure uniqueness
 	return fmt.Sprintf("%s-%s", component.Namespace, component.Name)
 }

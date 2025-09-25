@@ -25,8 +25,6 @@ import (
 	. "github.com/onsi/gomega"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/scheme"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
@@ -37,25 +35,6 @@ func init() {
 
 var _ = Describe("Helm Configuration", func() {
 	Context("When parsing Helm configuration", func() {
-		var reconciler *ComponentReconciler
-
-		BeforeEach(func() {
-			// Setup scheme
-			s := scheme.Scheme
-			err := deploymentsv1alpha1.AddToScheme(s)
-			Expect(err).NotTo(HaveOccurred())
-
-			// Create fake client
-			client := fake.NewClientBuilder().
-				WithScheme(s).
-				Build()
-
-			reconciler = &ComponentReconciler{
-				Client: client,
-				Scheme: s,
-			}
-		})
-
 		It("should parse valid helm configuration", func() {
 			// Create component with valid helm config using nested YAML structure
 			configJSON := `{
@@ -88,7 +67,7 @@ var _ = Describe("Helm Configuration", func() {
 				},
 			}
 
-			config, err := reconciler.parseHelmConfig(component)
+			config, err := parseHelmConfig(component)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(config).NotTo(BeNil())
 
@@ -132,7 +111,7 @@ var _ = Describe("Helm Configuration", func() {
 				},
 			}
 
-			config, err := reconciler.parseHelmConfig(component)
+			config, err := parseHelmConfig(component)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(config).NotTo(BeNil())
 
@@ -189,7 +168,7 @@ var _ = Describe("Helm Configuration", func() {
 				},
 			}
 
-			config, err := reconciler.parseHelmConfig(component)
+			config, err := parseHelmConfig(component)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(config).NotTo(BeNil())
 
@@ -243,7 +222,7 @@ var _ = Describe("Helm Configuration", func() {
 				},
 			}
 
-			config, err := reconciler.parseHelmConfig(component)
+			config, err := parseHelmConfig(component)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("config is required for helm components"))
 			Expect(config).To(BeNil())
@@ -274,7 +253,7 @@ var _ = Describe("Helm Configuration", func() {
 				},
 			}
 
-			config, err := reconciler.parseHelmConfig(component)
+			config, err := parseHelmConfig(component)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("validation failed"))
 			Expect(config).To(BeNil())
@@ -282,12 +261,6 @@ var _ = Describe("Helm Configuration", func() {
 	})
 
 	Context("When generating release names", func() {
-		var reconciler *ComponentReconciler
-
-		BeforeEach(func() {
-			reconciler = &ComponentReconciler{}
-		})
-
 		It("should generate deterministic release names", func() {
 			component := &deploymentsv1alpha1.Component{
 				ObjectMeta: metav1.ObjectMeta{
@@ -296,11 +269,11 @@ var _ = Describe("Helm Configuration", func() {
 				},
 			}
 
-			releaseName := reconciler.generateReleaseName(component)
+			releaseName := generateReleaseName(component)
 			Expect(releaseName).To(Equal("production-my-app"))
 
 			// Should be deterministic
-			releaseName2 := reconciler.generateReleaseName(component)
+			releaseName2 := generateReleaseName(component)
 			Expect(releaseName2).To(Equal(releaseName))
 		})
 
@@ -319,8 +292,8 @@ var _ = Describe("Helm Configuration", func() {
 				},
 			}
 
-			releaseName1 := reconciler.generateReleaseName(component1)
-			releaseName2 := reconciler.generateReleaseName(component2)
+			releaseName1 := generateReleaseName(component1)
+			releaseName2 := generateReleaseName(component2)
 
 			Expect(releaseName1).To(Equal("staging-my-app"))
 			Expect(releaseName2).To(Equal("production-my-app"))
@@ -335,7 +308,7 @@ var _ = Describe("Helm Configuration", func() {
 				},
 			}
 
-			releaseName := reconciler.generateReleaseName(component)
+			releaseName := generateReleaseName(component)
 			Expect(releaseName).To(Equal("prod-env-web-frontend"))
 		})
 
@@ -363,7 +336,7 @@ var _ = Describe("Helm Configuration", func() {
 
 			releaseNames := make([]string, len(components))
 			for i, component := range components {
-				releaseNames[i] = reconciler.generateReleaseName(component)
+				releaseNames[i] = generateReleaseName(component)
 			}
 
 			// All release names should be unique
