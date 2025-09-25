@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	controllerutils "github.com/rinswind/deployment-handlers/internal/controller"
@@ -83,84 +82,128 @@ func (r *ComponentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 
 // handleCreation implements the creation protocol for Components
-func (r *ComponentReconciler) handleCreation(ctx context.Context, component *deploymentsv1alpha1.Component, validator *util.ClaimingProtocolValidator) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
+func (r *ComponentReconciler) handleCreation(
+	ctx context.Context, component *deploymentsv1alpha1.Component, validator *util.ClaimingProtocolValidator) (ctrl.Result, error) {
+
+	log := logf.FromContext(ctx).WithValues("component", component.Name, "phase", component.Status.Phase)
 
 	// Check if we can claim
 	if err := validator.CanClaim(component); err != nil {
+		log.Info("Component not for us")
 		return ctrl.Result{}, err
 	}
 
-	// Claim if not already claimed by us
+	// 1. If nothing (logically in Pending) -> claim
 	if !util.HasHandlerFinalizer(component, HandlerName) {
-		log.Info("Claiming available component", "component", component.Name)
+		log.Info("Claiming component")
+
 		util.AddHandlerFinalizer(component, HandlerName)
 		if err := r.Update(ctx, component); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to claim component: %w", err)
 		}
+
 		util.SetClaimedStatus(component, HandlerName)
 		return ctrl.Result{}, r.Status().Update(ctx, component)
 	}
 
-	// Check if we should skip deployment due to unchanged spec in Failed state
-	if util.IsFailed(component) && !util.ShouldRetryFailedDeployment(component) {
-		log.Info("Skipping deployment - component failed with unchanged spec",
-			"component", component.Name,
-			"generation", component.Generation,
-			"observedGeneration", component.Status.ObservedGeneration)
-		return ctrl.Result{}, nil
-	}
+	// 2. If Claimed -> start deploying
+	if util.IsClaimed(component) {
+		log.Info("Starting deployment of component")
 
-	// Set deploying status if not already set
-	if !util.IsPhase(component, deploymentsv1alpha1.ComponentPhaseDeploying) {
+		annotations, err := performHelmDeployment(ctx, component)
+		if err != nil {
+			log.Error(err, "failed to perform helm deployment")
+			util.SetFailedStatus(component, HandlerName, err.Error())
+			return ctrl.Result{}, r.Status().Update(ctx, component)
+		}
+
 		util.SetDeployingStatus(component, HandlerName)
-		// Bail out to make the status visible, but requeue immediately to continue with deployment
-		return ctrl.Result{RequeueAfter: 1 * time.Second}, r.Status().Update(ctx, component)
-	}
-
-	// Perform Helm deployment operations
-	annotations, err := r.performHelmDeployment(ctx, component)
-	if err != nil {
-		log.Error(err, "failed to perform helm deployment")
-		// Categorize the error type
-		// var errorType string
-		// if strings.Contains(fmt.Sprintf("%v", err), "failed to parse helm configuration") {
-		// 	errorType = "Configuration error"
-		// } else {
-		// 	errorType = "Deployment error"
-		// }
-		util.SetFailedStatus(component, HandlerName, err.Error())
-		return ctrl.Result{}, r.Status().Update(ctx, component)
-	}
-
-	// Update annotations if needed to avoid unnecessary reconcile loops
-	if needsUpdate := r.ensureAnnotations(component, annotations); needsUpdate {
-		log.Info("Storing deployment metadata in annotations", "annotations", annotations)
-		if err := r.Update(ctx, component); err != nil {
+		if err := r.Status().Update(ctx, component); err != nil {
+			log.Error(err, "failed to update deploying status")
 			return ctrl.Result{}, err
 		}
+
+		// Update annotations if needed to avoid unnecessary reconcile loops
+		if needsUpdate := r.ensureAnnotations(component, annotations); needsUpdate {
+			log.Info("Storing deployment metadata in annotations", "annotations", annotations)
+			if err := r.Update(ctx, component); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+
+		// Start waiting for deployment to complete
+		log.Info("Started deployment, checking again in 10 seconds")
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
-	if !util.IsReady(component) {
-		// Check if deployed resources are actually ready
-		ready, err := r.checkHelmReleaseReadiness(ctx, component)
+	// 3. If Deploying -> check progress
+	if util.IsDeploying(component) {
+		rel, err := getHelmReleaseStatus(ctx, component)
 		if err != nil {
 			log.Error(err, "failed to check helm release readiness")
-			util.SetFailedStatus(component, HandlerName, fmt.Sprintf("readiness check failed: %v", err))
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Status().Update(ctx, component)
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, r.Status().Update(ctx, component)
+		}
+
+		// Build ResourceList from release manifest for non-blocking status checking
+		resourceList, err := buildResourceListFromRelease(ctx, rel)
+		if err != nil {
+			log.Error(err, "failed to build resource list from release")
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
+
+		// Use non-blocking readiness check
+		ready, err := checkResourcesReady(ctx, resourceList)
+		if err != nil {
+			log.Error(err, "deployment failed")
+			util.SetFailedStatus(component, HandlerName, err.Error())
+			return ctrl.Result{}, r.Status().Update(ctx, component)
 		}
 
 		if ready {
+			log.Info("Deployment succeeded")
 			util.SetReadyStatus(component)
 			return ctrl.Result{}, r.Status().Update(ctx, component)
-		} else {
-			// Resources not ready yet, requeue for another check
-			log.Info("Helm release resources not ready yet, checking again in 10 seconds")
-			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
+
+		// Resources not ready yet, requeue for another check
+		log.Info("Helm release resources not ready yet, checking again in 10 seconds")
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
-	return ctrl.Result{}, nil
+	// 4. If dirty -> start upgrade
+	if util.IsDirty(component) {
+		log.Info("Component is dirty, starting upgrade")
+		// TODO: Perform helm upgrade here
+
+		return ctrl.Result{}, nil
+	}
+
+	// 5. If in terminal state -> do nothing
+	if util.IsReady(component) {
+		if !util.IsDirty(component) {
+			// Nothing to do
+			return ctrl.Result{}, nil
+		}
+
+		// TODO: Start upgrade and set to Deploying
+		log.Info("Component is in terminal state, nothing to do")
+		return ctrl.Result{}, nil
+	}
+
+	// 5. If in terminal state -> check if dirty
+	if util.IsReady(component) || util.IsFailed(component) {
+		if !util.IsDirty(component) {
+			// Nothing to do
+			return ctrl.Result{}, nil
+		}
+
+		// TODO: Start upgrade and set back to Deploying
+		log.Info("Component is in terminal state, nothing to do")
+		return ctrl.Result{}, nil
+	}
+
+	return ctrl.Result{}, fmt.Errorf("Component in unexpected state")
+
 }
 
 // ensureAnnotations compares desired annotations with current annotations
@@ -198,7 +241,7 @@ func (r *ComponentReconciler) handleDeletion(ctx context.Context, component *dep
 	}
 
 	// Set terminating status if not already set
-	if !util.IsPhase(component, deploymentsv1alpha1.ComponentPhaseTerminating) {
+	if !util.IsTerminating(component) {
 		log.Info("Beginning component cleanup", "component", component.Name)
 		util.SetTerminatingStatus(component, HandlerName)
 		if err := r.Status().Update(ctx, component); err != nil {
@@ -208,7 +251,7 @@ func (r *ComponentReconciler) handleDeletion(ctx context.Context, component *dep
 	}
 
 	// Perform Helm cleanup operations
-	if err := r.performHelmCleanup(ctx, component); err != nil {
+	if err := performHelmCleanup(ctx, component); err != nil {
 		log.Error(err, "failed to perform helm cleanup")
 		// Set failed status but continue with finalizer removal to avoid blocking deletion
 		util.SetFailedStatus(component, HandlerName, fmt.Sprintf("Cleanup error: %v", err))
@@ -232,9 +275,9 @@ func (r *ComponentReconciler) handleDeletion(ctx context.Context, component *dep
 func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&deploymentsv1alpha1.Component{}).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 5,
-		}).
+		// WithOptions(controller.Options{
+		// 	MaxConcurrentReconciles: 1,
+		// }).
 		WithEventFilter(controllerutils.ComponentHandlerPredicate(HandlerName)).
 		Named("helm-component").
 		Complete(r)

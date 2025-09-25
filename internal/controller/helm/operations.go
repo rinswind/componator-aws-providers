@@ -17,17 +17,22 @@ limitations under the License.
 package helm
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
 
+	"github.com/go-playground/validator/v10"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/getter"
+	"helm.sh/helm/v3/pkg/kube"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/repo"
+	"k8s.io/client-go/kubernetes"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
@@ -40,19 +45,45 @@ const (
 	DeploymentReleaseNameAnnotation = "helm.deployment-orchestrator.io/release-name"
 )
 
+// parseHelmConfig unmarshals Component.Spec.Config into HelmConfig struct
+func parseHelmConfig(component *deploymentsv1alpha1.Component) (*HelmConfig, error) {
+	if component.Spec.Config == nil {
+		return nil, fmt.Errorf("config is required for helm components")
+	}
+
+	var config HelmConfig
+	if err := json.Unmarshal(component.Spec.Config.Raw, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse helm config: %w", err)
+	}
+
+	// Validate configuration using validator framework
+	validate := validator.New()
+	if err := validate.Struct(&config); err != nil {
+		return nil, fmt.Errorf("helm config validation failed: %w", err)
+	}
+
+	return &config, nil
+}
+
+// generateReleaseName creates a deterministic release name from Component metadata
+func generateReleaseName(component *deploymentsv1alpha1.Component) string {
+	// Use component name and namespace to ensure uniqueness
+	return fmt.Sprintf("%s-%s", component.Namespace, component.Name)
+}
+
 // performHelmDeployment handles all Helm-specific deployment operations
 // Returns a map of annotations that should be set on the Component
-func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, component *deploymentsv1alpha1.Component) (map[string]string, error) {
+func performHelmDeployment(ctx context.Context, component *deploymentsv1alpha1.Component) (map[string]string, error) {
 	log := logf.FromContext(ctx)
 
 	// Parse the Helm configuration from Component.Spec.Config
-	config, err := r.parseHelmConfig(component)
+	config, err := parseHelmConfig(component)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse helm configuration: %w", err)
 	}
 
 	// Generate deterministic release name
-	releaseName := r.generateReleaseName(component)
+	releaseName := generateReleaseName(component)
 
 	// Determine target namespace (use config.Namespace if specified, otherwise component namespace)
 	targetNamespace := component.Namespace
@@ -103,7 +134,7 @@ func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, compone
 
 	// Set up repository configuration properly for ephemeral containers
 	// This creates temporary repository files that Helm can use normally
-	if err := r.setupHelmRepository(settings, config.Repository.Name, config.Repository.URL); err != nil {
+	if err := setupHelmRepository(settings, config.Repository.Name, config.Repository.URL); err != nil {
 		return nil, fmt.Errorf("failed to setup helm repository: %w", err)
 	}
 
@@ -149,7 +180,7 @@ func (r *ComponentReconciler) performHelmDeployment(ctx context.Context, compone
 
 // setupHelmRepository configures a Helm repository properly for ephemeral containers
 // This creates the necessary repository configuration files that Helm expects
-func (r *ComponentReconciler) setupHelmRepository(settings *cli.EnvSettings, repoName, repoURL string) error {
+func setupHelmRepository(settings *cli.EnvSettings, repoName, repoURL string) error {
 	// Create temporary directories for Helm configuration
 	tempConfigDir, err := os.MkdirTemp("", "helm-config-")
 	if err != nil {
@@ -206,7 +237,7 @@ func (r *ComponentReconciler) setupHelmRepository(settings *cli.EnvSettings, rep
 }
 
 // performHelmCleanup handles all Helm-specific cleanup operations
-func (r *ComponentReconciler) performHelmCleanup(ctx context.Context, component *deploymentsv1alpha1.Component) error {
+func performHelmCleanup(ctx context.Context, component *deploymentsv1alpha1.Component) error {
 	log := logf.FromContext(ctx)
 
 	// Get release name from stored annotation
@@ -265,19 +296,20 @@ func (r *ComponentReconciler) performHelmCleanup(ctx context.Context, component 
 }
 
 // checkHelmReleaseReadiness verifies if a Helm release and its resources are ready
-func (r *ComponentReconciler) checkHelmReleaseReadiness(ctx context.Context, component *deploymentsv1alpha1.Component) (bool, error) {
+func getHelmReleaseStatus(ctx context.Context, component *deploymentsv1alpha1.Component) (*release.Release, error) {
+
 	log := logf.FromContext(ctx)
 
 	// Get release name from stored annotation
 	releaseName := component.Annotations[DeploymentReleaseNameAnnotation]
 	if releaseName == "" {
-		return false, fmt.Errorf("release name annotation %s not found", DeploymentReleaseNameAnnotation)
+		return nil, fmt.Errorf("release name annotation %s not found", DeploymentReleaseNameAnnotation)
 	}
 
 	// Get target namespace from stored annotation
 	targetNamespace := component.Annotations[DeploymentNamespaceAnnotation]
 	if targetNamespace == "" {
-		return false, fmt.Errorf("target namespace annotation %s not found", DeploymentNamespaceAnnotation)
+		return nil, fmt.Errorf("target namespace annotation %s not found", DeploymentNamespaceAnnotation)
 	}
 
 	// Initialize Helm settings and action configuration
@@ -288,17 +320,22 @@ func (r *ComponentReconciler) checkHelmReleaseReadiness(ctx context.Context, com
 	if err := actionConfig.Init(settings.RESTClientGetter(), targetNamespace, "secrets", func(format string, v ...any) {
 		log.Info(fmt.Sprintf(format, v...))
 	}); err != nil {
-		return false, fmt.Errorf("failed to initialize helm action configuration: %w", err)
+		return nil, fmt.Errorf("failed to initialize helm action configuration: %w", err)
 	}
 
 	// Get release status
 	statusAction := action.NewStatus(actionConfig)
 	rel, err := statusAction.Run(releaseName)
 	if err != nil {
-		return false, fmt.Errorf("failed to get release status: %w", err)
+		return nil, fmt.Errorf("failed to get release status: %w", err)
 	}
 
-	// Check if release is ready (deployed and not in a transitional state)
+	return rel, nil
+}
+
+func checkReleaseStatus(ctx context.Context, rel *release.Release) (bool, error) {
+	log := logf.FromContext(ctx)
+
 	if rel.Info.Status.IsPending() {
 		log.Info("Release is in pending state", "status", rel.Info.Status.String())
 		return false, nil
@@ -308,15 +345,115 @@ func (r *ComponentReconciler) checkHelmReleaseReadiness(ctx context.Context, com
 		return false, fmt.Errorf("helm release is in failed state: %s", rel.Info.Status.String())
 	}
 
-	if rel.Info.Status != release.StatusDeployed {
-		log.Info("Release not yet deployed", "status", rel.Info.Status.String())
-		return false, nil
+	if rel.Info.Status == release.StatusDeployed {
+		log.Info("Helm release is deployed",
+			"releaseName", rel.Name,
+			"status", rel.Info.Status.String(),
+			"version", rel.Version)
+
+		return true, nil
 	}
 
-	log.Info("Helm release is ready",
-		"releaseName", releaseName,
-		"status", rel.Info.Status.String(),
-		"version", rel.Version)
+	return false, fmt.Errorf("unexpected release state: %s", rel.Info.Status.String())
+}
 
-	return true, nil
+// buildResourceListFromRelease extracts Kubernetes resources from a Helm release manifest
+// and builds a ResourceList for status checking
+func buildResourceListFromRelease(ctx context.Context, rel *release.Release) (kube.ResourceList, error) {
+	log := logf.FromContext(ctx)
+
+	if rel.Manifest == "" {
+		log.Info("Release has no manifest, treating as ready")
+		return kube.ResourceList{}, nil
+	}
+
+	// Initialize Helm settings and action configuration to get access to kube.Client
+	settings := cli.New()
+	actionConfig := &action.Configuration{}
+
+	// Initialize with the same namespace as the release
+	if err := actionConfig.Init(settings.RESTClientGetter(), rel.Namespace, "secrets", func(format string, v ...any) {
+		log.V(1).Info(fmt.Sprintf(format, v...))
+	}); err != nil {
+		return nil, fmt.Errorf("failed to initialize helm action configuration: %w", err)
+	}
+
+	// Get the KubeClient from the action configuration
+	kubeClient := actionConfig.KubeClient
+
+	// Use Helm's Build function to parse the manifest into ResourceList
+	resourceList, err := kubeClient.Build(bytes.NewBufferString(rel.Manifest), false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build resource list from manifest: %w", err)
+	}
+
+	log.Info("Built resource list from release manifest",
+		"releaseName", rel.Name,
+		"resourceCount", len(resourceList))
+
+	return resourceList, nil
+}
+
+// checkResourcesReady performs non-blocking readiness checks on Kubernetes resources
+func checkResourcesReady(ctx context.Context, resourceList kube.ResourceList) (bool, error) {
+	log := logf.FromContext(ctx)
+
+	if len(resourceList) == 0 {
+		log.Info("No resources to check, treating as ready")
+		return true, nil
+	}
+
+	// Initialize Helm settings and get REST client getter for ReadyChecker
+	settings := cli.New()
+	restClientGetter := settings.RESTClientGetter()
+
+	// Create Kubernetes client for ReadyChecker
+	restConfig, err := restClientGetter.ToRESTConfig()
+	if err != nil {
+		return false, fmt.Errorf("failed to get REST config: %w", err)
+	}
+
+	kubernetesClient, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return false, fmt.Errorf("failed to create kubernetes client: %w", err)
+	}
+
+	// Create ReadyChecker - this is Helm's non-blocking readiness checker
+	readyChecker := kube.NewReadyChecker(kubernetesClient, func(format string, v ...any) {
+		log.V(1).Info(fmt.Sprintf(format, v...))
+	})
+
+	notReadyCount := 0
+
+	// Check each resource individually (non-blocking)
+	for _, resource := range resourceList {
+		ready, err := readyChecker.IsReady(ctx, resource)
+		if err != nil {
+			log.Error(err, "Error checking resource readiness",
+				"resource", resource.Name,
+				"kind", resource.Mapping.GroupVersionKind.Kind,
+				"namespace", resource.Namespace)
+			return false, fmt.Errorf("failed to check readiness of %s/%s: %w",
+				resource.Mapping.GroupVersionKind.Kind, resource.Name, err)
+		}
+
+		if !ready {
+			notReadyCount++
+			log.V(1).Info("Resource not ready",
+				"resource", resource.Name,
+				"kind", resource.Mapping.GroupVersionKind.Kind,
+				"namespace", resource.Namespace)
+		}
+	}
+
+	allReady := notReadyCount == 0
+	if !allReady {
+		log.Info("Some resources not ready",
+			"notReady", notReadyCount,
+			"total", len(resourceList))
+	} else {
+		log.Info("All resources ready", "total", len(resourceList))
+	}
+
+	return allReady, nil
 }
