@@ -34,12 +34,35 @@ import (
 const (
 	// HandlerName is the identifier for this helm handler
 	HandlerName = "helm"
+
+	ControllerName = "helm-component"
 )
 
 // ComponentReconciler reconciles a Component object for helm handler
 type ComponentReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme         *runtime.Scheme
+	claimValidator *util.ClaimingProtocolValidator
+	requeuePeriod  time.Duration
+}
+
+// SetupWithManager sets up the controller with the Manager.
+// Implements Resource Discovery Phase by only watching Components with handler "helm"
+func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.Client = mgr.GetClient()
+	r.Scheme = mgr.GetScheme()
+	r.claimValidator = util.NewClaimingProtocolValidator(HandlerName)
+	// TODO: This should be configurable
+	r.requeuePeriod = 10 * time.Second
+
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&deploymentsv1alpha1.Component{}).
+		// WithOptions(controller.Options{
+		// 	MaxConcurrentReconciles: 1,
+		// }).
+		WithEventFilter(controllerutils.ComponentHandlerPredicate(HandlerName)).
+		Named(ControllerName).
+		Complete(r)
 }
 
 // +kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
@@ -55,42 +78,31 @@ type ComponentReconciler struct {
 func (r *ComponentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
-	// 1. Fetch Component
 	component := &deploymentsv1alpha1.Component{}
 	if err := r.Get(ctx, req.NamespacedName, component); err != nil {
-		log.Error(err, "unable to fetch Component")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// 2. Create protocol validator
-	validator := util.NewClaimingProtocolValidator(HandlerName)
+	log.Info("Reconciling component", "component", component.Name)
 
-	// 3. Filter by handler name
-	if validator.ShouldIgnore(component) {
-		return ctrl.Result{}, nil
+	// Handle deletion
+	if component.DeletionTimestamp != nil {
+		return r.handleDeletion(ctx, component)
 	}
 
-	log.Info("Reconciling helm component", "component", component.Name)
-
-	// 4. Handle deletion if DeletionTimestamp set
-	if util.IsTerminating(component) {
-		return r.handleDeletion(ctx, component, validator)
-	}
-
-	// 5. Implement claiming protocol and creation/deployment logic
-	return r.handleCreation(ctx, component, validator)
+	// Handle creation/update
+	return r.handleCreation(ctx, component)
 }
 
 // handleCreation implements the creation protocol for Components
 func (r *ComponentReconciler) handleCreation(
-	ctx context.Context, component *deploymentsv1alpha1.Component, validator *util.ClaimingProtocolValidator) (ctrl.Result, error) {
+	ctx context.Context, component *deploymentsv1alpha1.Component) (ctrl.Result, error) {
 
 	log := logf.FromContext(ctx).WithValues("component", component.Name, "phase", component.Status.Phase)
 
-	// Check if we can claim
-	if err := validator.CanClaim(component); err != nil {
-		log.Info("Component not for us")
-		return ctrl.Result{}, err
+	// Check if this component is for us
+	if err := r.claimValidator.CanClaim(component); err != nil {
+		return ctrl.Result{}, fmt.Errorf("Component not for us: %w", err)
 	}
 
 	// 1. If nothing (logically in Pending) -> claim
@@ -133,10 +145,10 @@ func (r *ComponentReconciler) handleCreation(
 
 		// Start waiting for deployment to complete
 		log.Info("Started deployment, checking again in 10 seconds")
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
 	}
 
-	// 3. If Deploying -> check progress
+	// 3. If Deploying -> check deployment progress
 	if util.IsDeploying(component) {
 		rel, err := getHelmRelease(ctx, component)
 		if err != nil {
@@ -148,7 +160,7 @@ func (r *ComponentReconciler) handleCreation(
 		resourceList, err := gatherHelmReleaseResources(ctx, rel)
 		if err != nil {
 			log.Error(err, "failed to build resource list from release")
-			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+			return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
 		}
 
 		// Use non-blocking readiness check
@@ -181,8 +193,69 @@ func (r *ComponentReconciler) handleCreation(
 		return ctrl.Result{}, nil
 	}
 
-	return ctrl.Result{}, fmt.Errorf("Component in unexpected state")
+	return ctrl.Result{}, fmt.Errorf("Component in unexpected phase: %s", component.Status.Phase)
 
+}
+
+// handleDeletion implements the deletion protocol for Components being deleted
+func (r *ComponentReconciler) handleDeletion(
+	ctx context.Context, component *deploymentsv1alpha1.Component) (ctrl.Result, error) {
+
+	log := logf.FromContext(ctx).WithValues("component", component.Name, "phase", component.Status.Phase)
+
+	// Check if we can proceed
+	if err := r.claimValidator.CanDelete(component); err != nil {
+		// Wait for composition coordination signal
+		return ctrl.Result{RequeueAfter: r.requeuePeriod}, fmt.Errorf("cannot proceed with deletion: %w", err)
+	}
+
+	// 1. If Termination has not started -> initiate deletion
+	if !util.IsTerminating(component) {
+		log.Info("Beginning component cleanup")
+
+		util.SetTerminatingStatus(component, HandlerName, "Initiating cleanup")
+		if err := r.Status().Update(ctx, component); err != nil {
+			log.Error(err, "failed to update terminating status")
+			return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
+		}
+
+		// Start async helm cleanup
+		if err := startHelmReleaseDeletion(ctx, component); err != nil {
+			log.Error(err, "failed to start helm cleanup")
+
+			util.SetTerminatingStatus(component, HandlerName, fmt.Sprintf("Cleanup initiation failed: %v", err))
+			if statusErr := r.Status().Update(ctx, component); statusErr != nil {
+				log.Error(statusErr, "failed to update failed status")
+			}
+		}
+
+		log.Info("Started cleanup, checking again in 10 seconds")
+		return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
+	}
+
+	// 2. If Terminating -> check deletion progress
+	deleted, err := checkHelmReleaseDeleted(ctx, component)
+	if err != nil {
+		log.Error(err, "deletion failed")
+		util.SetTerminatingStatus(component, HandlerName, err.Error())
+		return ctrl.Result{}, r.Status().Update(ctx, component)
+	}
+
+	if !deleted {
+		log.Info("Deletion in progress, checking again in 10 seconds")
+		return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
+	}
+
+	// 3. Deletion complete -> remove finalizer
+	log.Info("Helm release deletion completed")
+
+	util.RemoveHandlerFinalizer(component, HandlerName)
+	if err := r.Update(ctx, component); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
+	}
+
+	log.Info("Component cleanup completed")
+	return ctrl.Result{}, nil
 }
 
 // ensureAnnotations compares desired annotations with current annotations
@@ -206,75 +279,4 @@ func (r *ComponentReconciler) ensureAnnotations(component *deploymentsv1alpha1.C
 	}
 
 	return needsUpdate
-}
-
-// handleDeletion implements the deletion protocol for Components being deleted
-func (r *ComponentReconciler) handleDeletion(ctx context.Context, component *deploymentsv1alpha1.Component, validator *util.ClaimingProtocolValidator) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
-
-	// Check if we can delete
-	if err := validator.CanDelete(component); err != nil {
-		// Wait for composition coordination signal
-		log.Info("Waiting for composition coordination finalizer removal", "component", component.Name)
-		return ctrl.Result{RequeueAfter: time.Second * 5}, nil
-	}
-
-	// 1. If Terminating status not set -> initiate deletion
-	if !util.IsTerminating(component) {
-		log.Info("Beginning component cleanup", "component", component.Name)
-		util.SetTerminatingStatus(component, HandlerName)
-		if err := r.Status().Update(ctx, component); err != nil {
-			log.Error(err, "failed to update terminating status")
-			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-		}
-
-		// Start async helm cleanup
-		if err := startHelmReleaseDeletion(ctx, component); err != nil {
-			log.Error(err, "failed to start helm cleanup")
-			util.SetFailedStatus(component, HandlerName, fmt.Sprintf("Cleanup initiation failed: %v", err))
-			if statusErr := r.Status().Update(ctx, component); statusErr != nil {
-				log.Error(statusErr, "failed to update failed status")
-			}
-			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-		}
-
-		log.Info("Started cleanup, checking again in 10 seconds")
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-	}
-
-	// 2. If Terminating -> check deletion progress
-	deleted, err := checkHelmReleaseDeleted(ctx, component)
-	if err != nil {
-		log.Error(err, "deletion failed")
-		util.SetFailedStatus(component, HandlerName, err.Error())
-		return ctrl.Result{}, r.Status().Update(ctx, component)
-	}
-
-	if !deleted {
-		log.Info("Deletion in progress, checking again in 10 seconds")
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-	}
-
-	// 3. Deletion complete -> remove finalizer
-	log.Info("Helm release deletion completed")
-	util.RemoveHandlerFinalizer(component, HandlerName)
-	if err := r.Update(ctx, component); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
-	}
-
-	log.Info("Component cleanup completed", "component", component.Name)
-	return ctrl.Result{}, nil
-}
-
-// SetupWithManager sets up the controller with the Manager.
-// Implements Resource Discovery Phase by only watching Components with handler "helm"
-func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&deploymentsv1alpha1.Component{}).
-		// WithOptions(controller.Options{
-		// 	MaxConcurrentReconciles: 1,
-		// }).
-		WithEventFilter(controllerutils.ComponentHandlerPredicate(HandlerName)).
-		Named("helm-component").
-		Complete(r)
 }
