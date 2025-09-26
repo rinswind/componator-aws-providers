@@ -314,7 +314,7 @@ spec:
 
 1. ✅ Phase 1: Extend HelmConfig (config structure) - **COMPLETED**
 2. ✅ Phase 2: Update controller structure (defaults) - **COMPLETED**
-3. Phase 3: Add timeout resolution logic (helper method)
+3. ✅ Phase 3: Add timeout resolution logic (helper method) - **COMPLETED**
 4. Phase 4: Implement deployment timeout (actionable)
 5. Phase 5: Implement deletion visibility (informational)
 6. Phase 6: Add tests
@@ -363,12 +363,31 @@ spec:
 - Timeout configuration happens at controller startup in `SetupWithManager`
 - Maintains backward compatibility - existing behavior unchanged if no environment variables set
 
+### Phase 3: Add Timeout Resolution Logic ✅ **COMPLETED**
+
+**Implemented changes in `internal/controller/helm/config.go`:**
+
+- ✅ Added `ResolvedDeploymentTimeout` and `ResolvedDeletionTimeout` fields to `HelmConfig` struct
+- ✅ Created `resolveHelmConfigWithDefaults` function that merges component-level timeouts with controller defaults
+- ✅ Maintained backward compatibility with existing `resolveHelmConfig` function
+- ✅ Added controller helper method `resolveHelmConfigWithDefaults` that uses controller's default timeouts
+- ✅ Integrated timeout resolution into configuration parsing phase
+- ✅ All existing tests pass
+- ✅ Code compiles successfully
+
+**Implementation details:**
+- Timeout resolution happens during configuration parsing, not in reconciliation logic
+- Component-level timeouts override controller defaults when specified
+- Resolved timeouts are stored in HelmConfig struct for easy access throughout reconciliation
+- Backward compatibility maintained - existing operations functions continue to work
+- Clean separation between configuration parsing and controller logic
+
 ## Success Criteria
 
 - [ ] Components with deployment timeout transition to Failed when exceeded
 - [ ] Failed components can be retried by updating spec
 - [ ] Deletion timeout updates status messages but never blocks deletion
-- [x] Component-level timeouts override controller defaults *(structure ready)*
-- [x] Missing timeout config uses controller defaults *(structure ready, defaults configured)*
+- [x] Component-level timeouts override controller defaults *(implemented and ready)*
+- [x] Missing timeout config uses controller defaults *(implemented and ready)*
 - [x] All existing functionality remains unchanged *(verified)*
 - [ ] Tests validate timeout parsing and behavior

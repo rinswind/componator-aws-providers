@@ -18,10 +18,12 @@ package helm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
 
+	"github.com/go-playground/validator/v10"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -82,6 +84,44 @@ func parseTimeoutEnv(envVar string, defaultValue time.Duration) time.Duration {
 		}
 	}
 	return defaultValue
+}
+
+// resolveHelmConfigWithDefaults is a helper that resolves helm config with controller's default timeouts
+func (r *ComponentReconciler) resolveHelmConfigWithDefaults(component *deploymentsv1alpha1.Component) (*HelmConfig, error) {
+	if component.Spec.Config == nil {
+		return nil, fmt.Errorf("config is required for helm components")
+	}
+
+	var config HelmConfig
+	if err := json.Unmarshal(component.Spec.Config.Raw, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse helm config: %w", err)
+	}
+
+	// Validate configuration using validator framework
+	validate := validator.New()
+	if err := validate.Struct(&config); err != nil {
+		return nil, fmt.Errorf("helm config validation failed: %w", err)
+	}
+
+	// Resolve target namespace: use configured namespace or fall back to Component's namespace
+	if config.ReleaseNamespace == "" {
+		config.ReleaseNamespace = component.Namespace
+	}
+
+	// Resolve effective timeouts: use component-level configuration if present, otherwise controller defaults
+	config.ResolvedDeploymentTimeout = r.defaultDeploymentTimeout
+	config.ResolvedDeletionTimeout = r.defaultDeletionTimeout
+
+	if config.Timeouts != nil {
+		if config.Timeouts.Deployment != nil {
+			config.ResolvedDeploymentTimeout = config.Timeouts.Deployment.Duration
+		}
+		if config.Timeouts.Deletion != nil {
+			config.ResolvedDeletionTimeout = config.Timeouts.Deletion.Duration
+		}
+	}
+
+	return &config, nil
 }
 
 // +kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete

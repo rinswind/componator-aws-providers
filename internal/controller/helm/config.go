@@ -53,6 +53,16 @@ type HelmConfig struct {
 	// Timeouts contains timeout configuration for deployment and deletion operations
 	// +optional
 	Timeouts *TimeoutConfig `json:"timeouts,omitempty"`
+
+	// ResolvedDeploymentTimeout contains the effective deployment timeout
+	// (either from component config or controller defaults)
+	// This field is populated during config resolution and not serialized
+	ResolvedDeploymentTimeout time.Duration `json:"-"`
+
+	// ResolvedDeletionTimeout contains the effective deletion timeout
+	// (either from component config or controller defaults)
+	// This field is populated during config resolution and not serialized
+	ResolvedDeletionTimeout time.Duration `json:"-"`
 }
 
 // Repository represents Helm chart repository configuration
@@ -117,6 +127,7 @@ func (d *Duration) UnmarshalJSON(data []byte) error {
 
 // resolveHelmConfig unmarshals Component.Spec.Config into HelmConfig struct
 // and resolves the target namespace (fills in from Component.Namespace if not specified)
+// This version is used by operations functions that don't need timeout resolution
 func resolveHelmConfig(component *deploymentsv1alpha1.Component) (*HelmConfig, error) {
 	if component.Spec.Config == nil {
 		return nil, fmt.Errorf("config is required for helm components")
@@ -137,6 +148,9 @@ func resolveHelmConfig(component *deploymentsv1alpha1.Component) (*HelmConfig, e
 	if config.ReleaseNamespace == "" {
 		config.ReleaseNamespace = component.Namespace
 	}
+
+	// Note: ResolvedDeploymentTimeout and ResolvedDeletionTimeout will be zero
+	// Use controller's resolveHelmConfigWithDefaults method for timeout resolution
 
 	return &config, nil
 }
