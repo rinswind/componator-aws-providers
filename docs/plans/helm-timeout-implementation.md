@@ -313,7 +313,7 @@ spec:
 ## Implementation Order
 
 1. ✅ Phase 1: Extend HelmConfig (config structure) - **COMPLETED**
-2. Phase 2: Update controller structure (defaults)
+2. ✅ Phase 2: Update controller structure (defaults) - **COMPLETED**
 3. Phase 3: Add timeout resolution logic (helper method)
 4. Phase 4: Implement deployment timeout (actionable)
 5. Phase 5: Implement deletion visibility (informational)
@@ -340,12 +340,35 @@ spec:
 - Clear documentation distinguishes between actionable deployment timeout and informational deletion timeout
 - Follows established code patterns and validation framework integration
 
+### Phase 2: Update Controller Structure ✅ **COMPLETED**
+
+**Implemented changes in `internal/controller/helm/controller.go`:**
+
+- ✅ Added `defaultDeploymentTimeout` and `defaultDeletionTimeout` fields to `ComponentReconciler` struct
+- ✅ Added `parseTimeoutEnv` helper function for environment variable parsing with fallback defaults
+- ✅ Updated `SetupWithManager` method to configure timeout defaults from environment variables
+- ✅ Added `os` package import for environment variable access
+- ✅ Made `requeuePeriod` configurable via `HELM_REQUEUE_PERIOD` environment variable
+- ✅ All existing tests pass
+- ✅ Code compiles successfully
+
+**Environment variable configuration:**
+- `HELM_DEPLOYMENT_TIMEOUT`: Default deployment timeout (fallback: 15 minutes)
+- `HELM_DELETION_TIMEOUT`: Default deletion timeout (fallback: 30 minutes)  
+- `HELM_REQUEUE_PERIOD`: Reconcile requeue period (fallback: 10 seconds)
+
+**Implementation details:**
+- Controller defaults are configurable via environment variables with sensible fallbacks
+- `parseTimeoutEnv` function provides robust parsing with graceful fallback to defaults
+- Timeout configuration happens at controller startup in `SetupWithManager`
+- Maintains backward compatibility - existing behavior unchanged if no environment variables set
+
 ## Success Criteria
 
 - [ ] Components with deployment timeout transition to Failed when exceeded
 - [ ] Failed components can be retried by updating spec
 - [ ] Deletion timeout updates status messages but never blocks deletion
 - [x] Component-level timeouts override controller defaults *(structure ready)*
-- [x] Missing timeout config uses controller defaults *(structure ready)*
+- [x] Missing timeout config uses controller defaults *(structure ready, defaults configured)*
 - [x] All existing functionality remains unchanged *(verified)*
 - [ ] Tests validate timeout parsing and behavior

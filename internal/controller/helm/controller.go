@@ -19,6 +19,7 @@ package helm
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -44,6 +45,10 @@ type ComponentReconciler struct {
 	Scheme         *runtime.Scheme
 	claimValidator *util.ClaimingProtocolValidator
 	requeuePeriod  time.Duration
+
+	// Default timeout configurations
+	defaultDeploymentTimeout time.Duration
+	defaultDeletionTimeout   time.Duration
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -52,8 +57,11 @@ func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
 	r.Scheme = mgr.GetScheme()
 	r.claimValidator = util.NewClaimingProtocolValidator(HandlerName)
-	// TODO: This should be configurable
-	r.requeuePeriod = 10 * time.Second
+
+	// Configure timeouts from environment variables with defaults
+	r.requeuePeriod = parseTimeoutEnv("HELM_REQUEUE_PERIOD", 10*time.Second)
+	r.defaultDeploymentTimeout = parseTimeoutEnv("HELM_DEPLOYMENT_TIMEOUT", 15*time.Minute)
+	r.defaultDeletionTimeout = parseTimeoutEnv("HELM_DELETION_TIMEOUT", 30*time.Minute)
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&deploymentsv1alpha1.Component{}).
@@ -63,6 +71,17 @@ func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithEventFilter(controllerutils.ComponentHandlerPredicate(HandlerName)).
 		Named(ControllerName).
 		Complete(r)
+}
+
+// parseTimeoutEnv parses a timeout duration from an environment variable
+// Returns the default value if the environment variable is not set or invalid
+func parseTimeoutEnv(envVar string, defaultValue time.Duration) time.Duration {
+	if value := os.Getenv(envVar); value != "" {
+		if duration, err := time.ParseDuration(value); err == nil {
+			return duration
+		}
+	}
+	return defaultValue
 }
 
 // +kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
