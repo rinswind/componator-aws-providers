@@ -43,7 +43,7 @@ func startHelmReleaseDeletion(ctx context.Context, component *deploymentsv1alpha
 	}
 
 	releaseName := config.ReleaseName
-	targetNamespace := config.Namespace
+	targetNamespace := config.ReleaseNamespace
 
 	log.Info("Performing helm cleanup",
 		"releaseName", releaseName,

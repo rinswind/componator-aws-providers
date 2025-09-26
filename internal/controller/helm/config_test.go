@@ -53,7 +53,7 @@ var _ = Describe("Helm Configuration", func() {
 					},
 					"replicaCount": 3
 				},
-				"namespace": "web"
+				"releaseNamespace": "web"
 			}`
 
 			component := &deploymentsv1alpha1.Component{
@@ -76,7 +76,7 @@ var _ = Describe("Helm Configuration", func() {
 			Expect(config.Repository.Name).To(Equal("bitnami"))
 			Expect(config.Chart.Name).To(Equal("nginx"))
 			Expect(config.Chart.Version).To(Equal("15.4.4"))
-			Expect(config.Namespace).To(Equal("web"))
+			Expect(config.ReleaseNamespace).To(Equal("web"))
 
 			// Test nested values structure
 			serviceConfig, exists := config.Values["service"]
@@ -121,7 +121,7 @@ var _ = Describe("Helm Configuration", func() {
 			Expect(config.Repository.Name).To(Equal("bitnami"))
 			Expect(config.Chart.Name).To(Equal("nginx"))
 			Expect(config.Chart.Version).To(Equal("15.4.4"))
-			Expect(config.Namespace).To(Equal("default")) // Should be resolved from Component namespace
+			Expect(config.ReleaseNamespace).To(Equal("default")) // Should be resolved from Component namespace
 			Expect(config.Values).To(BeEmpty())
 		})
 
@@ -156,7 +156,7 @@ var _ = Describe("Helm Configuration", func() {
 						}
 					}
 				},
-				"namespace": "database"
+				"releaseNamespace": "database"
 			}`
 
 			component := &deploymentsv1alpha1.Component{
@@ -179,7 +179,7 @@ var _ = Describe("Helm Configuration", func() {
 			Expect(config.Repository.Name).To(Equal("bitnami"))
 			Expect(config.Chart.Name).To(Equal("postgresql"))
 			Expect(config.Chart.Version).To(Equal("12.12.10"))
-			Expect(config.Namespace).To(Equal("database"))
+			Expect(config.ReleaseNamespace).To(Equal("database"))
 
 			// Test nested auth values
 			authConfig, exists := config.Values["auth"]
@@ -292,7 +292,7 @@ var _ = Describe("Helm Configuration", func() {
 			config, err := resolveHelmConfig(component)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(config).NotTo(BeNil())
-			Expect(config.Namespace).To(Equal("production")) // Should be resolved from Component namespace
+			Expect(config.ReleaseNamespace).To(Equal("production")) // Should be resolved from Component namespace
 		})
 
 		It("should preserve explicit namespace from config", func() {
@@ -307,7 +307,7 @@ var _ = Describe("Helm Configuration", func() {
 					"version": "15.4.4"
 				},
 				"releaseName": "test-nginx",
-				"namespace": "custom-namespace"
+				"releaseNamespace": "custom-namespace"
 			}`
 
 			component := &deploymentsv1alpha1.Component{
@@ -325,7 +325,7 @@ var _ = Describe("Helm Configuration", func() {
 			config, err := resolveHelmConfig(component)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(config).NotTo(BeNil())
-			Expect(config.Namespace).To(Equal("custom-namespace")) // Should preserve explicit config value
+			Expect(config.ReleaseNamespace).To(Equal("custom-namespace")) // Should preserve explicit config value
 		})
 	})
 })

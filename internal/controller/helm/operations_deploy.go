@@ -49,7 +49,7 @@ func startHelmReleaseDeployment(
 
 	// Get release name and target namespace from resolved configuration
 	releaseName := config.ReleaseName
-	targetNamespace := config.Namespace
+	targetNamespace := config.ReleaseNamespace
 
 	log.Info("Parsed helm configuration",
 		"repository", config.Repository.URL,
@@ -120,7 +120,7 @@ func startHelmReleaseUpgrade(
 
 	// Get release name and target namespace from resolved configuration
 	releaseName := config.ReleaseName
-	targetNamespace := config.Namespace
+	targetNamespace := config.ReleaseNamespace
 
 	log.Info("Parsed helm configuration for upgrade",
 		"repository", config.Repository.URL,

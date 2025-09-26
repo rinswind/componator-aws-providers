@@ -56,7 +56,7 @@ func getHelmRelease(ctx context.Context, component *deploymentsv1alpha1.Componen
 	}
 
 	releaseName := config.ReleaseName
-	targetNamespace := config.Namespace
+	targetNamespace := config.ReleaseNamespace
 
 	// Initialize Helm settings and action configuration
 	_, actionConfig, err := setupHelmActionConfig(ctx, targetNamespace)

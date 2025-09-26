@@ -31,27 +31,27 @@ import (
 // HelmConfig represents the configuration structure for Helm components
 // that gets unmarshaled from Component.Spec.Config
 type HelmConfig struct {
+	// ReleaseName specifies the release name for Helm deployment
+	ReleaseName string `json:"releaseName" validate:"required"`
+
+	// ReleaseNamespace specifies the namespace for Helm release deployment
+	// If not specified, uses the Component's namespace
+	// +optional
+	ReleaseNamespace string `json:"releaseNamespace,omitempty"`
+
 	// Repository specifies the Helm chart repository configuration
-	Repository HelmRepository `json:"repository"`
+	Repository Repository `json:"repository"`
 
 	// Chart specifies the chart name and version to deploy
 	Chart HelmChart `json:"chart"`
 
-	// ReleaseName specifies the release name for Helm deployment
-	ReleaseName string `json:"releaseName" validate:"required"`
-
 	// Values contains key-value pairs for chart values override
 	// +optional
 	Values map[string]any `json:"values,omitempty"`
-
-	// Namespace specifies the target namespace for chart deployment
-	// If not specified, uses the Component's namespace
-	// +optional
-	Namespace string `json:"namespace,omitempty"`
 }
 
-// HelmRepository represents Helm chart repository configuration
-type HelmRepository struct {
+// Repository represents Helm chart repository configuration
+type Repository struct {
 	// URL is the chart repository URL
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^https?://.*`
@@ -95,8 +95,8 @@ func resolveHelmConfig(component *deploymentsv1alpha1.Component) (*HelmConfig, e
 	}
 
 	// Resolve target namespace: use configured namespace or fall back to Component's namespace
-	if config.Namespace == "" {
-		config.Namespace = component.Namespace
+	if config.ReleaseNamespace == "" {
+		config.ReleaseNamespace = component.Namespace
 	}
 
 	return &config, nil
