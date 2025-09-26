@@ -17,6 +17,7 @@ spec:
     chart:
       name: nginx
       version: "18.2.4"
+    releaseName: nginx-basic
     values:
       service:
         type: "ClusterIP"

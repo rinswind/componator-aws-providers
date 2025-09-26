@@ -47,7 +47,8 @@ var _ = Describe("Helm Controller", func() {
 				"chart": {
 					"name": "nginx",
 					"version": "15.4.4"
-				}
+				},
+				"releaseName": "test-nginx"
 			}`
 
 			component := &deploymentsv1alpha1.Component{

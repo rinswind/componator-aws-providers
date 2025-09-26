@@ -17,6 +17,7 @@ spec:
     chart:
       name: postgresql
       version: "16.2.1"
+    releaseName: postgresql-db
     values:
       auth:
         postgresPassword: postgres123!

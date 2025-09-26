@@ -39,6 +39,7 @@ Component configuration for Helm deployments is passed through the `spec.config`
     "name": "nginx",
     "version": "15.4.4"
   },
+  "releaseName": "my-nginx-release",
   "values": {
     "service": {
       "type": "LoadBalancer"
@@ -55,6 +56,7 @@ Component configuration for Helm deployments is passed through the `spec.config`
 - **repository.name**: Repository name for local reference
 - **chart.name**: Chart name within the repository
 - **chart.version**: Chart version to install
+- **releaseName**: Helm release name to use for deployment
 
 ### Optional Fields
 
@@ -115,6 +117,7 @@ Component configuration for Helm deployments is passed through the `spec.config`
     "name": "ingress-nginx",
     "version": "4.8.3"
   },
+  "releaseName": "ingress-controller",
   "values": {
     "controller": {
       "service": {
@@ -125,26 +128,11 @@ Component configuration for Helm deployments is passed through the `spec.config`
 }
 ```
 
-## Deployment Annotations
-
-The controller stores deployment metadata in Component annotations for tracking and cleanup:
-
-- **`helm.deployment-orchestrator.io/target-namespace`** - Actual namespace where Helm release was deployed
-- **`helm.deployment-orchestrator.io/release-name`** - Actual release name used for Helm deployment
-
-These annotations enable proper cleanup operations and state tracking across reconciliation cycles.
-
 ## Release Naming
 
-Helm releases are automatically named using the pattern: `{namespace}-{component-name}`
+Release names are explicitly configured in the `releaseName` field and must be valid Helm release names. Helm will validate the release name format at deployment time.
 
-This ensures:
-
-- **Uniqueness**: Same component name in different namespaces get different releases
-- **Deterministic**: Same component always gets the same release name
-- **Traceable**: Easy to identify which Component created which release
-
-Example: Component named `web-frontend` in namespace `production` creates release `production-web-frontend`
+The controller uses the configured release name directly for all Helm operations (install, upgrade, delete), ensuring consistency across the release lifecycle.
 
 ## Dependencies
 

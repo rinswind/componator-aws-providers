@@ -29,13 +29,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-const (
-	// DeploymentNamespaceAnnotation stores the actual namespace where Helm release was deployed
-	DeploymentNamespaceAnnotation = "helm.deployment-orchestrator.io/target-namespace"
-	// DeploymentReleaseNameAnnotation stores the actual release name used for Helm deployment
-	DeploymentReleaseNameAnnotation = "helm.deployment-orchestrator.io/release-name"
-)
-
 // setupHelmActionConfig creates and initializes Helm settings and action configuration
 // This is a common pattern used across multiple Helm operations
 func setupHelmActionConfig(ctx context.Context, namespace string) (*cli.EnvSettings, *action.Configuration, error) {
@@ -56,17 +49,14 @@ func setupHelmActionConfig(ctx context.Context, namespace string) (*cli.EnvSetti
 
 // getHelmRelease verifies if a Helm release exists and returns it
 func getHelmRelease(ctx context.Context, component *deploymentsv1alpha1.Component) (*release.Release, error) {
-	// Get release name from stored annotation
-	releaseName := component.Annotations[DeploymentReleaseNameAnnotation]
-	if releaseName == "" {
-		return nil, fmt.Errorf("release name annotation %s not found", DeploymentReleaseNameAnnotation)
+	// Parse configuration to get release name and namespace
+	config, err := resolveHelmConfig(component)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse helm config: %w", err)
 	}
 
-	// Get target namespace from stored annotation
-	targetNamespace := component.Annotations[DeploymentNamespaceAnnotation]
-	if targetNamespace == "" {
-		return nil, fmt.Errorf("target namespace annotation %s not found", DeploymentNamespaceAnnotation)
-	}
+	releaseName := config.ReleaseName
+	targetNamespace := config.Namespace
 
 	// Initialize Helm settings and action configuration
 	_, actionConfig, err := setupHelmActionConfig(ctx, targetNamespace)
@@ -114,30 +104,4 @@ func gatherHelmReleaseResources(ctx context.Context, rel *release.Release) (kube
 		"resourceCount", len(resourceList))
 
 	return resourceList, nil
-}
-
-// extractReleaseInfo gets the release name and target namespace based on the operation mode
-// For installs: generates release name and determines namespace from component/config
-// For upgrades: extracts release name and namespace from component annotations
-func extractReleaseInfo(component *deploymentsv1alpha1.Component, config *HelmConfig) (string, string, error) {
-	if config != nil {
-		// For installs: generate name and determine namespace
-		releaseName := generateReleaseName(component)
-		targetNamespace := component.Namespace
-		if config.Namespace != "" {
-			targetNamespace = config.Namespace
-		}
-		return releaseName, targetNamespace, nil
-	} else {
-		// For upgrades: get from annotations
-		releaseName := component.Annotations[DeploymentReleaseNameAnnotation]
-		if releaseName == "" {
-			return "", "", fmt.Errorf("release name annotation %s not found - component may not have been properly deployed", DeploymentReleaseNameAnnotation)
-		}
-		targetNamespace := component.Annotations[DeploymentNamespaceAnnotation]
-		if targetNamespace == "" {
-			return "", "", fmt.Errorf("target namespace annotation %s not found - component may not have been properly deployed", DeploymentNamespaceAnnotation)
-		}
-		return releaseName, targetNamespace, nil
-	}
 }

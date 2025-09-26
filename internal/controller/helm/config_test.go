@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // config_test.go contains tests for Helm configuration parsing and validation.
-// These tests are focused on the parseHelmConfig() and generateReleaseName() functions
+// These tests are focused on the parseHelmConfig() function
 // and are separate from the main controller reconciliation tests.
 
 package helm
@@ -46,6 +46,7 @@ var _ = Describe("Helm Configuration", func() {
 					"name": "nginx",
 					"version": "15.4.4"
 				},
+				"releaseName": "test-nginx",
 				"values": {
 					"service": {
 						"type": "LoadBalancer"
@@ -67,7 +68,7 @@ var _ = Describe("Helm Configuration", func() {
 				},
 			}
 
-			config, err := parseHelmConfig(component)
+			config, err := resolveHelmConfig(component)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(config).NotTo(BeNil())
 
@@ -96,7 +97,8 @@ var _ = Describe("Helm Configuration", func() {
 				"chart": {
 					"name": "nginx",
 					"version": "15.4.4"
-				}
+				},
+				"releaseName": "test-nginx"
 			}`
 
 			component := &deploymentsv1alpha1.Component{
@@ -111,7 +113,7 @@ var _ = Describe("Helm Configuration", func() {
 				},
 			}
 
-			config, err := parseHelmConfig(component)
+			config, err := resolveHelmConfig(component)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(config).NotTo(BeNil())
 
@@ -119,7 +121,7 @@ var _ = Describe("Helm Configuration", func() {
 			Expect(config.Repository.Name).To(Equal("bitnami"))
 			Expect(config.Chart.Name).To(Equal("nginx"))
 			Expect(config.Chart.Version).To(Equal("15.4.4"))
-			Expect(config.Namespace).To(BeEmpty())
+			Expect(config.Namespace).To(Equal("default")) // Should be resolved from Component namespace
 			Expect(config.Values).To(BeEmpty())
 		})
 
@@ -134,6 +136,7 @@ var _ = Describe("Helm Configuration", func() {
 					"name": "postgresql",
 					"version": "12.12.10"
 				},
+				"releaseName": "test-postgres",
 				"values": {
 					"auth": {
 						"postgresPassword": "mysecretpassword",
@@ -168,7 +171,7 @@ var _ = Describe("Helm Configuration", func() {
 				},
 			}
 
-			config, err := parseHelmConfig(component)
+			config, err := resolveHelmConfig(component)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(config).NotTo(BeNil())
 
@@ -222,7 +225,7 @@ var _ = Describe("Helm Configuration", func() {
 				},
 			}
 
-			config, err := parseHelmConfig(component)
+			config, err := resolveHelmConfig(component)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("config is required for helm components"))
 			Expect(config).To(BeNil())
@@ -238,7 +241,8 @@ var _ = Describe("Helm Configuration", func() {
 				"chart": {
 					"name": "",
 					"version": ""
-				}
+				},
+				"releaseName": ""
 			}`
 
 			component := &deploymentsv1alpha1.Component{
@@ -253,101 +257,75 @@ var _ = Describe("Helm Configuration", func() {
 				},
 			}
 
-			config, err := parseHelmConfig(component)
+			config, err := resolveHelmConfig(component)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("validation failed"))
 			Expect(config).To(BeNil())
 		})
-	})
 
-	Context("When generating release names", func() {
-		It("should generate deterministic release names", func() {
+		It("should resolve target namespace from Component when not specified in config", func() {
+			// Test namespace resolution: config has no namespace, should use Component's namespace
+			configJSON := `{
+				"repository": {
+					"url": "https://charts.bitnami.com/bitnami",
+					"name": "bitnami"
+				},
+				"chart": {
+					"name": "nginx",
+					"version": "15.4.4"
+				},
+				"releaseName": "test-nginx"
+			}`
+
 			component := &deploymentsv1alpha1.Component{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-app",
+					Name:      "test-namespace-resolution",
 					Namespace: "production",
 				},
-			}
-
-			releaseName := generateReleaseName(component)
-			Expect(releaseName).To(Equal("production-my-app"))
-
-			// Should be deterministic
-			releaseName2 := generateReleaseName(component)
-			Expect(releaseName2).To(Equal(releaseName))
-		})
-
-		It("should handle different namespaces", func() {
-			component1 := &deploymentsv1alpha1.Component{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-app",
-					Namespace: "staging",
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "nginx-prod",
+					Handler: "helm",
+					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
 				},
 			}
 
-			component2 := &deploymentsv1alpha1.Component{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-app",
-					Namespace: "production",
-				},
-			}
-
-			releaseName1 := generateReleaseName(component1)
-			releaseName2 := generateReleaseName(component2)
-
-			Expect(releaseName1).To(Equal("staging-my-app"))
-			Expect(releaseName2).To(Equal("production-my-app"))
-			Expect(releaseName1).NotTo(Equal(releaseName2))
+			config, err := resolveHelmConfig(component)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(config).NotTo(BeNil())
+			Expect(config.Namespace).To(Equal("production")) // Should be resolved from Component namespace
 		})
 
-		It("should handle special characters properly", func() {
+		It("should preserve explicit namespace from config", func() {
+			// Test explicit namespace: config specifies namespace, should use that instead of Component's
+			configJSON := `{
+				"repository": {
+					"url": "https://charts.bitnami.com/bitnami",
+					"name": "bitnami"
+				},
+				"chart": {
+					"name": "nginx",
+					"version": "15.4.4"
+				},
+				"releaseName": "test-nginx",
+				"namespace": "custom-namespace"
+			}`
+
 			component := &deploymentsv1alpha1.Component{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "web-frontend",
-					Namespace: "prod-env",
+					Name:      "test-explicit-namespace",
+					Namespace: "default",
+				},
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "nginx-custom",
+					Handler: "helm",
+					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
 				},
 			}
 
-			releaseName := generateReleaseName(component)
-			Expect(releaseName).To(Equal("prod-env-web-frontend"))
-		})
-
-		It("should ensure unique names for same component in different namespaces", func() {
-			components := []*deploymentsv1alpha1.Component{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "api-service",
-						Namespace: "development",
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "api-service",
-						Namespace: "staging",
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "api-service",
-						Namespace: "production",
-					},
-				},
-			}
-
-			releaseNames := make([]string, len(components))
-			for i, component := range components {
-				releaseNames[i] = generateReleaseName(component)
-			}
-
-			// All release names should be unique
-			Expect(releaseNames[0]).To(Equal("development-api-service"))
-			Expect(releaseNames[1]).To(Equal("staging-api-service"))
-			Expect(releaseNames[2]).To(Equal("production-api-service"))
-
-			// Ensure all are different
-			Expect(releaseNames[0]).NotTo(Equal(releaseNames[1]))
-			Expect(releaseNames[1]).NotTo(Equal(releaseNames[2]))
-			Expect(releaseNames[0]).NotTo(Equal(releaseNames[2]))
+			config, err := resolveHelmConfig(component)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(config).NotTo(BeNil())
+			Expect(config.Namespace).To(Equal("custom-namespace")) // Should preserve explicit config value
 		})
 	})
 })

@@ -37,6 +37,9 @@ type HelmConfig struct {
 	// Chart specifies the chart name and version to deploy
 	Chart HelmChart `json:"chart"`
 
+	// ReleaseName specifies the release name for Helm deployment
+	ReleaseName string `json:"releaseName" validate:"required"`
+
 	// Values contains key-value pairs for chart values override
 	// +optional
 	Values map[string]any `json:"values,omitempty"`
@@ -73,8 +76,9 @@ type HelmChart struct {
 	Version string `json:"version" validate:"required,min=1"`
 }
 
-// parseHelmConfig unmarshals Component.Spec.Config into HelmConfig struct
-func parseHelmConfig(component *deploymentsv1alpha1.Component) (*HelmConfig, error) {
+// resolveHelmConfig unmarshals Component.Spec.Config into HelmConfig struct
+// and resolves the target namespace (fills in from Component.Namespace if not specified)
+func resolveHelmConfig(component *deploymentsv1alpha1.Component) (*HelmConfig, error) {
 	if component.Spec.Config == nil {
 		return nil, fmt.Errorf("config is required for helm components")
 	}
@@ -90,11 +94,10 @@ func parseHelmConfig(component *deploymentsv1alpha1.Component) (*HelmConfig, err
 		return nil, fmt.Errorf("helm config validation failed: %w", err)
 	}
 
-	return &config, nil
-}
+	// Resolve target namespace: use configured namespace or fall back to Component's namespace
+	if config.Namespace == "" {
+		config.Namespace = component.Namespace
+	}
 
-// generateReleaseName creates a deterministic release name from Component metadata
-func generateReleaseName(component *deploymentsv1alpha1.Component) string {
-	// Use component name and namespace to ensure uniqueness
-	return fmt.Sprintf("%s-%s", component.Namespace, component.Name)
+	return &config, nil
 }

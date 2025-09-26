@@ -36,23 +36,20 @@ import (
 )
 
 // startHelmReleaseDeployment handles all Helm-specific deployment operations
-// Returns a map of annotations that should be set on the Component
 func startHelmReleaseDeployment(
-	ctx context.Context, component *deploymentsv1alpha1.Component) (map[string]string, error) {
+	ctx context.Context, component *deploymentsv1alpha1.Component) error {
 
 	log := logf.FromContext(ctx)
 
 	// Parse the Helm configuration from Component.Spec.Config
-	config, err := parseHelmConfig(component)
+	config, err := resolveHelmConfig(component)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse helm configuration: %w", err)
+		return fmt.Errorf("failed to parse helm configuration: %w", err)
 	}
 
-	// Extract release name and target namespace for installation
-	releaseName, targetNamespace, err := extractReleaseInfo(component, config)
-	if err != nil {
-		return nil, err
-	}
+	// Get release name and target namespace from resolved configuration
+	releaseName := config.ReleaseName
+	targetNamespace := config.Namespace
 
 	log.Info("Parsed helm configuration",
 		"repository", config.Repository.URL,
@@ -65,7 +62,7 @@ func startHelmReleaseDeployment(
 	// Initialize Helm settings and action configuration
 	settings, actionConfig, err := setupHelmActionConfig(ctx, targetNamespace)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Check if release already exists
@@ -73,18 +70,13 @@ func startHelmReleaseDeployment(
 	getAction.Version = 0 // Get latest version
 	if rel, err := getAction.Run(releaseName); err == nil && rel != nil {
 		log.Info("Release already exists, skipping installation", "releaseName", releaseName, "version", rel.Version)
-		// Return the same annotations that would be set during installation
-		annotations := map[string]string{
-			DeploymentNamespaceAnnotation:   targetNamespace,
-			DeploymentReleaseNameAnnotation: releaseName,
-		}
-		return annotations, nil
+		return nil
 	}
 
 	// Prepare chart for installation
 	chart, err := prepareHelmChart(ctx, config, settings)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Create install action
@@ -102,7 +94,7 @@ func startHelmReleaseDeployment(
 	// Install the chart
 	rel, err := installAction.Run(chart, vals)
 	if err != nil {
-		return nil, fmt.Errorf("failed to install helm release %s: %w", releaseName, err)
+		return fmt.Errorf("failed to install helm release %s: %w", releaseName, err)
 	}
 
 	log.Info("Successfully installed helm release",
@@ -111,33 +103,24 @@ func startHelmReleaseDeployment(
 		"version", rel.Version,
 		"status", rel.Info.Status.String())
 
-	// Return annotations that should be set on the Component
-	annotations := map[string]string{
-		DeploymentNamespaceAnnotation:   targetNamespace,
-		DeploymentReleaseNameAnnotation: releaseName,
-	}
-
-	return annotations, nil
+	return nil
 }
 
 // startHelmReleaseUpgrade handles upgrading an existing Helm release with new configuration
-// Returns a map of annotations that should be set on the Component
 func startHelmReleaseUpgrade(
-	ctx context.Context, component *deploymentsv1alpha1.Component) (map[string]string, error) {
+	ctx context.Context, component *deploymentsv1alpha1.Component) error {
 
 	log := logf.FromContext(ctx)
 
 	// Parse the Helm configuration from Component.Spec.Config
-	config, err := parseHelmConfig(component)
+	config, err := resolveHelmConfig(component)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse helm configuration: %w", err)
+		return fmt.Errorf("failed to parse helm configuration: %w", err)
 	}
 
-	// Extract release name and target namespace from annotations
-	releaseName, targetNamespace, err := extractReleaseInfo(component, nil)
-	if err != nil {
-		return nil, err
-	}
+	// Get release name and target namespace from resolved configuration
+	releaseName := config.ReleaseName
+	targetNamespace := config.Namespace
 
 	log.Info("Parsed helm configuration for upgrade",
 		"repository", config.Repository.URL,
@@ -150,19 +133,19 @@ func startHelmReleaseUpgrade(
 	// Initialize Helm settings and action configuration
 	settings, actionConfig, err := setupHelmActionConfig(ctx, targetNamespace)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Verify release exists before attempting upgrade
 	getAction := action.NewGet(actionConfig)
 	if _, err := getAction.Run(releaseName); err != nil {
-		return nil, fmt.Errorf("release %s not found for upgrade: %w", releaseName, err)
+		return fmt.Errorf("release %s not found for upgrade: %w", releaseName, err)
 	}
 
 	// Prepare chart for upgrade
 	chart, err := prepareHelmChart(ctx, config, settings)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Create upgrade action
@@ -177,7 +160,7 @@ func startHelmReleaseUpgrade(
 	// Upgrade the chart
 	rel, err := upgradeAction.Run(releaseName, chart, vals)
 	if err != nil {
-		return nil, fmt.Errorf("failed to upgrade helm release %s: %w", releaseName, err)
+		return fmt.Errorf("failed to upgrade helm release %s: %w", releaseName, err)
 	}
 
 	log.Info("Successfully started helm release upgrade",
@@ -186,14 +169,7 @@ func startHelmReleaseUpgrade(
 		"version", rel.Version,
 		"status", rel.Info.Status.String())
 
-	// Return annotations that should be set on the Component
-	// For upgrades, the annotations should remain the same
-	annotations := map[string]string{
-		DeploymentNamespaceAnnotation:   targetNamespace,
-		DeploymentReleaseNameAnnotation: releaseName,
-	}
-
-	return annotations, nil
+	return nil
 }
 
 // checkHelmReleaseReady performs non-blocking readiness checks on Kubernetes resources

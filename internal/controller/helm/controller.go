@@ -122,7 +122,7 @@ func (r *ComponentReconciler) handleCreation(
 	if util.IsClaimed(component) {
 		log.Info("Starting deployment of component")
 
-		annotations, err := startHelmReleaseDeployment(ctx, component)
+		err := startHelmReleaseDeployment(ctx, component)
 		if err != nil {
 			log.Error(err, "failed to perform helm deployment")
 			util.SetFailedStatus(component, HandlerName, err.Error())
@@ -133,14 +133,6 @@ func (r *ComponentReconciler) handleCreation(
 		if err := r.Status().Update(ctx, component); err != nil {
 			log.Error(err, "failed to update deploying status")
 			return ctrl.Result{}, err
-		}
-
-		// Update annotations if needed to avoid unnecessary reconcile loops
-		if needsUpdate := r.ensureAnnotations(component, annotations); needsUpdate {
-			log.Info("Storing deployment metadata in annotations", "annotations", annotations)
-			if err := r.Update(ctx, component); err != nil {
-				return ctrl.Result{}, err
-			}
 		}
 
 		// Start waiting for deployment to complete
@@ -192,7 +184,7 @@ func (r *ComponentReconciler) handleCreation(
 		// Start upgrade and set back to Deploying
 		log.Info("Component is dirty, starting helm upgrade")
 
-		annotations, err := startHelmReleaseUpgrade(ctx, component)
+		err := startHelmReleaseUpgrade(ctx, component)
 		if err != nil {
 			log.Error(err, "failed to perform helm upgrade")
 			util.SetFailedStatus(component, HandlerName, err.Error())
@@ -203,14 +195,6 @@ func (r *ComponentReconciler) handleCreation(
 		if err := r.Status().Update(ctx, component); err != nil {
 			log.Error(err, "failed to update deploying status")
 			return ctrl.Result{}, err
-		}
-
-		// Update annotations if needed to avoid unnecessary reconcile loops
-		if needsUpdate := r.ensureAnnotations(component, annotations); needsUpdate {
-			log.Info("Storing deployment metadata in annotations", "annotations", annotations)
-			if err := r.Update(ctx, component); err != nil {
-				return ctrl.Result{}, err
-			}
 		}
 
 		// Start waiting for upgrade to complete
@@ -281,27 +265,4 @@ func (r *ComponentReconciler) handleDeletion(
 
 	log.Info("Component cleanup completed")
 	return ctrl.Result{}, nil
-}
-
-// ensureAnnotations compares desired annotations with current annotations
-// and updates the component if changes are needed. Returns true if update was needed.
-// This function is safe - it only modifies the component when an update is actually needed.
-func (r *ComponentReconciler) ensureAnnotations(component *deploymentsv1alpha1.Component, desiredAnnotations map[string]string) bool {
-	if len(desiredAnnotations) == 0 {
-		return false
-	}
-
-	if component.Annotations == nil {
-		component.Annotations = make(map[string]string)
-	}
-
-	needsUpdate := false
-	for key, value := range desiredAnnotations {
-		if component.Annotations[key] != value {
-			needsUpdate = true
-			component.Annotations[key] = value
-		}
-	}
-
-	return needsUpdate
 }

@@ -36,11 +36,14 @@ import (
 func startHelmReleaseDeletion(ctx context.Context, component *deploymentsv1alpha1.Component) error {
 	log := logf.FromContext(ctx)
 
-	// Extract release name and target namespace from annotations
-	releaseName, targetNamespace, err := extractReleaseInfo(component, nil)
+	// Parse configuration to get release name and namespace
+	config, err := resolveHelmConfig(component)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse helm config: %w", err)
 	}
+
+	releaseName := config.ReleaseName
+	targetNamespace := config.Namespace
 
 	log.Info("Performing helm cleanup",
 		"releaseName", releaseName,
