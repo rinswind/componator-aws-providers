@@ -23,6 +23,7 @@ package helm
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
@@ -48,6 +49,10 @@ type HelmConfig struct {
 	// Values contains key-value pairs for chart values override
 	// +optional
 	Values map[string]any `json:"values,omitempty"`
+
+	// Timeouts contains timeout configuration for deployment and deletion operations
+	// +optional
+	Timeouts *TimeoutConfig `json:"timeouts,omitempty"`
 }
 
 // Repository represents Helm chart repository configuration
@@ -74,6 +79,40 @@ type HelmChart struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Version string `json:"version" validate:"required,min=1"`
+}
+
+// TimeoutConfig represents timeout configuration for Helm operations
+type TimeoutConfig struct {
+	// Deployment timeout - how long to wait for Helm release to become ready
+	// Transitions to Failed when exceeded
+	// +optional
+	Deployment *Duration `json:"deployment,omitempty"`
+
+	// Deletion timeout - informational threshold for deletion visibility
+	// Updates status message only, never blocks deletion
+	// +optional
+	Deletion *Duration `json:"deletion,omitempty"`
+}
+
+// Duration wraps time.Duration with JSON marshaling support
+type Duration struct {
+	time.Duration
+}
+
+// UnmarshalJSON implements json.Unmarshaler interface for Duration
+func (d *Duration) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+
+	dur, err := time.ParseDuration(s)
+	if err != nil {
+		return err
+	}
+
+	d.Duration = dur
+	return nil
 }
 
 // resolveHelmConfig unmarshals Component.Spec.Config into HelmConfig struct
