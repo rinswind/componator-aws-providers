@@ -84,9 +84,28 @@ func startHelmReleaseDeletion(ctx context.Context, component *deploymentsv1alpha
 }
 
 // checkHelmReleaseDeleted verifies if a Helm release and all its resources have been deleted
-// Returns true when deletion is complete (release gone and all resources deleted)
-func checkHelmReleaseDeleted(ctx context.Context, component *deploymentsv1alpha1.Component) (bool, error) {
+// Returns (deleted, ioError, deletionError) to distinguish between temporary I/O issues and permanent failures
+func checkHelmReleaseDeleted(
+	ctx context.Context, component *deploymentsv1alpha1.Component, elapsed time.Duration) (bool, error, error) {
+
 	log := logf.FromContext(ctx)
+
+	// Check deletion timeout first
+	config, err := resolveHelmConfig(component)
+	if err != nil {
+		return false, fmt.Errorf("failed to resolve component config for timeout check: %w", err), nil // I/O error
+	}
+
+	deletionTimeout := config.Timeouts.Deletion.Duration
+	if elapsed >= deletionTimeout {
+		log.Error(nil, "deletion timed out",
+			"elapsed", elapsed,
+			"timeout", deletionTimeout,
+			"chart", config.Chart.Name)
+
+		return false, nil, fmt.Errorf("Deletion timed out after %v (timeout: %v)",
+			elapsed.Truncate(time.Second), deletionTimeout) // Deletion failure
+	}
 
 	// Try to get the current release
 	rel, err := getHelmRelease(ctx, component)
@@ -94,9 +113,9 @@ func checkHelmReleaseDeleted(ctx context.Context, component *deploymentsv1alpha1
 		// If release is gone, deletion is complete
 		if errors.Is(err, driver.ErrReleaseNotFound) {
 			log.Info("Release no longer exists, deletion complete")
-			return true, nil
+			return true, nil, nil // Success
 		}
-		return false, fmt.Errorf("failed to check release status during deletion: %w", err)
+		return false, fmt.Errorf("failed to check release status during deletion: %w", err), nil // I/O error
 	}
 
 	// Release still exists - check if its resources are gone
@@ -106,13 +125,13 @@ func checkHelmReleaseDeleted(ctx context.Context, component *deploymentsv1alpha1
 
 	resourceList, err := gatherHelmReleaseResources(ctx, rel)
 	if err != nil {
-		return false, fmt.Errorf("failed to gather resources for deletion check: %w", err)
+		return false, fmt.Errorf("failed to gather resources for deletion check: %w", err), nil // I/O error
 	}
 
 	// Check if all resources from manifest are deleted
 	allDeleted, err := checkResourcesDeleted(ctx, resourceList)
 	if err != nil {
-		return false, fmt.Errorf("failed to check resource deletion status: %w", err)
+		return false, fmt.Errorf("failed to check resource deletion status: %w", err), nil // I/O error
 	}
 
 	if allDeleted {
@@ -121,7 +140,7 @@ func checkHelmReleaseDeleted(ctx context.Context, component *deploymentsv1alpha1
 		log.Info("Some release resources still exist, deletion in progress")
 	}
 
-	return allDeleted, nil
+	return allDeleted, nil, nil // Success or still in progress
 }
 
 // checkResourcesDeleted performs non-blocking deletion checks on Kubernetes resources

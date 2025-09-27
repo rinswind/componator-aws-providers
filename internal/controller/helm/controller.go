@@ -245,39 +245,26 @@ func (r *ComponentReconciler) handleDeletion(
 	}
 
 	// 2. If Terminating -> check deletion progress
-	deleted, err := checkHelmReleaseDeleted(ctx, component)
-	if err != nil {
-		log.Error(err, "deletion failed")
-		util.SetTerminatingStatus(component, HandlerName, err.Error())
+	elapsed := util.GetPhaseElapsedTime(component)
+
+	// Check deletion status - encapsulates all resource checking logic including timeout
+	deleted, ioErr, deletionErr := checkHelmReleaseDeleted(ctx, component, elapsed)
+
+	// Handle I/O errors with requeue (transient)
+	if ioErr != nil {
+		log.Error(ioErr, "failed to check deletion state", "requeueAfter", r.requeuePeriod)
+		return ctrl.Result{RequeueAfter: r.requeuePeriod}, ioErr
+	}
+
+	// Handle deletion failures without requeue (permanent)
+	if deletionErr != nil {
+		log.Error(deletionErr, "deletion failed permanently")
+		util.SetTerminatingStatus(component, HandlerName, deletionErr.Error())
 		return ctrl.Result{}, r.Status().Update(ctx, component)
+		// Note: finalizer is NOT removed - component stays in Terminating state
 	}
 
 	if !deleted {
-		// Get timeout configuration from component config for deletion visibility
-		config, configErr := resolveHelmConfig(component)
-		if configErr != nil {
-			log.Error(configErr, "failed to resolve component config for deletion timeout check")
-		} else {
-			// Check deletion timeout for operational visibility only
-			deletionTimeout := config.Timeouts.Deletion.Duration
-			if util.IsPhaseTimedOut(component, deletionTimeout) {
-				elapsed := util.GetPhaseElapsedTime(component)
-				log.Info("deletion taking longer than expected",
-					"elapsed", elapsed,
-					"timeout", deletionTimeout,
-					"component", component.Name,
-					"chart", config.Chart.Name)
-
-				// Update status message for operational visibility
-				util.SetTerminatingStatus(component, HandlerName,
-					fmt.Sprintf("Cleanup in progress (%v elapsed, expected: <%v)",
-						elapsed.Truncate(time.Second), deletionTimeout))
-				if statusErr := r.Status().Update(ctx, component); statusErr != nil {
-					log.Error(statusErr, "failed to update terminating status with timeout warning")
-				}
-			}
-		}
-
 		log.Info("Deletion in progress", "requeueAfter", r.requeuePeriod)
 		return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
 	}
