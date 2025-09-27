@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	controllerutils "github.com/rinswind/deployment-handlers/internal/controller"
+	"github.com/rinswind/deployment-handlers/internal/controller/base"
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 
@@ -79,7 +79,7 @@ func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: 5,
 		}).
-		WithEventFilter(controllerutils.ComponentHandlerPredicate("rds")).
+		WithEventFilter(base.ComponentHandlerPredicate("rds")).
 		Named("rds-component").
 		Complete(r)
 }
