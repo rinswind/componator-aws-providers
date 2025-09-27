@@ -315,7 +315,66 @@ spec:
 1. ✅ Phase 1: Extend HelmConfig (config structure) - **COMPLETED**
 2. ✅ Phase 2: Update controller structure (defaults) - **COMPLETED**
 3. ✅ Phase 3: Add timeout resolution logic (helper method) - **COMPLETED**
-4. Phase 4: Implement deployment timeout (actionable)
+4. ✅ Phase 4: Implement deployment timeout (actionable) - **COMPLETED**
+5. ✅ Phase 5: Implement deletion visibility (informational) - **COMPLETED**
+6. Phase 6: Add tests
+7. Phase 7: Update samples
+
+### Phase 4: Deployment Timeout Implementation ✅ **COMPLETED**
+
+**Implemented changes in `internal/controller/helm/controller.go`:**
+
+- ✅ Added deployment timeout check in the Deploying phase section of `handleCreation()` method
+- ✅ Integrated `resolveHelmConfig()` to get timeout configuration from component
+- ✅ Added timeout check using `util.IsPhaseTimedOut()` before readiness check
+- ✅ Implemented Failed status transition with detailed timeout message when exceeded
+- ✅ Added structured logging with elapsed time, timeout value, and chart name
+- ✅ Used `util.GetPhaseElapsedTime()` and `util.SetFailedStatus()` utility functions
+- ✅ All existing tests pass
+- ✅ Code compiles successfully
+- ✅ Maintains existing readiness check flow when not timed out
+
+**Implementation details:**
+- Timeout check occurs before Helm release readiness verification
+- Uses component-level timeout configuration or 5-minute default from `resolveHelmConfig()`
+- Failed status includes both elapsed time and configured timeout for clarity
+- Error logging includes chart name for operational visibility
+- Graceful error handling if config resolution fails
+- No changes to upgrade flow timeout behavior (will be addressed separately if needed)
+
+**Behavior:**
+- Components in Deploying phase are checked for deployment timeout before readiness
+- When timeout exceeded: component transitions to Failed with detailed message
+- When not timed out: continues with existing Helm release readiness check
+- Failed components can be retried by updating the component spec (triggers dirty detection)
+
+### Phase 5: Deletion Visibility Implementation ✅ **COMPLETED**
+
+**Implemented changes in `internal/controller/helm/controller.go`:**
+
+- ✅ Added deletion timeout check in the Terminating phase section of `handleDeletion()` method
+- ✅ Integrated `resolveHelmConfig()` to get deletion timeout configuration from component
+- ✅ Added timeout check using `util.IsPhaseTimedOut()` during deletion progress monitoring
+- ✅ Implemented status message updates for operational visibility when deletion timeout exceeded
+- ✅ Added structured logging with elapsed time, timeout value, chart name, and component name
+- ✅ Used `util.GetPhaseElapsedTime()` and `util.SetTerminatingStatus()` utility functions
+- ✅ All existing tests pass
+- ✅ Code compiles successfully
+- ✅ Never blocks deletion - purely informational for operational visibility
+
+**Implementation details:**
+- Deletion timeout check occurs during deletion progress monitoring (when `!deleted`)
+- Uses component-level deletion timeout configuration or 5-minute default from `resolveHelmConfig()`
+- Updates status message with elapsed time and expected timeout for visibility
+- Graceful error handling if config resolution fails (logs error but continues deletion)
+- Informational logging includes component name and chart name for operational context
+- Status message format: "Cleanup in progress (7m32s elapsed, expected: <5m0s)"
+
+**Behavior:**
+- Components in Terminating phase are checked for deletion timeout during cleanup monitoring
+- When timeout exceeded: status message updated with elapsed time warning, but deletion continues
+- When not timed out: continues with normal deletion progress monitoring
+- Never blocks deletion process - timeout is purely informational for operational awareness
 5. Phase 5: Implement deletion visibility (informational)
 6. Phase 6: Add tests
 7. Phase 7: Update samples

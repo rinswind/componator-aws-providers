@@ -144,6 +144,28 @@ func (r *ComponentReconciler) handleCreation(
 
 	// 3. If Deploying -> check deployment progress
 	if util.IsDeploying(component) {
+		// Get timeout configuration from component config
+		config, err := resolveHelmConfig(component)
+		if err != nil {
+			log.Error(err, "failed to resolve component config for timeout check")
+			return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
+		}
+
+		// Check deployment timeout before readiness check
+		deploymentTimeout := config.Timeouts.Deployment.Duration
+		if util.IsPhaseTimedOut(component, deploymentTimeout) {
+			elapsed := util.GetPhaseElapsedTime(component)
+			log.Error(nil, "deployment timed out",
+				"elapsed", elapsed,
+				"timeout", deploymentTimeout,
+				"chart", config.Chart.Name)
+
+			util.SetFailedStatus(component, HandlerName,
+				fmt.Sprintf("Deployment timed out after %v (timeout: %v)",
+					elapsed.Truncate(time.Second), deploymentTimeout))
+			return ctrl.Result{}, r.Status().Update(ctx, component)
+		}
+
 		rel, err := getHelmRelease(ctx, component)
 		if err != nil {
 			log.Error(err, "failed to check helm release readiness")
@@ -253,6 +275,31 @@ func (r *ComponentReconciler) handleDeletion(
 	}
 
 	if !deleted {
+		// Get timeout configuration from component config for deletion visibility
+		config, configErr := resolveHelmConfig(component)
+		if configErr != nil {
+			log.Error(configErr, "failed to resolve component config for deletion timeout check")
+		} else {
+			// Check deletion timeout for operational visibility only
+			deletionTimeout := config.Timeouts.Deletion.Duration
+			if util.IsPhaseTimedOut(component, deletionTimeout) {
+				elapsed := util.GetPhaseElapsedTime(component)
+				log.Info("deletion taking longer than expected",
+					"elapsed", elapsed,
+					"timeout", deletionTimeout,
+					"component", component.Name,
+					"chart", config.Chart.Name)
+
+				// Update status message for operational visibility
+				util.SetTerminatingStatus(component, HandlerName,
+					fmt.Sprintf("Cleanup in progress (%v elapsed, expected: <%v)",
+						elapsed.Truncate(time.Second), deletionTimeout))
+				if statusErr := r.Status().Update(ctx, component); statusErr != nil {
+					log.Error(statusErr, "failed to update terminating status with timeout warning")
+				}
+			}
+		}
+
 		log.Info("Deletion in progress, checking again in 10 seconds")
 		return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
 	}
