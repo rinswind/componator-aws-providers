@@ -2,7 +2,14 @@
 Copyright 2025.
 
 Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
+y	// Create install action
+	installAction := action.NewInstall(actionConfig)
+	installAction.ReleaseName = releaseName
+	installAction.Namespace = targetNamespace
+	installAction.CreateNamespace = config.GetManageNamespace()
+	installAction.Version = config.Chart.Version
+	installAction.Wait = false               // Async deployment - don't block reconcile loop
+	installAction.Timeout = 30 * time.Second // Quick timeout for install operation itselfot use this file except in compliance with the License.
 You may obtain a copy of the License at
 
     http://www.apache.org/licenses/LICENSE-2.0
@@ -48,18 +55,18 @@ func (h *HelmOperations) Deploy(ctx context.Context, component *deploymentsv1alp
 
 	// Get release name and target namespace from resolved configuration
 	releaseName := config.ReleaseName
-	targetNamespace := config.ReleaseNamespace
+	releaseNamespace := config.ReleaseNamespace
 
 	log.Info("Parsed helm configuration",
 		"repository", config.Repository.URL,
 		"chart", config.Chart.Name,
 		"version", config.Chart.Version,
 		"releaseName", releaseName,
-		"targetNamespace", targetNamespace,
+		"releaseNamespace", releaseNamespace,
 		"valuesCount", len(config.Values))
 
 	// Initialize Helm settings and action configuration
-	settings, actionConfig, err := setupHelmActionConfig(ctx, targetNamespace)
+	settings, actionConfig, err := setupHelmActionConfig(ctx, releaseNamespace)
 	if err != nil {
 		return err
 	}
@@ -86,8 +93,8 @@ func (h *HelmOperations) Deploy(ctx context.Context, component *deploymentsv1alp
 	// Create install action
 	installAction := action.NewInstall(actionConfig)
 	installAction.ReleaseName = releaseName
-	installAction.Namespace = targetNamespace
-	installAction.CreateNamespace = true
+	installAction.Namespace = releaseNamespace
+	installAction.CreateNamespace = *config.ManageNamespace
 	installAction.Version = config.Chart.Version
 	installAction.Wait = false               // Async deployment - don't block reconcile loop
 	installAction.Timeout = 30 * time.Second // Quick timeout for install operation itself
@@ -103,7 +110,7 @@ func (h *HelmOperations) Deploy(ctx context.Context, component *deploymentsv1alp
 
 	log.Info("Successfully installed helm release",
 		"releaseName", releaseName,
-		"namespace", targetNamespace,
+		"namespace", releaseNamespace,
 		"version", rel.Version,
 		"status", rel.Info.Status.String())
 
@@ -122,18 +129,18 @@ func (h *HelmOperations) Upgrade(ctx context.Context, component *deploymentsv1al
 
 	// Get release name and target namespace from resolved configuration
 	releaseName := config.ReleaseName
-	targetNamespace := config.ReleaseNamespace
+	releaseNamespace := config.ReleaseNamespace
 
 	log.Info("Parsed helm configuration for upgrade",
 		"repository", config.Repository.URL,
 		"chart", config.Chart.Name,
 		"version", config.Chart.Version,
 		"releaseName", releaseName,
-		"targetNamespace", targetNamespace,
+		"releaseNamespace", releaseNamespace,
 		"valuesCount", len(config.Values))
 
 	// Initialize Helm settings and action configuration
-	settings, actionConfig, err := setupHelmActionConfig(ctx, targetNamespace)
+	settings, actionConfig, err := setupHelmActionConfig(ctx, releaseNamespace)
 	if err != nil {
 		return err
 	}
@@ -172,7 +179,7 @@ func (h *HelmOperations) Upgrade(ctx context.Context, component *deploymentsv1al
 
 	log.Info("Successfully started helm release upgrade",
 		"releaseName", releaseName,
-		"namespace", targetNamespace,
+		"namespace", releaseNamespace,
 		"version", rel.Version,
 		"status", rel.Info.Status.String())
 

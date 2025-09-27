@@ -40,6 +40,13 @@ type HelmConfig struct {
 	// +optional
 	ReleaseNamespace string `json:"releaseNamespace,omitempty"`
 
+	// ManageNamespace controls whether the handler creates and deletes the release namespace
+	// When true: Creates namespace on install, deletes namespace on uninstall (if empty)
+	// When false: Assumes namespace exists, leaves it untouched on uninstall
+	// Default: true (sensible default for most use cases)
+	// +optional
+	ManageNamespace *bool `json:"manageNamespace,omitempty"`
+
 	// Repository specifies the Helm chart repository configuration
 	Repository HelmRepository `json:"repository"`
 
@@ -150,6 +157,13 @@ func resolveHelmConfig(component *deploymentsv1alpha1.Component) (*HelmConfig, e
 	}
 	if config.Timeouts.Deletion == nil {
 		config.Timeouts.Deletion = &Duration{Duration: 5 * time.Minute}
+	}
+
+	// Set sensible default for namespace management
+	// Default to true - most users want full namespace lifecycle management
+	if config.ManageNamespace == nil {
+		defaultManageNamespace := true
+		config.ManageNamespace = &defaultManageNamespace
 	}
 
 	return &config, nil

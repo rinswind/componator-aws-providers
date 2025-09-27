@@ -582,4 +582,104 @@ var _ = Describe("Helm Configuration", func() {
 			Expect(authMap).To(HaveKeyWithValue("postgresPassword", "changeme123"))
 		})
 	})
+
+	Context("When parsing ManageNamespace configuration", func() {
+		It("should default ManageNamespace to true", func() {
+			// Create component without ManageNamespace field
+			configJSON := `{
+				"repository": {
+					"url": "https://charts.bitnami.com/bitnami",
+					"name": "bitnami"
+				},
+				"chart": {
+					"name": "nginx",
+					"version": "15.4.4"
+				},
+				"releaseName": "test-nginx"
+			}`
+
+			component := &deploymentsv1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nginx",
+					Namespace: "default",
+				},
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "nginx-app",
+					Handler: "helm",
+					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
+				},
+			}
+
+			config, err := resolveHelmConfig(component)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(config).NotTo(BeNil())
+			Expect(*config.ManageNamespace).To(BeTrue()) // Should default to true
+		})
+
+		It("should respect explicit ManageNamespace false setting", func() {
+			// Create component with ManageNamespace explicitly set to false
+			configJSON := `{
+				"repository": {
+					"url": "https://charts.bitnami.com/bitnami",
+					"name": "bitnami"
+				},
+				"chart": {
+					"name": "nginx",
+					"version": "15.4.4"
+				},
+				"releaseName": "test-nginx",
+				"manageNamespace": false
+			}`
+
+			component := &deploymentsv1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nginx",
+					Namespace: "default",
+				},
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "nginx-app",
+					Handler: "helm",
+					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
+				},
+			}
+
+			config, err := resolveHelmConfig(component)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(config).NotTo(BeNil())
+			Expect(*config.ManageNamespace).To(BeFalse()) // Should respect explicit false
+		})
+
+		It("should respect explicit ManageNamespace true setting", func() {
+			// Create component with ManageNamespace explicitly set to true
+			configJSON := `{
+				"repository": {
+					"url": "https://charts.bitnami.com/bitnami",
+					"name": "bitnami"
+				},
+				"chart": {
+					"name": "nginx",
+					"version": "15.4.4"
+				},
+				"releaseName": "test-nginx",
+				"manageNamespace": true
+			}`
+
+			component := &deploymentsv1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nginx",
+					Namespace: "default",
+				},
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "nginx-app",
+					Handler: "helm",
+					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
+				},
+			}
+
+			config, err := resolveHelmConfig(component)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(config).NotTo(BeNil())
+			Expect(*config.ManageNamespace).To(BeTrue()) // Should respect explicit true
+		})
+	})
 })

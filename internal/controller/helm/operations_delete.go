@@ -26,13 +26,15 @@ import (
 	"helm.sh/helm/v3/pkg/kube"
 	"helm.sh/helm/v3/pkg/storage/driver"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cli-runtime/pkg/resource"
+	"k8s.io/client-go/kubernetes"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 
-// startHelmReleaseDeletion handles all Helm-specific cleanup operations
+// Delete starts asynchronous helm release deletion
 func (h *HelmOperations) Delete(ctx context.Context, component *deploymentsv1alpha1.Component) error {
 	log := logf.FromContext(ctx)
 
@@ -80,10 +82,18 @@ func (h *HelmOperations) Delete(ctx context.Context, component *deploymentsv1alp
 		"namespace", targetNamespace,
 		"info", res.Info)
 
+	// Clean up namespace if we're managing it
+	if *config.ManageNamespace {
+		if err := h.deleteNamespace(ctx, targetNamespace, actionConfig); err != nil {
+			log.Error(err, "Failed to delete managed namespace", "namespace", targetNamespace)
+			// Continue - don't fail Component deletion over namespace cleanup
+		}
+	}
+
 	return nil
 }
 
-// checkHelmReleaseDeleted verifies if a Helm release and all its resources have been deleted
+// checkDeletion verifies if a Helm release and all its resources have been deleted
 // Returns (deleted, ioError, deletionError) to distinguish between temporary I/O issues and permanent failures
 func (h *HelmOperations) CheckDeletion(
 	ctx context.Context, component *deploymentsv1alpha1.Component, elapsed time.Duration) (bool, error, error) {
@@ -134,13 +144,37 @@ func (h *HelmOperations) CheckDeletion(
 		return false, fmt.Errorf("failed to check resource deletion status: %w", err), nil // I/O error
 	}
 
-	if allDeleted {
-		log.Info("All release resources deleted, deletion complete")
-	} else {
+	if !allDeleted {
 		log.Info("Some release resources still exist, deletion in progress")
+		return false, nil, nil // Still in progress
 	}
 
-	return allDeleted, nil, nil // Success or still in progress
+	log.Info("All release resources deleted")
+
+	// Are we managing the namespace too?
+	if !*config.ManageNamespace {
+		log.Info("Deletion complete")
+		return true, nil, nil
+	}
+
+	// Setup action configuration for potential namespace operations
+	_, actionConfig, err := setupHelmActionConfig(ctx, config.ReleaseNamespace)
+	if err != nil {
+		return false, fmt.Errorf("failed to setup helm action config: %w", err), nil // I/O error
+	}
+
+	exists, err := h.namespaceExists(ctx, config.ReleaseNamespace, actionConfig)
+	if err != nil {
+		return false, fmt.Errorf("failed to check namespace status: %w", err), nil
+	}
+
+	if exists {
+		log.Info("Managed namespace still exists, deletion in progress")
+		return false, nil, nil
+	}
+
+	log.Info("Deletion complete")
+	return true, nil, nil
 }
 
 // checkResourcesDeleted performs non-blocking deletion checks on Kubernetes resources
@@ -158,7 +192,7 @@ func checkResourcesDeleted(ctx context.Context, resourceList kube.ResourceList) 
 	// Check each resource individually (non-blocking)
 	// Use the resource's own REST client - no need for separate Kubernetes client setup
 	for _, resource := range resourceList {
-		exists, err := resourceStillExists(ctx, resource)
+		exists, err := resourceExists(ctx, resource)
 		if err != nil {
 			log.Error(err, "Error checking resource existence during deletion",
 				"resource", resource.Name,
@@ -187,9 +221,9 @@ func checkResourcesDeleted(ctx context.Context, resourceList kube.ResourceList) 
 	return allDeleted, nil
 }
 
-// resourceStillExists checks if a specific Kubernetes resource still exists in the cluster
+// resourceExists checks if a specific Kubernetes resource still exists in the cluster
 // Returns true if the resource exists, false if it's been deleted
-func resourceStillExists(ctx context.Context, resource *resource.Info) (bool, error) {
+func resourceExists(ctx context.Context, resource *resource.Info) (bool, error) {
 	// Use the resource's REST client with proper verb/path construction
 	result := resource.Client.Get().
 		Resource(resource.Mapping.Resource.Resource).
@@ -205,4 +239,56 @@ func resourceStillExists(ctx context.Context, resource *resource.Info) (bool, er
 	}
 
 	return true, nil // Resource exists
+}
+
+func (h *HelmOperations) namespaceExists(
+	ctx context.Context, namespace string, actionConfig *action.Configuration) (bool, error) {
+
+	restConfig, err := actionConfig.RESTClientGetter.ToRESTConfig()
+	if err != nil {
+		return false, err
+	}
+
+	clientset, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return false, err
+	}
+
+	_, err = clientset.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
+	if err == nil {
+		// Managed to get the namespace - so still here
+		return true, nil
+	}
+
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+
+	return false, err
+}
+
+func (h *HelmOperations) deleteNamespace(
+	ctx context.Context, namespace string, actionConfig *action.Configuration) error {
+
+	log := logf.FromContext(ctx)
+
+	// Get Kubernetes client using the same approach as in deploy operations
+	restConfig, err := actionConfig.RESTClientGetter.ToRESTConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get REST config: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create kubernetes client: %w", err)
+	}
+
+	// Delete namespace - Kubernetes will handle cascade deletion and blocking until empty
+	err = clientset.CoreV1().Namespaces().Delete(ctx, namespace, metav1.DeleteOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete namespace: %w", err)
+	}
+
+	log.Info("Successfully initiated namespace deletion", "namespace", namespace)
+	return nil
 }
