@@ -41,7 +41,7 @@ func (r *RdsOperations) Delete(ctx context.Context) error {
 	// Use pre-parsed configuration from factory (no repeated parsing)
 	config := r.config
 
-	log.Info("Starting RDS deletion using pre-parsed configuration", 
+	log.Info("Starting RDS deletion using pre-parsed configuration",
 		"databaseName", config.DatabaseName)
 
 	// TODO: Implement RDS deletion logic here

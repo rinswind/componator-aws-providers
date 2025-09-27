@@ -21,12 +21,13 @@ limitations under the License.
 package helm
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/go-playground/validator/v10"
-	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // HelmConfig represents the configuration structure for Helm components
@@ -36,9 +37,7 @@ type HelmConfig struct {
 	ReleaseName string `json:"releaseName" validate:"required"`
 
 	// ReleaseNamespace specifies the namespace for Helm release deployment
-	// If not specified, uses the Component's namespace
-	// +optional
-	ReleaseNamespace string `json:"releaseNamespace,omitempty"`
+	ReleaseNamespace string `json:"releaseNamespace" validate:"required"`
 
 	// ManageNamespace controls whether the handler creates and deletes the release namespace
 	// When true: Creates namespace on install, deletes namespace on uninstall (if empty)
@@ -124,13 +123,9 @@ func (d *Duration) UnmarshalJSON(data []byte) error {
 
 // resolveHelmConfig unmarshals Component.Spec.Config into HelmConfig struct
 // and resolves the target namespace (fills in from Component.Namespace if not specified)
-func resolveHelmConfig(component *deploymentsv1alpha1.Component) (*HelmConfig, error) {
-	if component.Spec.Config == nil {
-		return nil, fmt.Errorf("config is required for helm components")
-	}
-
+func resolveHelmConfig(ctx context.Context, rawConfig json.RawMessage) (*HelmConfig, error) {
 	var config HelmConfig
-	if err := json.Unmarshal(component.Spec.Config.Raw, &config); err != nil {
+	if err := json.Unmarshal(rawConfig, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse helm config: %w", err)
 	}
 
@@ -138,11 +133,6 @@ func resolveHelmConfig(component *deploymentsv1alpha1.Component) (*HelmConfig, e
 	validate := validator.New()
 	if err := validate.Struct(&config); err != nil {
 		return nil, fmt.Errorf("helm config validation failed: %w", err)
-	}
-
-	// Resolve target namespace: use configured namespace or fall back to Component's namespace
-	if config.ReleaseNamespace == "" {
-		config.ReleaseNamespace = component.Namespace
 	}
 
 	// Resolve timeouts
@@ -165,6 +155,16 @@ func resolveHelmConfig(component *deploymentsv1alpha1.Component) (*HelmConfig, e
 		defaultManageNamespace := true
 		config.ManageNamespace = &defaultManageNamespace
 	}
+
+	log := logf.FromContext(ctx)
+
+	log.V(1).Info("Resolved helm config",
+		"repository", config.Repository.URL,
+		"chart", config.Chart.Name,
+		"version", config.Chart.Version,
+		"releaseName", config.ReleaseName,
+		"releaseNamespace", config.ReleaseNamespace,
+		"valuesCount", len(config.Values))
 
 	return &config, nil
 }

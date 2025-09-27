@@ -20,6 +20,13 @@ import (
 	"github.com/rinswind/deployment-operator/handler/base"
 )
 
+const (
+	// HandlerName is the identifier for this helm handler
+	HandlerName = "helm"
+
+	ControllerName = "helm-component"
+)
+
 //+kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components/finalizers,verbs=update
@@ -36,8 +43,8 @@ type ComponentReconciler struct {
 
 // NewComponentReconciler creates a new Helm Component controller with the generic base using factory pattern
 func NewComponentReconciler() *ComponentReconciler {
-	operationsFactory := NewHelmOperationsFactory()
-	config := NewHelmOperationsConfig()
+	operationsFactory := &HelmOperationsFactory{}
+	config := base.DefaultComponentHandlerConfig(HandlerName, ControllerName)
 
 	return &ComponentReconciler{
 		ComponentReconciler: base.NewComponentReconciler(operationsFactory, config),

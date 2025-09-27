@@ -36,24 +36,15 @@ import (
 func (h *HelmOperations) Delete(ctx context.Context) error {
 	log := logf.FromContext(ctx)
 
-	// Use pre-parsed configuration from factory (no repeated parsing)
-	config := h.config
-
-	releaseName := config.ReleaseName
-	targetNamespace := config.ReleaseNamespace
+	releaseName := h.config.ReleaseName
+	targetNamespace := h.config.ReleaseNamespace
 
 	log.Info("Performing helm cleanup using pre-parsed configuration",
 		"releaseName", releaseName,
 		"targetNamespace", targetNamespace)
 
-	// Initialize Helm settings and action configuration
-	_, actionConfig, err := setupHelmActionConfig(ctx, targetNamespace)
-	if err != nil {
-		return err
-	}
-
 	// Check if release exists
-	getAction := action.NewGet(actionConfig)
+	getAction := action.NewGet(h.actionConfig)
 	getAction.Version = 0 // Get latest version
 	if _, err := getAction.Run(releaseName); err != nil {
 		// Release doesn't exist, which is fine for cleanup
@@ -62,7 +53,7 @@ func (h *HelmOperations) Delete(ctx context.Context) error {
 	}
 
 	// Create uninstall action
-	uninstallAction := action.NewUninstall(actionConfig)
+	uninstallAction := action.NewUninstall(h.actionConfig)
 	uninstallAction.Wait = false               // Async uninstall - don't block reconcile loop
 	uninstallAction.Timeout = 30 * time.Second // Quick timeout for uninstall operation itself
 
@@ -78,8 +69,8 @@ func (h *HelmOperations) Delete(ctx context.Context) error {
 		"info", res.Info)
 
 	// Clean up namespace if we're managing it
-	if *config.ManageNamespace {
-		if err := h.deleteNamespace(ctx, targetNamespace, actionConfig); err != nil {
+	if *h.config.ManageNamespace {
+		if err := h.deleteNamespace(ctx); err != nil {
 			log.Error(err, "Failed to delete managed namespace", "namespace", targetNamespace)
 			// Continue - don't fail Component deletion over namespace cleanup
 		}
@@ -93,23 +84,20 @@ func (h *HelmOperations) Delete(ctx context.Context) error {
 func (h *HelmOperations) CheckDeletion(ctx context.Context, elapsed time.Duration) (bool, error, error) {
 	log := logf.FromContext(ctx)
 
-	// Use pre-parsed configuration from factory (no repeated parsing)
-	config := h.config
-
 	// Check deletion timeout first
-	deletionTimeout := config.Timeouts.Deletion.Duration
+	deletionTimeout := h.config.Timeouts.Deletion.Duration
 	if elapsed >= deletionTimeout {
 		log.Error(nil, "deletion timed out",
 			"elapsed", elapsed,
 			"timeout", deletionTimeout,
-			"chart", config.Chart.Name)
+			"chart", h.config.Chart.Name)
 
 		return false, nil, fmt.Errorf("Deletion timed out after %v (timeout: %v)",
 			elapsed.Truncate(time.Second), deletionTimeout) // Deletion failure
 	}
 
 	// Try to get the current release
-	rel, err := getHelmRelease(ctx, config.ReleaseName, config.ReleaseNamespace)
+	rel, err := h.getHelmRelease(ctx)
 	if err != nil {
 		// If release is gone, deletion is complete
 		if errors.Is(err, driver.ErrReleaseNotFound) {
@@ -124,7 +112,7 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context, elapsed time.Duratio
 		"releaseName", rel.Name,
 		"status", rel.Info.Status.String())
 
-	resourceList, err := gatherHelmReleaseResources(ctx, rel)
+	resourceList, err := h.gatherHelmReleaseResources(ctx, rel)
 	if err != nil {
 		return false, fmt.Errorf("failed to gather resources for deletion check: %w", err), nil // I/O error
 	}
@@ -143,18 +131,12 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context, elapsed time.Duratio
 	log.Info("All release resources deleted")
 
 	// Are we managing the namespace too?
-	if !*config.ManageNamespace {
+	if !*h.config.ManageNamespace {
 		log.Info("Deletion complete")
 		return true, nil, nil
 	}
 
-	// Setup action configuration for potential namespace operations
-	_, actionConfig, err := setupHelmActionConfig(ctx, config.ReleaseNamespace)
-	if err != nil {
-		return false, fmt.Errorf("failed to setup helm action config: %w", err), nil // I/O error
-	}
-
-	exists, err := h.namespaceExists(ctx, config.ReleaseNamespace, actionConfig)
+	exists, err := h.namespaceExists(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to check namespace status: %w", err), nil
 	}
@@ -178,7 +160,7 @@ func checkResourcesDeleted(ctx context.Context, resourceList kube.ResourceList) 
 		return true, nil
 	}
 
-	stillExistCount := 0
+	existsCount := 0
 
 	// Check each resource individually (non-blocking)
 	// Use the resource's own REST client - no need for separate Kubernetes client setup
@@ -194,7 +176,7 @@ func checkResourcesDeleted(ctx context.Context, resourceList kube.ResourceList) 
 		}
 
 		if exists {
-			stillExistCount++
+			existsCount++
 			log.V(1).Info("Resource still exists",
 				"resource", resource.Name,
 				"kind", resource.Mapping.GroupVersionKind.Kind,
@@ -202,9 +184,9 @@ func checkResourcesDeleted(ctx context.Context, resourceList kube.ResourceList) 
 		}
 	}
 
-	allDeleted := (stillExistCount == 0)
+	allDeleted := (existsCount == 0)
 	if !allDeleted {
-		log.Info("Some resources still exist", "stillExist", stillExistCount, "total", len(resourceList))
+		log.Info("Some resources still exist", "stillExist", existsCount, "total", len(resourceList))
 	} else {
 		log.Info("All resources deleted", "total", len(resourceList))
 	}
@@ -232,10 +214,8 @@ func resourceExists(ctx context.Context, resource *resource.Info) (bool, error) 
 	return true, nil // Resource exists
 }
 
-func (h *HelmOperations) namespaceExists(
-	ctx context.Context, namespace string, actionConfig *action.Configuration) (bool, error) {
-
-	restConfig, err := actionConfig.RESTClientGetter.ToRESTConfig()
+func (h *HelmOperations) namespaceExists(ctx context.Context) (bool, error) {
+	restConfig, err := h.actionConfig.RESTClientGetter.ToRESTConfig()
 	if err != nil {
 		return false, err
 	}
@@ -245,7 +225,7 @@ func (h *HelmOperations) namespaceExists(
 		return false, err
 	}
 
-	_, err = clientset.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
+	_, err = clientset.CoreV1().Namespaces().Get(ctx, h.config.ReleaseName, metav1.GetOptions{})
 	if err == nil {
 		// Managed to get the namespace - so still here
 		return true, nil
@@ -258,13 +238,11 @@ func (h *HelmOperations) namespaceExists(
 	return false, err
 }
 
-func (h *HelmOperations) deleteNamespace(
-	ctx context.Context, namespace string, actionConfig *action.Configuration) error {
-
+func (h *HelmOperations) deleteNamespace(ctx context.Context) error {
 	log := logf.FromContext(ctx)
 
 	// Get Kubernetes client using the same approach as in deploy operations
-	restConfig, err := actionConfig.RESTClientGetter.ToRESTConfig()
+	restConfig, err := h.actionConfig.RESTClientGetter.ToRESTConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get REST config: %w", err)
 	}
@@ -275,11 +253,11 @@ func (h *HelmOperations) deleteNamespace(
 	}
 
 	// Delete namespace - Kubernetes will handle cascade deletion and blocking until empty
-	err = clientset.CoreV1().Namespaces().Delete(ctx, namespace, metav1.DeleteOptions{})
+	err = clientset.CoreV1().Namespaces().Delete(ctx, h.config.ReleaseName, metav1.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete namespace: %w", err)
 	}
 
-	log.Info("Successfully initiated namespace deletion", "namespace", namespace)
+	log.Info("Successfully initiated namespace deletion", "namespace", h.config.ReleaseName)
 	return nil
 }

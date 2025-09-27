@@ -17,108 +17,90 @@ limitations under the License.
 package helm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
-	"github.com/go-playground/validator/v10"
 	"github.com/rinswind/deployment-operator/handler/base"
-)
-
-const (
-	// HandlerName is the identifier for this helm handler
-	HandlerName = "helm"
-
-	ControllerName = "helm-component"
+	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/cli"
+	"helm.sh/helm/v3/pkg/kube"
+	"helm.sh/helm/v3/pkg/release"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // HelmOperationsFactory implements the ComponentOperationsFactory interface for Helm deployments.
-// This factory creates stateful HelmOperations instances with pre-parsed configuration,
-// eliminating repeated configuration parsing during reconciliation loops.
 type HelmOperationsFactory struct{}
 
-// CreateOperations creates a new stateful HelmOperations instance with pre-parsed configuration.
-// This method is called once per reconciliation loop to eliminate repeated configuration parsing.
-//
-// The returned HelmOperations instance maintains the parsed configuration and can be used
-// throughout the reconciliation loop without re-parsing the same configuration multiple times.
-func (f *HelmOperationsFactory) CreateOperations(ctx context.Context, config json.RawMessage) (base.ComponentOperations, error) {
-	// Parse configuration once for this reconciliation loop
-	helmConfig, err := parseHelmConfigFromRaw(config)
+func (f *HelmOperationsFactory) CreateOperations(
+	ctx context.Context, rawConfig json.RawMessage) (base.ComponentOperations, error) {
+
+	config, err := resolveHelmConfig(ctx, rawConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse helm configuration: %w", err)
 	}
 
-	// Return stateful operations instance with pre-parsed configuration
-	return &HelmOperations{
-		config: helmConfig,
-	}, nil
+	settings := cli.New()
+	actionConfig := &action.Configuration{}
+
+	log := logf.FromContext(ctx)
+	logFunc := func(format string, v ...any) {
+		log.Info(fmt.Sprintf(format, v...))
+	}
+
+	// Initialize the action configuration with Kubernetes client
+	if err := actionConfig.Init(settings.RESTClientGetter(), config.ReleaseName, "secrets", logFunc); err != nil {
+		return nil, fmt.Errorf("failed to initialize helm action configuration: %w", err)
+	}
+
+	return &HelmOperations{actionConfig: actionConfig, config: config}, nil
 }
 
 // HelmOperations implements the ComponentOperations interface for Helm-based deployments.
 // This struct provides all Helm-specific deployment, upgrade, and deletion operations
 // with pre-parsed configuration maintained throughout the reconciliation loop.
-//
-// This is a stateful operations instance created by HelmOperationsFactory that eliminates
-// repeated configuration parsing by maintaining parsed configuration state.
 type HelmOperations struct {
-	// config holds the pre-parsed Helm configuration for this reconciliation loop
 	config *HelmConfig
+
+	settings     *cli.EnvSettings
+	actionConfig *action.Configuration
 }
 
-// NewHelmOperationsFactory creates a new HelmOperationsFactory instance
-func NewHelmOperationsFactory() *HelmOperationsFactory {
-	return &HelmOperationsFactory{}
+// getHelmRelease verifies if a Helm release exists and returns it
+func (h *HelmOperations) getHelmRelease(ctx context.Context) (*release.Release, error) {
+	statusAction := action.NewStatus(h.actionConfig)
+
+	rel, err := statusAction.Run(h.config.ReleaseName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get release status: %w", err)
+	}
+
+	return rel, nil
 }
 
-// NewHelmOperationsConfig creates a ComponentHandlerConfig for Helm with default settings
-func NewHelmOperationsConfig() base.ComponentHandlerConfig {
-	return base.DefaultComponentHandlerConfig(HandlerName, ControllerName)
-}
+// gatherHelmReleaseResources extracts Kubernetes resources from a Helm release manifest
+// and builds a ResourceList for status checking
+func (h *HelmOperations) gatherHelmReleaseResources(ctx context.Context, rel *release.Release) (kube.ResourceList, error) {
+	log := logf.FromContext(ctx)
 
-// parseHelmConfigFromRaw parses raw JSON configuration into HelmConfig struct with defaults
-// This replaces the old resolveHelmConfig function and works with raw JSON instead of Component
-func parseHelmConfigFromRaw(rawConfig json.RawMessage) (*HelmConfig, error) {
-	if len(rawConfig) == 0 {
-		return nil, fmt.Errorf("helm configuration is required but not provided")
+	if rel.Manifest == "" {
+		log.Info("Release has no manifest, treating as ready")
+		return kube.ResourceList{}, nil
 	}
 
-	var config HelmConfig
-	if err := json.Unmarshal(rawConfig, &config); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal helm configuration: %w", err)
+	// Get the KubeClient from the action configuration
+	kubeClient := h.actionConfig.KubeClient
+
+	// Use Helm's Build function to parse the manifest into ResourceList
+	resourceList, err := kubeClient.Build(bytes.NewBufferString(rel.Manifest), false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build resource list from manifest: %w", err)
 	}
 
-	// Apply validation using validator framework (same as old resolveHelmConfig)
-	validate := validator.New()
-	if err := validate.Struct(&config); err != nil {
-		return nil, fmt.Errorf("helm config validation failed: %w", err)
-	}
+	log.Info("Built resource list from release manifest",
+		"releaseName", rel.Name,
+		"resourceCount", len(resourceList))
 
-	// With factory pattern, ReleaseNamespace must be explicitly specified in configuration
-	// since we don't have access to Component.Namespace for fallback resolution
-	if config.ReleaseNamespace == "" {
-		return nil, fmt.Errorf("releaseNamespace is required in helm configuration when using factory pattern")
-	}
-
-	// Apply timeout defaults (same logic as old resolveHelmConfig)
-	if config.Timeouts == nil {
-		config.Timeouts = &HelmTimeouts{}
-	}
-
-	// Set defaults if not specified
-	if config.Timeouts.Deployment == nil {
-		config.Timeouts.Deployment = &Duration{Duration: 5 * time.Minute}
-	}
-	if config.Timeouts.Deletion == nil {
-		config.Timeouts.Deletion = &Duration{Duration: 5 * time.Minute}
-	}
-
-	// Set sensible default for namespace management
-	if config.ManageNamespace == nil {
-		defaultManageNamespace := true
-		config.ManageNamespace = &defaultManageNamespace
-	}
-
-	return &config, nil
+	return resourceList, nil
 }

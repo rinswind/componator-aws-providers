@@ -9,9 +9,9 @@ func (r *RdsOperations) Upgrade(ctx context.Context) error {
 	// Use pre-parsed configuration from factory (no repeated parsing)
 	config := r.config
 
-	log.Info("Starting RDS upgrade using pre-parsed configuration", 
+	log.Info("Starting RDS upgrade using pre-parsed configuration",
 		"databaseName", config.DatabaseName)nt status using pre-parsed configuration
-// Implements ComponentOperations.CheckDeployment interface method.  
+// Implements ComponentOperations.CheckDeployment interface method.
 func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (ready bool, ioError error, deploymentError error) {
 	log := logf.FromContext(ctx)
 
@@ -51,7 +51,7 @@ func (r *RdsOperations) Deploy(ctx context.Context) error {
 	// Use pre-parsed configuration from factory (no repeated parsing)
 	config := r.config
 
-	log.Info("Starting RDS deployment using pre-parsed configuration", 
+	log.Info("Starting RDS deployment using pre-parsed configuration",
 		"databaseName", config.DatabaseName)
 
 	// TODO: Implement RDS deployment logic here
@@ -71,7 +71,7 @@ func (r *RdsOperations) Deploy(ctx context.Context) error {
 }
 
 // CheckDeployment verifies the current deployment status using pre-parsed configuration
-// Implements ComponentOperations.CheckDeployment interface method.  
+// Implements ComponentOperations.CheckDeployment interface method.
 func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (ready bool, ioError error, deploymentError error) {
 	log := logf.FromContext(ctx)
 
@@ -109,7 +109,7 @@ func (r *RdsOperations) Upgrade(ctx context.Context) error {
 	// Use pre-parsed configuration from factory (no repeated parsing)
 	config := r.config
 
-	log.Info("Starting RDS upgrade using pre-parsed configuration", 
+	log.Info("Starting RDS upgrade using pre-parsed configuration",
 		"databaseName", config.DatabaseName)
 
 	// TODO: Implement RDS upgrade logic here
