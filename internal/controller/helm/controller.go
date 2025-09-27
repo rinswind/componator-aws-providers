@@ -17,8 +17,12 @@ limitations under the License.
 package helm
 
 import (
-	"github.com/rinswind/deployment-handlers/internal/controller/base"
+	"github.com/rinswind/deployment-operator/handler/base"
 )
+
+//+kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components/finalizers,verbs=update
 
 // ComponentReconciler reconciles a Component object for helm handler using the generic
 // controller base with Helm-specific operations.

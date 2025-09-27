@@ -6,11 +6,13 @@ This directory contains Component handler controllers that implement specific de
 
 The controller architecture separates generic protocol logic from handler-specific operations:
 
-- **Generic Base Controller** (`base/`): Handles all protocol state machine logic, finalizer management, and status transitions
-- **ComponentOperations Interface** (`base/operations.go`): Defines the contract for handler-specific deployment operations  
+- **Generic Base Controller**: Available from `github.com/rinswind/deployment-operator/handler/base` - handles all protocol state machine logic, finalizer management, and status transitions
+- **ComponentOperations Interface**: Defines the contract for handler-specific deployment operations  
 - **Handler-Specific Implementations**: Each handler (Helm, RDS, etc.) implements the operations interface and uses the generic base
 
 This architecture achieves **code reuse**, **protocol compliance**, and **extensibility** while maintaining **backward compatibility**.
+
+**Important**: The base controller is now provided by the deployment-operator project as part of the complete handler toolkit.
 
 ## Quick Start: Implementing a New Handler
 
@@ -34,7 +36,7 @@ package handlername
 import (
     "context"
     "time"
-    "github.com/rinswind/deployment-handlers/internal/controller/base"
+    "github.com/rinswind/deployment-operator/handler/base"
     v1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 
@@ -104,8 +106,12 @@ func (op *HandlerOperations) CheckDeletionComplete(ctx context.Context, componen
 package handlername
 
 import (
-    "github.com/rinswind/deployment-handlers/internal/controller/base"
+    "github.com/rinswind/deployment-operator/handler/base"
 )
+
+//+kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components/finalizers,verbs=update
 
 // ComponentReconciler reconciles Components using the generic controller base
 type ComponentReconciler struct {
@@ -122,6 +128,8 @@ func NewComponentReconciler() *ComponentReconciler {
     }
 }
 ```
+
+**Important - RBAC Annotations**: Each handler controller **must** include the kubebuilder RBAC annotations shown above. These annotations generate the necessary RBAC permissions for Component resource access. The generic base controller no longer includes these annotations - they must be added to each individual handler.
 
 ### 4. Add Unit Tests
 

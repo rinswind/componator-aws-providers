@@ -335,6 +335,7 @@ spec:
 - ✅ Maintains existing readiness check flow when not timed out
 
 **Implementation details:**
+
 - Timeout check occurs before Helm release readiness verification
 - Uses component-level timeout configuration or 5-minute default from `resolveHelmConfig()`
 - Failed status includes both elapsed time and configured timeout for clarity
@@ -343,6 +344,7 @@ spec:
 - No changes to upgrade flow timeout behavior (will be addressed separately if needed)
 
 **Behavior:**
+
 - Components in Deploying phase are checked for deployment timeout before readiness
 - When timeout exceeded: component transitions to Failed with detailed message
 - When not timed out: continues with existing Helm release readiness check
@@ -363,6 +365,7 @@ spec:
 - ✅ Never blocks deletion - purely informational for operational visibility
 
 **Implementation details:**
+
 - Deletion timeout check occurs during deletion progress monitoring (when `!deleted`)
 - Uses component-level deletion timeout configuration or 5-minute default from `resolveHelmConfig()`
 - Updates status message with elapsed time and expected timeout for visibility
@@ -371,6 +374,7 @@ spec:
 - Status message format: "Cleanup in progress (7m32s elapsed, expected: <5m0s)"
 
 **Behavior:**
+
 - Components in Terminating phase are checked for deletion timeout during cleanup monitoring
 - When timeout exceeded: status message updated with elapsed time warning, but deletion continues
 - When not timed out: continues with normal deletion progress monitoring
@@ -392,6 +396,7 @@ spec:
 - ✅ Added `time` package import for duration testing
 
 **Test coverage:**
+
 - **Component-level timeouts**: Validates parsing of custom deployment and deletion timeouts
 - **Default timeout behavior**: Ensures 5-minute defaults are applied when config is missing
 - **Partial configuration**: Tests mixed scenarios (e.g., only deployment timeout specified)
@@ -400,6 +405,7 @@ spec:
 - **Error handling**: Validates proper error messages for invalid duration formats
 
 **Test scenarios validated:**
+
 - Valid timeout configuration: `"deployment": "10m", "deletion": "5m"`
 - Partial configuration: Only deployment timeout specified, deletion uses default
 - Missing timeout config: Both timeouts use 5-minute defaults
@@ -440,14 +446,15 @@ spec:
 - ✅ Added configuration syntax examples and patterns
 
 **Sample improvements:**
+
 - **Corrected configuration**: Fixed missing releaseName and incorrect namespace usage
 - **Realistic timeouts**: Applied appropriate timeouts based on application complexity
 - **Best practices**: Demonstrated timeout configuration patterns for different use cases
 - **Documentation**: Added inline comments explaining timeout rationale
 - **Validation**: All samples tested and validated for correctness
-5. Phase 5: Implement deletion visibility (informational)
-6. Phase 6: Add tests
-7. Phase 7: Update samples
+  1. Phase 5: Implement deletion visibility (informational)
+  2. Phase 6: Add tests
+  3. Phase 7: Update samples
 
 ## Implementation Status
 
@@ -464,6 +471,7 @@ spec:
 - ✅ Code compiles successfully
 
 **Implementation details:**
+
 - Duration parsing supports standard Go duration format (e.g., "15m", "2h30m", "30s")
 - TimeoutConfig fields are optional pointers to allow differentiation between unset and zero values
 - Clear documentation distinguishes between actionable deployment timeout and informational deletion timeout
@@ -482,11 +490,13 @@ spec:
 - ✅ Code compiles successfully
 
 **Environment variable configuration:**
+
 - `HELM_DEPLOYMENT_TIMEOUT`: Default deployment timeout (fallback: 15 minutes)
 - `HELM_DELETION_TIMEOUT`: Default deletion timeout (fallback: 30 minutes)  
 - `HELM_REQUEUE_PERIOD`: Reconcile requeue period (fallback: 10 seconds)
 
 **Implementation details:**
+
 - Controller defaults are configurable via environment variables with sensible fallbacks
 - `parseTimeoutEnv` function provides robust parsing with graceful fallback to defaults
 - Timeout configuration happens at controller startup in `SetupWithManager`
@@ -505,6 +515,7 @@ spec:
 - ✅ Code compiles successfully
 
 **Implementation details:**
+
 - Timeout resolution happens during configuration parsing, not in reconciliation logic
 - Component-level timeouts override controller defaults when specified
 - Resolved timeouts are stored in HelmConfig struct for easy access throughout reconciliation

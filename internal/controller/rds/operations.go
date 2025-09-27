@@ -19,7 +19,7 @@ package rds
 import (
 	"time"
 
-	"github.com/rinswind/deployment-handlers/internal/controller/base"
+	"github.com/rinswind/deployment-operator/handler/base"
 )
 
 const (
