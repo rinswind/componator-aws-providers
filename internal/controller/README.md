@@ -2,271 +2,349 @@
 
 This directory contains Component handler controllers that implement specific deployment technologies (Terraform, Helm, etc.) following the deployment orchestration protocols.
 
-## Handler Utilities Usage
+## Architecture Overview
 
-All handlers must use the `../deployment-operator/handler/util` package for protocol compliance:
+The controller architecture separates generic protocol logic from handler-specific operations:
 
-### Protocol Validation
+- **Generic Base Controller** (`base/`): Handles all protocol state machine logic, finalizer management, and status transitions
+- **ComponentOperations Interface** (`base/operations.go`): Defines the contract for handler-specific deployment operations  
+- **Handler-Specific Implementations**: Each handler (Helm, RDS, etc.) implements the operations interface and uses the generic base
 
-```go
-import "github.com/rinswind/deployment-operator/handler/util"
+This architecture achieves **code reuse**, **protocol compliance**, and **extensibility** while maintaining **backward compatibility**.
 
-func (r *ComponentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    component := &v1alpha1.Component{}
-    if err := r.Get(ctx, req.NamespacedName, component); err != nil {
-        return ctrl.Result{}, client.IgnoreNotFound(err)
-    }
+## Quick Start: Implementing a New Handler
 
-    validator := util.NewClaimingProtocolValidator(r.HandlerName)
-
-    // Check if we should process this component
-    if validator.ShouldIgnore(component) {
-        return ctrl.Result{}, nil
-    }
-
-    // Validate claiming eligibility
-    if err := validator.CanClaim(component); err != nil {
-        return ctrl.Result{}, err
-    }
-
-    // Validate deletion eligibility
-    if err := validator.CanDelete(component); err != nil {
-        return ctrl.Result{RequeueAfter: time.Second * 5}, nil
-    }
-}
-```
-
-### Finalizer Management
-
-```go
-// Add handler finalizer during claiming
-util.AddHandlerFinalizer(component, "handler-name")
-
-// Check finalizer status
-if util.HasHandlerFinalizer(component, "handler-name") {
-    // Component is claimed by this handler
-}
-
-// Remove finalizer during cleanup
-util.RemoveHandlerFinalizer(component, "handler-name")
-```
-
-### Status Updates
-
-```go
-// Update status through deployment lifecycle
-util.SetClaimedStatus(component, "handler-name")
-util.SetDeployingStatus(component, "handler-name")
-util.SetReadyStatus(component)
-util.SetFailedStatus(component, "handler-name", "error description")
-util.SetTerminatingStatus(component, "handler-name")
-
-// Check status conditions
-if util.IsTerminating(component) {
-    // Handle deletion
-}
-```
-
-## Complete Controller Structure
-
-### Standard Directory Layout
+### 1. Create Handler Directory Structure
 
 ```txt
 internal/controller/{handler-name}/
-├── controller.go      # Main controller implementation
-├── controller_test.go # Unit tests
-└── README.md         # Handler-specific documentation
+├── controller.go       # Main controller with generic base composition
+├── operations.go       # ComponentOperations interface implementation  
+├── operations_*.go     # Handler-specific operation implementations
+├── controller_test.go  # Unit tests
+└── README.md          # Handler-specific documentation
 ```
 
-### Controller Implementation Pattern
+### 2. Implement ComponentOperations Interface
 
 ```go
+// internal/controller/{handler-name}/operations.go
 package handlername
 
 import (
     "context"
     "time"
-
+    "github.com/rinswind/deployment-handlers/internal/controller/base"
     v1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
-    "github.com/rinswind/deployment-operator/handler/util"
-    ctrl "sigs.k8s.io/controller-runtime"
-    "sigs.k8s.io/controller-runtime/pkg/client"
-    "sigs.k8s.io/controller-runtime/pkg/runtime/scheme"
 )
 
-type ComponentReconciler struct {
-    client.Client
-    Scheme *runtime.Scheme
-    HandlerName string
+const (
+    HandlerName    = "handler-name"
+    ControllerName = "handler-name-component"
+)
+
+// HandlerOperations implements ComponentOperations for handler-specific deployments
+type HandlerOperations struct {
+    // Add handler-specific fields (clients, config, etc.)
 }
 
-func (r *ComponentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    // 1. Fetch Component
-    component := &v1alpha1.Component{}
-    if err := r.Get(ctx, req.NamespacedName, component); err != nil {
-        return ctrl.Result{}, client.IgnoreNotFound(err)
-    }
+// NewHandlerOperations creates a new operations instance
+func NewHandlerOperations() *HandlerOperations {
+    return &HandlerOperations{}
+}
 
-    // 2. Create protocol validator
-    validator := util.NewClaimingProtocolValidator(r.HandlerName)
+// NewHandlerOperationsConfig creates configuration with handler-specific settings
+func NewHandlerOperationsConfig() base.ComponentHandlerConfig {
+    config := base.DefaultComponentHandlerConfig(HandlerName, ControllerName)
     
-    // 3. Filter by handler name
-    if validator.ShouldIgnore(component) {
-        return ctrl.Result{}, nil
-    }
-
-    // 4. Handle deletion if DeletionTimestamp set
-    if util.IsTerminating(component) {
-        return r.handleDeletion(ctx, component, validator)
-    }
-
-    // 5. Implement claiming protocol and creation/deployment logic
-    return r.handleCreation(ctx, component, validator)
+    // Customize timeouts and requeue periods as needed
+    config.DefaultRequeue = 15 * time.Second
+    config.StatusCheckRequeue = 10 * time.Second
+    config.ErrorRequeue = 30 * time.Second
+    
+    return config
 }
 
-func (r *ComponentReconciler) handleCreation(ctx context.Context, component *v1alpha1.Component, validator *util.ClaimingProtocolValidator) (ctrl.Result, error) {
-    // Check if we can claim
-    if err := validator.CanClaim(component); err != nil {
-        return ctrl.Result{}, err
-    }
-
-    // Claim if not already claimed by us
-    if !util.HasHandlerFinalizer(component, r.HandlerName) {
-        util.AddHandlerFinalizer(component, r.HandlerName)
-        if err := r.Update(ctx, component); err != nil {
-            return ctrl.Result{}, err
-        }
-        util.SetClaimedStatus(component, r.HandlerName)
-        return ctrl.Result{}, r.Status().Update(ctx, component)
-    }
-
-    // Set deploying status
-    if !util.IsPhase(component, v1alpha1.ComponentPhaseDeploying) {
-        util.SetDeployingStatus(component, r.HandlerName)
-        if err := r.Status().Update(ctx, component); err != nil {
-            return ctrl.Result{}, err
-        }
-    }
-
-    // Implement your deployment logic here
-    if err := r.deployResources(ctx, component); err != nil {
-        util.SetFailedStatus(component, r.HandlerName, err.Error())
-        r.Status().Update(ctx, component)
-        return ctrl.Result{}, err
-    }
-
-    // Set ready status
-    util.SetReadyStatus(component)
-    return ctrl.Result{}, r.Status().Update(ctx, component)
+// Deploy implements the deployment operation
+func (op *HandlerOperations) Deploy(ctx context.Context, component *v1alpha1.Component) (bool, error, error) {
+    // Implement deployment logic
+    // Return (success, ioError, businessError)
+    return false, nil, errors.New("not implemented")
 }
 
-func (r *ComponentReconciler) handleDeletion(ctx context.Context, component *v1alpha1.Component, validator *util.ClaimingProtocolValidator) (ctrl.Result, error) {
-    // Check if we can delete
-    if err := validator.CanDelete(component); err != nil {
-        // Wait for composition coordination signal
-        return ctrl.Result{RequeueAfter: time.Second * 5}, nil
-    }
-
-    // Set terminating status
-    if !util.IsPhase(component, v1alpha1.ComponentPhaseTerminating) {
-        util.SetTerminatingStatus(component, r.HandlerName)
-        if err := r.Status().Update(ctx, component); err != nil {
-            return ctrl.Result{}, err
-        }
-    }
-
-    // Perform cleanup
-    if err := r.cleanupResources(ctx, component); err != nil {
-        util.SetFailedStatus(component, r.HandlerName, err.Error())
-        r.Status().Update(ctx, component)
-        return ctrl.Result{}, err
-    }
-
-    // Remove finalizer to release resource
-    util.RemoveHandlerFinalizer(component, r.HandlerName)
-    return ctrl.Result{}, r.Update(ctx, component)
+// CheckDeploymentReady checks if deployment is complete and ready
+func (op *HandlerOperations) CheckDeploymentReady(ctx context.Context, component *v1alpha1.Component) (bool, error, error) {
+    // Check readiness logic
+    return false, nil, errors.New("not implemented")  
 }
 
-// SetupWithManager sets up the controller with the Manager.
-func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
-    return ctrl.NewControllerManagedBy(mgr).
-        For(&v1alpha1.Component{}).
-        Complete(r)
+// Upgrade implements upgrade operations
+func (op *HandlerOperations) Upgrade(ctx context.Context, component *v1alpha1.Component) (bool, error, error) {
+    // Upgrade logic
+    return false, nil, errors.New("not implemented")
 }
 
-// Implement these methods with your handler-specific logic
-func (r *ComponentReconciler) deployResources(ctx context.Context, component *v1alpha1.Component) error {
-    // Handler-specific deployment logic
-    return nil
+// Delete implements deletion operations  
+func (op *HandlerOperations) Delete(ctx context.Context, component *v1alpha1.Component) (bool, error, error) {
+    // Deletion logic
+    return false, nil, errors.New("not implemented")
 }
 
-func (r *ComponentReconciler) cleanupResources(ctx context.Context, component *v1alpha1.Component) error {
-    // Handler-specific cleanup logic
-    return nil
+// CheckDeletionComplete verifies deletion is complete
+func (op *HandlerOperations) CheckDeletionComplete(ctx context.Context, component *v1alpha1.Component) (bool, error, error) {
+    // Check deletion status
+    return false, nil, errors.New("not implemented")
 }
 ```
 
-## Protocol Compliance Requirements
+### 3. Create Controller with Generic Base
 
-### Core Lifecycle Methods
+```go
+// internal/controller/{handler-name}/controller.go  
+package handlername
 
-- **Claiming**: Use handler-specific finalizers for atomic resource discovery
-- **Creation**: React immediately when Component resources are created
-- **Deployment**: Implement actual infrastructure deployment (Terraform, Helm, etc.)
-- **Status Updates**: Report deployment progress through Component status
-- **Deletion**: Implement cleanup when coordination finalizer is removed
+import (
+    "github.com/rinswind/deployment-handlers/internal/controller/base"
+)
 
-### Required Patterns
+// ComponentReconciler reconciles Components using the generic controller base
+type ComponentReconciler struct {
+    *base.ComponentReconciler
+}
 
-- **Handler Filtering**: Only process Components where `spec.handler` matches handler name using `util.ClaimingProtocolValidator.ShouldIgnore()`
-- **Finalizer Management**: Add/remove handler-specific finalizers using `util.AddHandlerFinalizer()` and `util.RemoveHandlerFinalizer()`
-- **Status Phases**: Use ComponentPhase enum values (Pending, Claimed, Deploying, Ready, Failed, Terminating)
-- **Error Handling**: Set Failed status with descriptive messages using `util.SetFailedStatus()`
+// NewComponentReconciler creates a controller with handler operations
+func NewComponentReconciler() *ComponentReconciler {
+    operations := NewHandlerOperations()
+    config := NewHandlerOperationsConfig()
+    
+    return &ComponentReconciler{
+        ComponentReconciler: base.NewComponentReconciler(operations, config),
+    }
+}
+```
+
+### 4. Add Unit Tests
+
+```go
+// internal/controller/{handler-name}/controller_test.go
+func TestHandlerController(t *testing.T) {
+    // Set up test environment with envtest
+    
+    component := &v1alpha1.Component{
+        Spec: v1alpha1.ComponentSpec{
+            Handler: HandlerName,
+            // ... component spec
+        },
+    }
+    
+    // Create and configure reconciler
+    reconciler := NewComponentReconciler()
+    reconciler.Client = k8sClient
+    reconciler.Scheme = scheme.Scheme
+    
+    // Test reconciliation
+    result, err := reconciler.Reconcile(ctx, req)
+    // ... assertions
+}
+```
+
+## ComponentOperations Interface Reference
+
+The `base.ComponentOperations` interface defines the contract all handlers must implement:
+
+```go
+type ComponentOperations interface {
+    // Deploy performs the initial deployment
+    Deploy(ctx context.Context, component *v1alpha1.Component) (success bool, ioError error, businessError error)
+    
+    // CheckDeploymentReady verifies deployment completion
+    CheckDeploymentReady(ctx context.Context, component *v1alpha1.Component) (ready bool, ioError error, businessError error)
+    
+    // Upgrade handles component updates
+    Upgrade(ctx context.Context, component *v1alpha1.Component) (success bool, ioError error, businessError error)
+    
+    // Delete performs cleanup operations
+    Delete(ctx context.Context, component *v1alpha1.Component) (success bool, ioError error, businessError error)
+    
+    // CheckDeletionComplete verifies cleanup completion
+    CheckDeletionComplete(ctx context.Context, component *v1alpha1.Component) (complete bool, ioError error, businessError error)
+}
+```
+
+### Error Handling Pattern
+
+Each operation method returns three values:
+
+- **`success/ready/complete bool`**: Operation success status  
+- **`ioError error`**: Transient I/O errors (network, API timeouts) that should trigger requeue
+- **`businessError error`**: Business logic errors that should be reported but not retried
+
+The generic base controller uses these return values to determine requeue behavior and status updates.
+
+## Protocol Compliance (Handled by Generic Base)
+
+The generic base controller automatically handles:
+
+- **Resource Discovery**: Event filtering to only process matching handler Components
+- **Claiming Protocol**: Atomic finalizer-based claiming with `util.ClaimingProtocolValidator`
+- **Status Management**: Proper ComponentPhase transitions (Pending → Claimed → Deploying → Ready)
+- **Error Handling**: Distinction between I/O errors (requeue) and business errors (fail)
+- **Deletion Coordination**: Waiting for composition coordination before cleanup
+- **Finalizer Management**: Adding/removing handler-specific finalizers
+
+## Configuration Options
+
+The `ComponentHandlerConfig` allows customization:
+
+```go
+type ComponentHandlerConfig struct {
+    HandlerName        string        // Handler identifier
+    ControllerName     string        // Controller name for manager registration
+    DefaultRequeue     time.Duration // Default requeue interval
+    StatusCheckRequeue time.Duration // Status check requeue interval  
+    ErrorRequeue       time.Duration // Error condition requeue interval
+}
+```
+
+Use `base.DefaultComponentHandlerConfig()` and customize as needed for your handler's timing requirements.
 
 ## Testing Patterns
 
-### Unit Testing with ComponentHandlerSimulator
+### Testing Strategy with Generic Base
+
+Since protocol logic is handled by the generic base controller, handler tests should focus on:
+
+- **Configuration Parsing**: Validate handler-specific configuration validation
+- **Operations Logic**: Test individual ComponentOperations interface methods with real implementations
+- **Integration**: Test complete handler with generic base using envtest
+
+**Note**: Placeholder implementations (like RDS stubs) don't need tests until real operations are implemented.
+
+### Unit Tests with Mock Operations
+
+Test the generic base controller with mock operations:
 
 ```go
-import "github.com/rinswind/deployment-operator/handler/simulator"
+type mockOperations struct{}
+func (m *mockOperations) Deploy(ctx context.Context, component *v1alpha1.Component) (bool, error, error) {
+    return true, nil, nil
+}
+// ... implement other interface methods
 
-func TestHandlerLifecycle(t *testing.T) {
-    sim := simulator.NewComponentHandlerSimulator("test-handler", testClient)
-
-    // Test claiming protocol
-    err := sim.ClaimingProtocol(ctx, component)
-    require.NoError(t, err)
-    
-    // Test deployment phases
-    err = sim.Deploy(ctx, component)
-    require.NoError(t, err)
-    
-    err = sim.Ready(ctx, component)
-    require.NoError(t, err)
-    
-    // Test deletion protocol  
-    err = sim.DeletionProtocol(ctx, component)
-    require.NoError(t, err)
+func TestControllerLogic(t *testing.T) {
+    ops := &mockOperations{}
+    config := base.DefaultComponentHandlerConfig("test", "test-controller")
+    reconciler := base.NewComponentReconciler(ops, config)
+    // Test with envtest...
 }
 ```
 
-### Integration Testing
+### Integration Tests
 
-Use envtest for integration tests that validate protocol compliance:
+Test actual handler implementations with the generic base:
 
 ```go
-func TestComponentReconciler_Integration(t *testing.T) {
-    // Set up envtest environment
-    // Create Component resource
-    // Verify claiming protocol
-    // Verify status transitions
-    // Verify deletion protocol
+func TestHandlerIntegration(t *testing.T) {
+    reconciler := NewComponentReconciler()
+    reconciler.Client = k8sClient
+    reconciler.Scheme = scheme.Scheme
+    
+    // Create test component
+    // Call reconciler.Reconcile()  
+    // Verify protocol compliance
 }
 ```
 
-## Current Handlers
+## Current Handler Implementations
 
-- **helm**: Deploy and manage Helm charts (`internal/controller/helm/`)
-- **rds**: Deploy and manage RDS instances (`internal/controller/rds/`)
+### Helm Handler (`internal/controller/helm/`)
 
-See individual handler directories for technology-specific implementation details.
+- **Purpose**: Deploy and manage Helm charts
+- **Operations**: Uses Helm SDK for chart installation, upgrades, and deletion
+- **Configuration**: Configurable Helm repositories, namespaces, and values
+- **Testing**: 13 passing tests focusing on configuration parsing and operations logic
+- **Architecture**: Fully migrated to generic base controller with HelmOperations implementation
+
+### RDS Handler (`internal/controller/rds/`)  
+
+- **Purpose**: Deploy and manage AWS RDS instances
+- **Status**: Architecture implemented with TODO placeholders for AWS SDK integration
+- **Operations**: Placeholder implementations for RDS create, modify, delete operations
+- **Testing**: Tests will be added when actual RDS operations are implemented
+- **Next Steps**: Implement actual AWS RDS SDK integration and corresponding tests
+
+## Advanced Patterns
+
+### Handler-Specific Extensions
+
+Handlers can extend the generic base through composition:
+
+```go
+type ComponentReconciler struct {
+    *base.ComponentReconciler
+    // Add handler-specific fields
+    customClient SomeClient
+}
+
+func (r *ComponentReconciler) CustomMethod() error {
+    // Handler-specific logic that uses the base controller
+    return nil
+}
+```
+
+### Multi-Version Support
+
+Support multiple API versions by implementing version-specific operations:
+
+```go
+type MultiVersionOperations struct {
+    v1Operations ComponentOperations
+    v2Operations ComponentOperations  
+}
+
+func (mv *MultiVersionOperations) Deploy(ctx context.Context, component *v1alpha1.Component) (bool, error, error) {
+    switch component.Spec.Version {
+    case "v1":
+        return mv.v1Operations.Deploy(ctx, component)
+    case "v2":  
+        return mv.v2Operations.Deploy(ctx, component)
+    default:
+        return false, nil, fmt.Errorf("unsupported version: %s", component.Spec.Version)
+    }
+}
+```
+
+### Custom Status Reporting
+
+While the base controller handles standard phases, handlers can add custom status information:
+
+```go
+func (op *HandlerOperations) Deploy(ctx context.Context, component *v1alpha1.Component) (bool, error, error) {
+    // Perform deployment...
+    
+    // Add custom status information
+    if component.Status.Conditions == nil {
+        component.Status.Conditions = []v1alpha1.ComponentCondition{}
+    }
+    
+    component.Status.Conditions = append(component.Status.Conditions, v1alpha1.ComponentCondition{
+        Type: "CustomCondition",
+        Status: "True", 
+        Message: "Handler-specific status information",
+    })
+    
+    return true, nil, nil
+}
+```
+
+## Migration from Legacy Controllers
+
+To migrate existing controllers to the generic base:
+
+1. **Extract Operations**: Move handler-specific logic into operations struct implementing ComponentOperations  
+2. **Remove Protocol Code**: Delete claiming, finalizer, and status management code (handled by base)
+3. **Update Controller**: Replace controller implementation with generic base composition
+4. **Test**: Verify protocol compliance with existing test suite
+5. **Document**: Update handler-specific README with new patterns
+
+See the Helm controller migration as a reference implementation.

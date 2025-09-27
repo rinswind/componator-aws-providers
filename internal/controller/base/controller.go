@@ -102,6 +102,12 @@ func (r *ComponentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Check if this component is for our handler - ignore if not
+	if r.claimValidator.ShouldIgnore(component) {
+		log.V(1).Info("Ignoring component - handler mismatch", "component", component.Name, "expectedHandler", r.config.HandlerName, "actualHandler", component.Spec.Handler)
+		return ctrl.Result{}, nil
+	}
+
 	log.Info("Reconciling component", "component", component.Name, "handler", r.config.HandlerName)
 
 	// Handle deletion
