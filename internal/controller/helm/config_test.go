@@ -560,20 +560,20 @@ var _ = Describe("Helm Configuration", func() {
 			config, err := resolveHelmConfig(component)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(config).NotTo(BeNil())
-			
+
 			// Verify all configuration is parsed correctly
 			Expect(config.Repository.URL).To(Equal("https://repo.broadcom.com/bitnami-files"))
 			Expect(config.Chart.Name).To(Equal("postgresql"))
 			Expect(config.Chart.Version).To(Equal("12.12.10"))
 			Expect(config.ReleaseName).To(Equal("postgres-db"))
-			
+
 			// Verify timeout configuration
 			Expect(config.Timeouts).NotTo(BeNil())
 			Expect(config.Timeouts.Deployment).NotTo(BeNil())
 			Expect(config.Timeouts.Deployment.Duration).To(Equal(15 * time.Minute))
 			Expect(config.Timeouts.Deletion).NotTo(BeNil())
 			Expect(config.Timeouts.Deletion.Duration).To(Equal(5 * time.Minute))
-			
+
 			// Verify values are still parsed correctly
 			authConfig, exists := config.Values["auth"]
 			Expect(exists).To(BeTrue())

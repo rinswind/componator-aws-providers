@@ -166,24 +166,18 @@ func (r *ComponentReconciler) handleCreation(
 			return ctrl.Result{}, r.Status().Update(ctx, component)
 		}
 
-		rel, err := getHelmRelease(ctx, component)
-		if err != nil {
-			log.Error(err, "failed to check helm release readiness")
-			return ctrl.Result{RequeueAfter: 10 * time.Second}, r.Status().Update(ctx, component)
+		// Check deployment status - encapsulates all resource gathering logic
+		ready, ioErr, deploymentErr := checkReleaseDeployed(ctx, component)
+
+		// Handle I/O errors with requeue
+		if ioErr != nil {
+			return ctrl.Result{RequeueAfter: r.requeuePeriod}, ioErr
 		}
 
-		// Build ResourceList from release manifest for non-blocking status checking
-		resourceList, err := gatherHelmReleaseResources(ctx, rel)
-		if err != nil {
-			log.Error(err, "failed to build resource list from release")
-			return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
-		}
-
-		// Use non-blocking readiness check
-		ready, err := checkHelmReleaseReady(ctx, rel.Namespace, resourceList)
-		if err != nil {
-			log.Error(err, "deployment failed")
-			util.SetFailedStatus(component, HandlerName, err.Error())
+		// Handle deployment failures without requeue
+		if deploymentErr != nil {
+			log.Error(deploymentErr, "deployment failed")
+			util.SetFailedStatus(component, HandlerName, deploymentErr.Error())
 			return ctrl.Result{}, r.Status().Update(ctx, component)
 		}
 
@@ -194,8 +188,8 @@ func (r *ComponentReconciler) handleCreation(
 		}
 
 		// Resources not ready yet, requeue for another check
-		log.Info("Helm release resources not ready yet, checking again in 10 seconds")
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		log.Info("Deployment in progress", "requeueAfter", r.requeuePeriod)
+		return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
 	}
 
 	// 4. If in terminal state -> check if dirty
@@ -222,7 +216,7 @@ func (r *ComponentReconciler) handleCreation(
 		}
 
 		// Start waiting for upgrade to complete
-		log.Info("Started upgrade, checking again in 10 seconds")
+		log.Info("Started upgrade", "requeueAfter", r.requeuePeriod)
 		return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
 	}
 
@@ -262,7 +256,7 @@ func (r *ComponentReconciler) handleDeletion(
 			}
 		}
 
-		log.Info("Started cleanup, checking again in 10 seconds")
+		log.Info("Started cleanup", "requeueAfter", r.requeuePeriod)
 		return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
 	}
 
@@ -300,7 +294,7 @@ func (r *ComponentReconciler) handleDeletion(
 			}
 		}
 
-		log.Info("Deletion in progress, checking again in 10 seconds")
+		log.Info("Deletion in progress", "requeueAfter", r.requeuePeriod)
 		return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
 	}
 

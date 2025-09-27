@@ -317,3 +317,35 @@ func setupHelmRepository(settings *cli.EnvSettings, repoName, repoURL string) er
 
 	return nil
 }
+
+// checkReleaseDeployed verifies if a Helm release and all its resources are ready
+// Returns (ready, ioError, deploymentError) to distinguish between temporary I/O issues and permanent failures
+func checkReleaseDeployed(ctx context.Context, component *deploymentsv1alpha1.Component) (bool, error, error) {
+	log := logf.FromContext(ctx)
+
+	// Get the current release
+	rel, err := getHelmRelease(ctx, component)
+	if err != nil {
+		return false, fmt.Errorf("failed to check helm release readiness: %w", err), nil // I/O error
+	}
+
+	// Build ResourceList from release manifest for non-blocking status checking
+	resourceList, err := gatherHelmReleaseResources(ctx, rel)
+	if err != nil {
+		return false, fmt.Errorf("failed to build resource list from release: %w", err), nil // I/O error
+	}
+
+	// Use non-blocking readiness check
+	ready, err := checkHelmReleaseReady(ctx, rel.Namespace, resourceList)
+	if err != nil {
+		return false, nil, fmt.Errorf("deployment failed: %w", err) // Deployment failure
+	}
+
+	if ready {
+		log.Info("Deployment succeeded")
+	} else {
+		log.Info("Helm release resources not ready yet")
+	}
+
+	return ready, nil, nil
+}
