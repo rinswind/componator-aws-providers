@@ -33,7 +33,7 @@ import (
 )
 
 // startHelmReleaseDeletion handles all Helm-specific cleanup operations
-func startHelmReleaseDeletion(ctx context.Context, component *deploymentsv1alpha1.Component) error {
+func (h *HelmOperations) Delete(ctx context.Context, component *deploymentsv1alpha1.Component) error {
 	log := logf.FromContext(ctx)
 
 	// Parse configuration to get release name and namespace
@@ -85,7 +85,7 @@ func startHelmReleaseDeletion(ctx context.Context, component *deploymentsv1alpha
 
 // checkHelmReleaseDeleted verifies if a Helm release and all its resources have been deleted
 // Returns (deleted, ioError, deletionError) to distinguish between temporary I/O issues and permanent failures
-func checkHelmReleaseDeleted(
+func (h *HelmOperations) CheckDeletion(
 	ctx context.Context, component *deploymentsv1alpha1.Component, elapsed time.Duration) (bool, error, error) {
 
 	log := logf.FromContext(ctx)

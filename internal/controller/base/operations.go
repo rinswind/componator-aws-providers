@@ -94,23 +94,17 @@ type ComponentOperations interface {
 	CheckDeletion(ctx context.Context, component *deploymentsv1alpha1.Component, elapsed time.Duration) (deleted bool, ioError error, deletionError error)
 }
 
-// ComponentOperationsConfig provides handler-specific configuration for the generic controller.
-// This allows handlers to customize controller behavior without changing the core protocol logic.
-type ComponentOperationsConfig interface {
-	// GetHandlerName returns the identifier for this handler (e.g., "helm", "rds")
+// ComponentHandlerConfig provides handler-specific configuration for the generic controller.
+// This follows the same pattern as ctrl.Options{} for simple, struct-based configuration.
+type ComponentHandlerConfig struct {
+	// HandlerName is the identifier for this handler (e.g., "helm", "rds")
 	// Used for finalizer names, logging, and component filtering.
-	GetHandlerName() string
+	HandlerName string
 
-	// GetControllerName returns the controller name for registration with the manager
+	// ControllerName is the controller name for registration with the manager
 	// Used in controller-runtime setup and metrics.
-	GetControllerName() string
+	ControllerName string
 
-	// GetRequeueSettings returns timing configuration for requeue operations
-	GetRequeueSettings() RequeueSettings
-}
-
-// RequeueSettings defines timing configuration for controller requeue operations
-type RequeueSettings struct {
 	// DefaultRequeue is the default requeue period for normal operations
 	DefaultRequeue time.Duration
 
@@ -121,9 +115,11 @@ type RequeueSettings struct {
 	StatusCheckRequeue time.Duration
 }
 
-// DefaultRequeueSettings provides sensible defaults for requeue timing
-func DefaultRequeueSettings() RequeueSettings {
-	return RequeueSettings{
+// DefaultComponentHandlerConfig provides sensible defaults following ctrl.Options{} patterns
+func DefaultComponentHandlerConfig(handlerName, controllerName string) ComponentHandlerConfig {
+	return ComponentHandlerConfig{
+		HandlerName:        handlerName,
+		ControllerName:     controllerName,
 		DefaultRequeue:     5 * time.Second,
 		ErrorRequeue:       10 * time.Second,
 		StatusCheckRequeue: 5 * time.Second,

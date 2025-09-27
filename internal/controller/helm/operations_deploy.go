@@ -35,10 +35,9 @@ import (
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 
-// startHelmReleaseDeployment handles all Helm-specific deployment operations
-func startHelmReleaseDeployment(
-	ctx context.Context, component *deploymentsv1alpha1.Component) error {
-
+// Deploy handles all Helm-specific deployment operations
+// Implements ComponentOperations.Deploy interface method.
+func (h *HelmOperations) Deploy(ctx context.Context, component *deploymentsv1alpha1.Component) error {
 	log := logf.FromContext(ctx)
 
 	// Parse the Helm configuration from Component.Spec.Config
@@ -73,8 +72,13 @@ func startHelmReleaseDeployment(
 		return nil
 	}
 
+	// Set up repository configuration properly for ephemeral containers
+	if _, err := setupHelmRepository(config, settings); err != nil {
+		return fmt.Errorf("failed to setup helm repository: %w", err)
+	}
+
 	// Prepare chart for installation
-	chart, err := prepareHelmChart(ctx, config, settings)
+	chart, err := loadHelmChart(config, settings)
 	if err != nil {
 		return err
 	}
@@ -107,9 +111,7 @@ func startHelmReleaseDeployment(
 }
 
 // startHelmReleaseUpgrade handles upgrading an existing Helm release with new configuration
-func startHelmReleaseUpgrade(
-	ctx context.Context, component *deploymentsv1alpha1.Component) error {
-
+func (h *HelmOperations) Upgrade(ctx context.Context, component *deploymentsv1alpha1.Component) error {
 	log := logf.FromContext(ctx)
 
 	// Parse the Helm configuration from Component.Spec.Config
@@ -142,8 +144,13 @@ func startHelmReleaseUpgrade(
 		return fmt.Errorf("release %s not found for upgrade: %w", releaseName, err)
 	}
 
+	// Set up repository configuration properly for ephemeral containers
+	if _, err := setupHelmRepository(config, settings); err != nil {
+		return fmt.Errorf("failed to setup helm repository: %w", err)
+	}
+
 	// Prepare chart for upgrade
-	chart, err := prepareHelmChart(ctx, config, settings)
+	chart, err := loadHelmChart(config, settings)
 	if err != nil {
 		return err
 	}
@@ -170,6 +177,135 @@ func startHelmReleaseUpgrade(
 		"status", rel.Info.Status.String())
 
 	return nil
+}
+
+// loadHelmChart handles the common chart preparation steps for both install and upgrade
+// Returns the loaded chart ready for deployment
+func loadHelmChart(config *HelmConfig, settings *cli.EnvSettings) (*chart.Chart, error) {
+	// Use Helm's standard chart resolution with repo/chart format
+	chartRef := fmt.Sprintf("%s/%s", config.Repository.Name, config.Chart.Name)
+	chartPathOptions := &action.ChartPathOptions{}
+
+	cp, err := chartPathOptions.LocateChart(chartRef, settings)
+	if err != nil {
+		return nil, fmt.Errorf("failed to locate chart %s: %w", chartRef, err)
+	}
+
+	chart, err := loader.Load(cp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load chart from %s: %w", cp, err)
+	}
+
+	return chart, nil
+}
+
+// setupHelmRepository configures a Helm repository properly for ephemeral containers
+// This creates the necessary repository configuration files that Helm expects
+func setupHelmRepository(config *HelmConfig, settings *cli.EnvSettings) (*repo.ChartRepository, error) {
+	// Create temporary directories for Helm configuration
+	tempConfigDir, err := os.MkdirTemp("", "helm-config-")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary config directory: %w", err)
+	}
+
+	tempCacheDir, err := os.MkdirTemp("", "helm-cache-")
+	if err != nil {
+		os.RemoveAll(tempConfigDir)
+		return nil, fmt.Errorf("failed to create temporary cache directory: %w", err)
+	}
+
+	// Configure Helm settings to use our temporary directories
+	settings.RepositoryConfig = tempConfigDir + "/repositories.yaml"
+	settings.RepositoryCache = tempCacheDir
+
+	// Load or create repository file
+	repoFile := repo.NewFile()
+
+	// Create repository entry
+	repoEntry := &repo.Entry{
+		Name: config.Repository.Name,
+		URL:  config.Repository.URL,
+	}
+
+	// Create chart repository instance for index download
+	chartRepo, err := repo.NewChartRepository(repoEntry, getter.All(settings))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create chart repository: %w", err)
+	}
+
+	// Set the cache path
+	chartRepo.CachePath = settings.RepositoryCache
+
+	// Download the repository index - this validates the repo and caches the index
+	_, err = chartRepo.DownloadIndexFile()
+	if err != nil {
+		return nil, fmt.Errorf("failed to download repository index: %w", err)
+	}
+
+	// Add repository to the configuration file
+	repoFile.Update(repoEntry)
+
+	// Write the repository configuration file
+	if err := repoFile.WriteFile(settings.RepositoryConfig, 0644); err != nil {
+		return nil, fmt.Errorf("failed to write repository configuration: %w", err)
+	}
+
+	// Note: We don't clean up tempConfigDir and tempCacheDir here because
+	// Helm will need them for the duration of the chart operations
+	// The calling code should handle cleanup if needed, or rely on OS cleanup
+
+	return chartRepo, nil
+}
+
+// checkReleaseDeployed verifies if a Helm release and all its resources are ready
+// Returns (ready, ioError, deploymentError) to distinguish between temporary I/O issues and permanent failures
+func (h *HelmOperations) CheckDeployment(
+	ctx context.Context, component *deploymentsv1alpha1.Component, elapsed time.Duration) (bool, error, error) {
+
+	log := logf.FromContext(ctx)
+
+	// Check deployment timeout first
+	config, err := resolveHelmConfig(component)
+	if err != nil {
+		return false, fmt.Errorf("failed to resolve component config for timeout check: %w", err), nil // I/O error
+	}
+
+	deploymentTimeout := config.Timeouts.Deployment.Duration
+	if elapsed >= deploymentTimeout {
+		log.Error(nil, "deployment timed out",
+			"elapsed", elapsed,
+			"timeout", deploymentTimeout,
+			"chart", config.Chart.Name)
+
+		return false, nil, fmt.Errorf("Deployment timed out after %v (timeout: %v)",
+			elapsed.Truncate(time.Second), deploymentTimeout) // Deployment failure
+	}
+
+	// Get the current release
+	rel, err := getHelmRelease(ctx, component)
+	if err != nil {
+		return false, fmt.Errorf("failed to check helm release readiness: %w", err), nil // I/O error
+	}
+
+	// Build ResourceList from release manifest for non-blocking status checking
+	resourceList, err := gatherHelmReleaseResources(ctx, rel)
+	if err != nil {
+		return false, fmt.Errorf("failed to build resource list from release: %w", err), nil // I/O error
+	}
+
+	// Use non-blocking readiness check
+	ready, err := checkHelmReleaseReady(ctx, rel.Namespace, resourceList)
+	if err != nil {
+		return false, nil, fmt.Errorf("deployment failed: %w", err) // Deployment failure
+	}
+
+	if ready {
+		log.Info("Deployment succeeded")
+	} else {
+		log.Info("Helm release resources not ready yet")
+	}
+
+	return ready, nil, nil
 }
 
 // checkHelmReleaseReady performs non-blocking readiness checks on Kubernetes resources
@@ -234,137 +370,4 @@ func checkHelmReleaseReady(ctx context.Context, namespace string, resourceList k
 	}
 
 	return allReady, nil
-}
-
-// prepareHelmChart handles the common chart preparation steps for both install and upgrade
-// Returns the loaded chart ready for deployment
-func prepareHelmChart(ctx context.Context, config *HelmConfig, settings *cli.EnvSettings) (*chart.Chart, error) {
-	// Set up repository configuration properly for ephemeral containers
-	if err := setupHelmRepository(settings, config.Repository.Name, config.Repository.URL); err != nil {
-		return nil, fmt.Errorf("failed to setup helm repository: %w", err)
-	}
-
-	// Use Helm's standard chart resolution with repo/chart format
-	chartRef := fmt.Sprintf("%s/%s", config.Repository.Name, config.Chart.Name)
-	chartPathOptions := &action.ChartPathOptions{}
-	cp, err := chartPathOptions.LocateChart(chartRef, settings)
-	if err != nil {
-		return nil, fmt.Errorf("failed to locate chart %s: %w", chartRef, err)
-	}
-
-	chart, err := loader.Load(cp)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load chart from %s: %w", cp, err)
-	}
-
-	return chart, nil
-}
-
-// setupHelmRepository configures a Helm repository properly for ephemeral containers
-// This creates the necessary repository configuration files that Helm expects
-func setupHelmRepository(settings *cli.EnvSettings, repoName, repoURL string) error {
-	// Create temporary directories for Helm configuration
-	tempConfigDir, err := os.MkdirTemp("", "helm-config-")
-	if err != nil {
-		return fmt.Errorf("failed to create temporary config directory: %w", err)
-	}
-
-	tempCacheDir, err := os.MkdirTemp("", "helm-cache-")
-	if err != nil {
-		os.RemoveAll(tempConfigDir)
-		return fmt.Errorf("failed to create temporary cache directory: %w", err)
-	}
-
-	// Configure Helm settings to use our temporary directories
-	settings.RepositoryConfig = tempConfigDir + "/repositories.yaml"
-	settings.RepositoryCache = tempCacheDir
-
-	// Load or create repository file
-	repoFile := repo.NewFile()
-
-	// Create repository entry
-	repoEntry := &repo.Entry{
-		Name: repoName,
-		URL:  repoURL,
-	}
-
-	// Create chart repository instance for index download
-	chartRepo, err := repo.NewChartRepository(repoEntry, getter.All(settings))
-	if err != nil {
-		return fmt.Errorf("failed to create chart repository: %w", err)
-	}
-
-	// Set the cache path
-	chartRepo.CachePath = settings.RepositoryCache
-
-	// Download the repository index - this validates the repo and caches the index
-	_, err = chartRepo.DownloadIndexFile()
-	if err != nil {
-		return fmt.Errorf("failed to download repository index: %w", err)
-	}
-
-	// Add repository to the configuration file
-	repoFile.Update(repoEntry)
-
-	// Write the repository configuration file
-	if err := repoFile.WriteFile(settings.RepositoryConfig, 0644); err != nil {
-		return fmt.Errorf("failed to write repository configuration: %w", err)
-	}
-
-	// Note: We don't clean up tempConfigDir and tempCacheDir here because
-	// Helm will need them for the duration of the chart operations
-	// The calling code should handle cleanup if needed, or rely on OS cleanup
-
-	return nil
-}
-
-// checkReleaseDeployed verifies if a Helm release and all its resources are ready
-// Returns (ready, ioError, deploymentError) to distinguish between temporary I/O issues and permanent failures
-func checkReleaseDeployed(
-	ctx context.Context, component *deploymentsv1alpha1.Component, elapsed time.Duration) (bool, error, error) {
-
-	log := logf.FromContext(ctx)
-
-	// Check deployment timeout first
-	config, err := resolveHelmConfig(component)
-	if err != nil {
-		return false, fmt.Errorf("failed to resolve component config for timeout check: %w", err), nil // I/O error
-	}
-
-	deploymentTimeout := config.Timeouts.Deployment.Duration
-	if elapsed >= deploymentTimeout {
-		log.Error(nil, "deployment timed out",
-			"elapsed", elapsed,
-			"timeout", deploymentTimeout,
-			"chart", config.Chart.Name)
-
-		return false, nil, fmt.Errorf("Deployment timed out after %v (timeout: %v)",
-			elapsed.Truncate(time.Second), deploymentTimeout) // Deployment failure
-	}
-
-	// Get the current release
-	rel, err := getHelmRelease(ctx, component)
-	if err != nil {
-		return false, fmt.Errorf("failed to check helm release readiness: %w", err), nil // I/O error
-	}
-
-	// Build ResourceList from release manifest for non-blocking status checking
-	resourceList, err := gatherHelmReleaseResources(ctx, rel)
-	if err != nil {
-		return false, fmt.Errorf("failed to build resource list from release: %w", err), nil // I/O error
-	}
-
-	// Use non-blocking readiness check
-	ready, err := checkHelmReleaseReady(ctx, rel.Namespace, resourceList)
-	if err != nil {
-		return false, nil, fmt.Errorf("deployment failed: %w", err) // Deployment failure
-	}
-
-	if ready {
-		log.Info("Deployment succeeded")
-	} else {
-		log.Info("Helm release resources not ready yet")
-	}
-
-	return ready, nil, nil
 }

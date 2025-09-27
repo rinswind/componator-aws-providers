@@ -156,7 +156,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&helm.ComponentReconciler{}).SetupWithManager(mgr); err != nil {
+	if err := helm.NewComponentReconciler().SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HelmComponent")
 		os.Exit(1)
 	}
