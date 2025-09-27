@@ -148,18 +148,17 @@ func (r *ComponentReconciler) handleCreation(
 	if util.IsClaimed(component) {
 		log.Info("Starting deployment of component")
 
-		// Set the status first so that if we fail we can safely retry without having done destructive ops
-		util.SetDeployingStatus(component, handlerName)
-		if err := r.Status().Update(ctx, component); err != nil {
-			log.Error(err, "failed to update deploying status", "requeueAfter", r.config.ErrorRequeue)
-			return ctrl.Result{RequeueAfter: r.config.ErrorRequeue}, err
-		}
-
 		err := r.operations.Deploy(ctx, component)
 		if err != nil {
 			log.Error(err, "failed to perform deployment")
 			util.SetFailedStatus(component, handlerName, err.Error())
 			return ctrl.Result{}, r.Status().Update(ctx, component)
+		}
+
+		util.SetDeployingStatus(component, handlerName)
+		if err := r.Status().Update(ctx, component); err != nil {
+			log.Error(err, "failed to update deploying status", "requeueAfter", r.config.ErrorRequeue)
+			return ctrl.Result{RequeueAfter: r.config.ErrorRequeue}, err
 		}
 
 		// Start waiting for deployment to complete
@@ -209,18 +208,17 @@ func (r *ComponentReconciler) handleCreation(
 		// Start upgrade and set back to Deploying
 		log.Info("Component is dirty, starting upgrade")
 
-		// Set the status before we start, so that if we fail to set it, we have not done destructive ops
-		util.SetDeployingStatus(component, handlerName)
-		if err := r.Status().Update(ctx, component); err != nil {
-			log.Error(err, "failed to update deploying status", "requeueAfter", r.config.ErrorRequeue)
-			return ctrl.Result{RequeueAfter: r.config.ErrorRequeue}, err
-		}
-
 		err := r.operations.Upgrade(ctx, component)
 		if err != nil {
 			log.Error(err, "failed to perform upgrade")
 			util.SetFailedStatus(component, handlerName, err.Error())
 			return ctrl.Result{}, r.Status().Update(ctx, component)
+		}
+
+		util.SetDeployingStatus(component, handlerName)
+		if err := r.Status().Update(ctx, component); err != nil {
+			log.Error(err, "failed to update deploying status", "requeueAfter", r.config.ErrorRequeue)
+			return ctrl.Result{RequeueAfter: r.config.ErrorRequeue}, err
 		}
 
 		// Start waiting for upgrade to complete
