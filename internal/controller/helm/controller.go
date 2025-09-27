@@ -25,20 +25,21 @@ import (
 //+kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components/finalizers,verbs=update
 
 // ComponentReconciler reconciles a Component object for helm handler using the generic
-// controller base with Helm-specific operations.
+// controller base with Helm-specific operations factory.
 //
 // This embeds the base controller directly, eliminating unnecessary delegation
-// while maintaining protocol compliance.
+// while maintaining protocol compliance and using the factory pattern for
+// efficient configuration parsing.
 type ComponentReconciler struct {
 	*base.ComponentReconciler
 }
 
-// NewComponentReconciler creates a new Helm Component controller with the generic base
+// NewComponentReconciler creates a new Helm Component controller with the generic base using factory pattern
 func NewComponentReconciler() *ComponentReconciler {
-	operations := NewHelmOperations()
+	operationsFactory := NewHelmOperationsFactory()
 	config := NewHelmOperationsConfig()
 
 	return &ComponentReconciler{
-		ComponentReconciler: base.NewComponentReconciler(operations, config),
+		ComponentReconciler: base.NewComponentReconciler(operationsFactory, config),
 	}
 }

@@ -21,7 +21,6 @@ import (
 	"context"
 	"fmt"
 
-	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/kube"
@@ -48,18 +47,9 @@ func setupHelmActionConfig(ctx context.Context, namespace string) (*cli.EnvSetti
 }
 
 // getHelmRelease verifies if a Helm release exists and returns it
-func getHelmRelease(ctx context.Context, component *deploymentsv1alpha1.Component) (*release.Release, error) {
-	// Parse configuration to get release name and namespace
-	config, err := resolveHelmConfig(component)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse helm config: %w", err)
-	}
-
-	releaseName := config.ReleaseName
-	targetNamespace := config.ReleaseNamespace
-
+func getHelmRelease(ctx context.Context, releaseName, releaseNamespace string) (*release.Release, error) {
 	// Initialize Helm settings and action configuration
-	_, actionConfig, err := setupHelmActionConfig(ctx, targetNamespace)
+	_, actionConfig, err := setupHelmActionConfig(ctx, releaseNamespace)
 	if err != nil {
 		return nil, err
 	}

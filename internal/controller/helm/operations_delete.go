@@ -30,24 +30,19 @@ import (
 	"k8s.io/cli-runtime/pkg/resource"
 	"k8s.io/client-go/kubernetes"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-
-	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 
-// Delete starts asynchronous helm release deletion
-func (h *HelmOperations) Delete(ctx context.Context, component *deploymentsv1alpha1.Component) error {
+// Delete starts asynchronous helm release deletion using pre-parsed configuration
+func (h *HelmOperations) Delete(ctx context.Context) error {
 	log := logf.FromContext(ctx)
 
-	// Parse configuration to get release name and namespace
-	config, err := resolveHelmConfig(component)
-	if err != nil {
-		return fmt.Errorf("failed to parse helm config: %w", err)
-	}
+	// Use pre-parsed configuration from factory (no repeated parsing)
+	config := h.config
 
 	releaseName := config.ReleaseName
 	targetNamespace := config.ReleaseNamespace
 
-	log.Info("Performing helm cleanup",
+	log.Info("Performing helm cleanup using pre-parsed configuration",
 		"releaseName", releaseName,
 		"targetNamespace", targetNamespace)
 
@@ -93,19 +88,15 @@ func (h *HelmOperations) Delete(ctx context.Context, component *deploymentsv1alp
 	return nil
 }
 
-// checkDeletion verifies if a Helm release and all its resources have been deleted
+// checkDeletion verifies if a Helm release and all its resources have been deleted using pre-parsed configuration
 // Returns (deleted, ioError, deletionError) to distinguish between temporary I/O issues and permanent failures
-func (h *HelmOperations) CheckDeletion(
-	ctx context.Context, component *deploymentsv1alpha1.Component, elapsed time.Duration) (bool, error, error) {
-
+func (h *HelmOperations) CheckDeletion(ctx context.Context, elapsed time.Duration) (bool, error, error) {
 	log := logf.FromContext(ctx)
 
-	// Check deletion timeout first
-	config, err := resolveHelmConfig(component)
-	if err != nil {
-		return false, fmt.Errorf("failed to resolve component config for timeout check: %w", err), nil // I/O error
-	}
+	// Use pre-parsed configuration from factory (no repeated parsing)
+	config := h.config
 
+	// Check deletion timeout first
 	deletionTimeout := config.Timeouts.Deletion.Duration
 	if elapsed >= deletionTimeout {
 		log.Error(nil, "deletion timed out",
@@ -118,7 +109,7 @@ func (h *HelmOperations) CheckDeletion(
 	}
 
 	// Try to get the current release
-	rel, err := getHelmRelease(ctx, component)
+	rel, err := getHelmRelease(ctx, config.ReleaseName, config.ReleaseNamespace)
 	if err != nil {
 		// If release is gone, deletion is complete
 		if errors.Is(err, driver.ErrReleaseNotFound) {

@@ -35,10 +35,10 @@ type ComponentReconciler struct {
 
 // NewComponentReconciler creates a new RDS Component controller with the generic base
 func NewComponentReconciler() *ComponentReconciler {
-	operations := NewRdsOperations()
-	config := NewRdsOperationsConfig()
+	factory := NewRdsOperationsFactory()
+	config := base.DefaultComponentHandlerConfig("rds", "rds-component")
 
 	return &ComponentReconciler{
-		ComponentReconciler: base.NewComponentReconciler(operations, config),
+		ComponentReconciler: base.NewComponentReconciler(factory, config),
 	}
 }

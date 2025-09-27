@@ -1,7 +1,26 @@
 /*
 Copyright 2025.
 
-Licensed under the Apache License, Version 2.0 (the "License");
+Licensed under the Apache License// CheckDeployment verifies the current d// Upgrade handles RDS-specific upgrade operations using pre-parsed configuration
+// Implements ComponentOperations.Upgrade interface method.
+func (r *RdsOperations) Upgrade(ctx context.Context) error {
+	log := logf.FromContext(ctx)
+
+	// Use pre-parsed configuration from factory (no repeated parsing)
+	config := r.config
+
+	log.Info("Starting RDS upgrade using pre-parsed configuration", 
+		"databaseName", config.DatabaseName)nt status using pre-parsed configuration
+// Implements ComponentOperations.CheckDeployment interface method.  
+func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (ready bool, ioError error, deploymentError error) {
+	log := logf.FromContext(ctx)
+
+	// Use pre-parsed configuration from factory (no repeated parsing)
+	config := r.config
+
+	log.Info("Checking RDS deployment status using pre-parsed configuration",
+		"databaseName", config.DatabaseName,
+		"elapsed", elapsed) 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
@@ -22,28 +41,27 @@ import (
 	"time"
 
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-
-	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 
-// Deploy handles all RDS-specific deployment operations
+// Deploy handles all RDS-specific deployment operations using pre-parsed configuration
 // Implements ComponentOperations.Deploy interface method.
-func (r *RdsOperations) Deploy(ctx context.Context, component *deploymentsv1alpha1.Component) error {
+func (r *RdsOperations) Deploy(ctx context.Context) error {
 	log := logf.FromContext(ctx)
 
-	log.Info("Starting RDS deployment", "component", component.Name, "namespace", component.Namespace)
+	// Use pre-parsed configuration from factory (no repeated parsing)
+	config := r.config
+
+	log.Info("Starting RDS deployment using pre-parsed configuration", 
+		"databaseName", config.DatabaseName)
 
 	// TODO: Implement RDS deployment logic here
 	// This should include:
-	// 1. Parse RDS configuration from component.Spec.Config
-	// 2. Validate RDS parameters (instance class, engine, version, etc.)
-	// 3. Create AWS RDS client with appropriate credentials and region
-	// 4. Initiate RDS instance creation via AWS SDK
-	// 5. Store deployment metadata for status checking
+	// 1. Use pre-parsed configuration (already available in r.config)
+	// 2. Create AWS RDS client with appropriate credentials and region
+	// 3. Initiate RDS instance creation via AWS SDK
+	// 4. Store deployment metadata for status checking
 	//
 	// Example implementation structure:
-	// - config, err := parseRdsConfig(component.Spec.Config)
-	// - if err != nil { return fmt.Errorf("invalid RDS config: %w", err) }
 	// - rdsClient := r.createRDSClient(config.Region)
 	// - _, err = rdsClient.CreateDBInstance(ctx, &rds.CreateDBInstanceInput{...})
 	// - if err != nil { return fmt.Errorf("failed to create RDS instance: %w", err) }
@@ -52,27 +70,27 @@ func (r *RdsOperations) Deploy(ctx context.Context, component *deploymentsv1alph
 	return fmt.Errorf("RDS deployment not yet implemented - placeholder for AWS RDS SDK integration")
 }
 
-// CheckDeployment verifies the current RDS deployment status and readiness.
-// Implements ComponentOperations.CheckDeployment interface method.
-func (r *RdsOperations) CheckDeployment(ctx context.Context, component *deploymentsv1alpha1.Component, elapsed time.Duration) (ready bool, ioError error, deploymentError error) {
+// CheckDeployment verifies the current deployment status using pre-parsed configuration
+// Implements ComponentOperations.CheckDeployment interface method.  
+func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (ready bool, ioError error, deploymentError error) {
 	log := logf.FromContext(ctx)
 
-	log.V(1).Info("Checking RDS deployment status",
-		"component", component.Name,
-		"namespace", component.Namespace,
+	// Use pre-parsed configuration from factory (no repeated parsing)
+	config := r.config
+
+	log.Info("Checking RDS deployment status using pre-parsed configuration",
+		"databaseName", config.DatabaseName,
 		"elapsed", elapsed)
 
 	// TODO: Implement RDS deployment status checking here
 	// This should include:
-	// 1. Parse RDS configuration to get instance identifier
+	// 1. Use pre-parsed configuration (already available in r.config)
 	// 2. Query AWS RDS API for instance status
 	// 3. Check if instance is available and ready
 	// 4. Distinguish between transient errors (network issues) and permanent failures
 	// 5. Handle timeout scenarios for long-running deployments
 	//
 	// Example implementation structure:
-	// - config, err := parseRdsConfig(component.Spec.Config)
-	// - if err != nil { return false, nil, fmt.Errorf("invalid config: %w", err) }
 	// - rdsClient := r.createRDSClient(config.Region)
 	// - resp, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{...})
 	// - if isTransientError(err) { return false, err, nil }
@@ -83,27 +101,30 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, component *deployme
 	return false, nil, fmt.Errorf("RDS deployment status checking not yet implemented - placeholder for AWS RDS SDK integration")
 }
 
-// Upgrade handles RDS-specific upgrade operations for configuration changes.
+// Upgrade handles RDS-specific upgrade operations using pre-parsed configuration
 // Implements ComponentOperations.Upgrade interface method.
-func (r *RdsOperations) Upgrade(ctx context.Context, component *deploymentsv1alpha1.Component) error {
+func (r *RdsOperations) Upgrade(ctx context.Context) error {
 	log := logf.FromContext(ctx)
 
-	log.Info("Starting RDS upgrade", "component", component.Name, "namespace", component.Namespace)
+	// Use pre-parsed configuration from factory (no repeated parsing)
+	config := r.config
+
+	log.Info("Starting RDS upgrade using pre-parsed configuration", 
+		"databaseName", config.DatabaseName)
 
 	// TODO: Implement RDS upgrade logic here
 	// This should include:
-	// 1. Compare current RDS configuration with desired state
-	// 2. Determine what changes can be applied (some require downtime)
-	// 3. Initiate appropriate AWS RDS modification operations
-	// 4. Handle upgrade scenarios like instance class changes, engine upgrades, etc.
+	// 1. Use pre-parsed configuration (already available in r.config)
+	// 2. Compare current RDS configuration with desired state
+	// 3. Determine what changes can be applied (some require downtime)
+	// 4. Initiate appropriate AWS RDS modification operations
+	// 5. Handle upgrade scenarios like instance class changes, engine upgrades, etc.
 	//
 	// Example implementation structure:
-	// - newConfig, err := parseRdsConfig(component.Spec.Config)
-	// - if err != nil { return fmt.Errorf("invalid RDS config: %w", err) }
-	// - currentState, err := r.getCurrentRdsState(ctx, newConfig.InstanceIdentifier)
+	// - currentState, err := r.getCurrentRdsState(ctx, config.InstanceIdentifier)
 	// - if err != nil { return fmt.Errorf("failed to get current state: %w", err) }
-	// - modifications := r.calculateRequiredModifications(currentState, newConfig)
-	// - rdsClient := r.createRDSClient(newConfig.Region)
+	// - modifications := r.calculateRequiredModifications(currentState, config)
+	// - rdsClient := r.createRDSClient(config.Region)
 	// - _, err = rdsClient.ModifyDBInstance(ctx, &rds.ModifyDBInstanceInput{...})
 	// - if err != nil { return fmt.Errorf("failed to upgrade RDS instance: %w", err) }
 

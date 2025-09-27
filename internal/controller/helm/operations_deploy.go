@@ -38,26 +38,21 @@ import (
 	"helm.sh/helm/v3/pkg/repo"
 	"k8s.io/client-go/kubernetes"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-
-	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 
-// Deploy handles all Helm-specific deployment operations
+// Deploy handles all Helm-specific deployment operations using pre-parsed configuration
 // Implements ComponentOperations.Deploy interface method.
-func (h *HelmOperations) Deploy(ctx context.Context, component *deploymentsv1alpha1.Component) error {
+func (h *HelmOperations) Deploy(ctx context.Context) error {
 	log := logf.FromContext(ctx)
 
-	// Parse the Helm configuration from Component.Spec.Config
-	config, err := resolveHelmConfig(component)
-	if err != nil {
-		return fmt.Errorf("failed to parse helm configuration: %w", err)
-	}
+	// Use pre-parsed configuration from factory (no repeated parsing)
+	config := h.config
 
 	// Get release name and target namespace from resolved configuration
 	releaseName := config.ReleaseName
 	releaseNamespace := config.ReleaseNamespace
 
-	log.Info("Parsed helm configuration",
+	log.Info("Using pre-parsed helm configuration",
 		"repository", config.Repository.URL,
 		"chart", config.Chart.Name,
 		"version", config.Chart.Version,
@@ -117,21 +112,18 @@ func (h *HelmOperations) Deploy(ctx context.Context, component *deploymentsv1alp
 	return nil
 }
 
-// startHelmReleaseUpgrade handles upgrading an existing Helm release with new configuration
-func (h *HelmOperations) Upgrade(ctx context.Context, component *deploymentsv1alpha1.Component) error {
+// startHelmReleaseUpgrade handles upgrading an existing Helm release using pre-parsed configuration
+func (h *HelmOperations) Upgrade(ctx context.Context) error {
 	log := logf.FromContext(ctx)
 
-	// Parse the Helm configuration from Component.Spec.Config
-	config, err := resolveHelmConfig(component)
-	if err != nil {
-		return fmt.Errorf("failed to parse helm configuration: %w", err)
-	}
+	// Use pre-parsed configuration from factory (no repeated parsing)
+	config := h.config
 
 	// Get release name and target namespace from resolved configuration
 	releaseName := config.ReleaseName
 	releaseNamespace := config.ReleaseNamespace
 
-	log.Info("Parsed helm configuration for upgrade",
+	log.Info("Using pre-parsed helm configuration for upgrade",
 		"repository", config.Repository.URL,
 		"chart", config.Chart.Name,
 		"version", config.Chart.Version,
@@ -264,19 +256,15 @@ func setupHelmRepository(config *HelmConfig, settings *cli.EnvSettings) (*repo.C
 	return chartRepo, nil
 }
 
-// checkReleaseDeployed verifies if a Helm release and all its resources are ready
+// checkReleaseDeployed verifies if a Helm release and all its resources are ready using pre-parsed configuration
 // Returns (ready, ioError, deploymentError) to distinguish between temporary I/O issues and permanent failures
-func (h *HelmOperations) CheckDeployment(
-	ctx context.Context, component *deploymentsv1alpha1.Component, elapsed time.Duration) (bool, error, error) {
-
+func (h *HelmOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (bool, error, error) {
 	log := logf.FromContext(ctx)
 
-	// Check deployment timeout first
-	config, err := resolveHelmConfig(component)
-	if err != nil {
-		return false, fmt.Errorf("failed to resolve component config for timeout check: %w", err), nil // I/O error
-	}
+	// Use pre-parsed configuration from factory (no repeated parsing)
+	config := h.config
 
+	// Check deployment timeout first
 	deploymentTimeout := config.Timeouts.Deployment.Duration
 	if elapsed >= deploymentTimeout {
 		log.Error(nil, "deployment timed out",
@@ -289,7 +277,7 @@ func (h *HelmOperations) CheckDeployment(
 	}
 
 	// Get the current release
-	rel, err := getHelmRelease(ctx, component)
+	rel, err := getHelmRelease(ctx, config.ReleaseName, config.ReleaseNamespace)
 	if err != nil {
 		return false, fmt.Errorf("failed to check helm release readiness: %w", err), nil // I/O error
 	}

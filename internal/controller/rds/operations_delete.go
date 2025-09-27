@@ -1,7 +1,17 @@
 /*
 Copyright 2025.
 
-Licensed under the Apache License, Version 2.0 (the "License");
+Licensed under the Apache License, Version 2.// CheckDeletion verifies the current deletion status using pre-parsed configuration
+// Implements ComponentOperations.CheckDeletion interface method.
+func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration) (deleted bool, ioError error, deletionError error) {
+	log := logf.FromContext(ctx)
+
+	// Use pre-parsed configuration from factory (no repeated parsing)
+	config := r.config
+
+	log.Info("Checking RDS deletion status using pre-parsed configuration",
+		"databaseName", config.DatabaseName,
+		"elapsed", elapsed)icense");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
@@ -21,20 +31,22 @@ import (
 	"time"
 
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-
-	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 
-// Delete handles all RDS-specific deletion operations
+// Delete handles all RDS-specific deletion operations using pre-parsed configuration
 // Implements ComponentOperations.Delete interface method.
-func (r *RdsOperations) Delete(ctx context.Context, component *deploymentsv1alpha1.Component) error {
+func (r *RdsOperations) Delete(ctx context.Context) error {
 	log := logf.FromContext(ctx)
 
-	log.Info("Starting RDS deletion", "component", component.Name, "namespace", component.Namespace)
+	// Use pre-parsed configuration from factory (no repeated parsing)
+	config := r.config
+
+	log.Info("Starting RDS deletion using pre-parsed configuration", 
+		"databaseName", config.DatabaseName)
 
 	// TODO: Implement RDS deletion logic here
 	// This should include:
-	// 1. Parse RDS configuration from component.Spec.Config
+	// 1. Use pre-parsed configuration (already available in r.config)
 	// 2. Create AWS RDS client with appropriate credentials and region
 	// 3. Initiate RDS instance deletion via AWS SDK
 	// 4. Handle deletion options (final snapshot, skip final snapshot, etc.)
@@ -61,30 +73,27 @@ func (r *RdsOperations) Delete(ctx context.Context, component *deploymentsv1alph
 	return nil
 }
 
-// CheckDeletion verifies the current RDS deletion status and completion.
+// CheckDeletion verifies the current deletion status using pre-parsed configuration
 // Implements ComponentOperations.CheckDeletion interface method.
-func (r *RdsOperations) CheckDeletion(ctx context.Context, component *deploymentsv1alpha1.Component, elapsed time.Duration) (deleted bool, ioError error, deletionError error) {
+func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration) (deleted bool, ioError error, deletionError error) {
 	log := logf.FromContext(ctx)
 
-	log.V(1).Info("Checking RDS deletion status",
-		"component", component.Name,
-		"namespace", component.Namespace,
+	// Use pre-parsed configuration from factory (no repeated parsing)
+	config := r.config
+
+	log.Info("Checking RDS deletion status using pre-parsed configuration",
+		"databaseName", config.DatabaseName,
 		"elapsed", elapsed)
 
 	// TODO: Implement RDS deletion status checking here
 	// This should include:
-	// 1. Parse RDS configuration to get instance identifier
+	// 1. Use pre-parsed configuration (already available in r.config)
 	// 2. Query AWS RDS API for instance existence
 	// 3. Handle "instance not found" as successful deletion
 	// 4. Distinguish between transient errors (network issues) and permanent failures
 	// 5. Handle timeout scenarios for long-running deletions (snapshots can take time)
 	//
 	// Example implementation structure:
-	// - config, err := parseRdsConfig(component.Spec.Config)
-	// - if err != nil {
-	//     log.Error(err, "Failed to parse config during deletion check, assuming deleted")
-	//     return true, nil, nil // Assume deleted if we can't parse config
-	//   }
 	// - rdsClient := r.createRDSClient(config.Region)
 	// - _, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
 	//     DBInstanceIdentifier: config.InstanceIdentifier,
