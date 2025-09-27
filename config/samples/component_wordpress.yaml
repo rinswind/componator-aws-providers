@@ -10,13 +10,17 @@ metadata:
 spec:
   name: wordpress
   handler: helm
-  config: |
+  config:
     repository:
       name: bitnami
       url: https://repo.broadcom.com/bitnami-files
     chart:
       name: wordpress
       version: "23.1.40"
+    releaseName: wordpress-blog
+    timeouts:
+      deployment: "12m"    # WordPress + MariaDB deployment can be complex
+      deletion: "6m"       # Extended cleanup for WordPress and database resources
     values:
       wordpressUsername: admin
       wordpressPassword: changeme123!

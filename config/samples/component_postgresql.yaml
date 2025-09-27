@@ -10,7 +10,7 @@ metadata:
 spec:
   name: postgres
   handler: helm
-  config: |
+  config:
     repository:
       name: bitnami
       url: https://repo.broadcom.com/bitnami-files
@@ -18,6 +18,9 @@ spec:
       name: postgresql
       version: "16.2.1"
     releaseName: postgresql-db
+    timeouts:
+      deployment: "15m"    # Database initialization can take longer
+      deletion: "5m"       # Standard deletion timeout
     values:
       auth:
         postgresPassword: postgres123!
@@ -37,7 +40,7 @@ spec:
           requests:
             cpu: 500m
             memory: 512Mi
-        extendedConfiguration: |
+        extendedConfiguration:
           max_connections = 200
           shared_buffers = 256MB
           effective_cache_size = 512MB

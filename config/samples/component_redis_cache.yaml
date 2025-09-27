@@ -10,14 +10,18 @@ metadata:
 spec:
   name: redis
   handler: helm
-  config: |
+  config:
     repository:
       name: bitnami
       url: https://repo.broadcom.com/bitnami-files
     chart:
       name: redis
       version: "20.2.1"
-    namespace: cache-system
+    releaseName: redis-cache
+    releaseNamespace: cache-system
+    timeouts:
+      deployment: "6m"     # Cache systems can take time to initialize
+      deletion: "3m"       # Standard cache cleanup timeout
     values:
       auth:
         enabled: true

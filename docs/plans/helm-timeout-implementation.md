@@ -318,7 +318,7 @@ spec:
 4. ✅ Phase 4: Implement deployment timeout (actionable) - **COMPLETED**
 5. ✅ Phase 5: Implement deletion visibility (informational) - **COMPLETED**
 6. ✅ Phase 6: Add tests - **COMPLETED**
-7. Phase 7: Update samples
+7. ✅ Phase 7: Update samples - **COMPLETED**
 
 ### Phase 4: Deployment Timeout Implementation ✅ **COMPLETED**
 
@@ -406,6 +406,45 @@ spec:
 - Various formats: `"2h30m"`, `"90s"`, `"15m"` all parsed correctly
 - Invalid format: `"invalid-duration"` produces proper error message
 - Complex integration: Timeout config works with PostgreSQL chart configuration and values
+
+### Phase 7: Update Samples ✅ **COMPLETED**
+
+**Updated all existing samples in `config/samples/` with timeout configuration:**
+
+- ✅ **component_nginx_basic.yaml**: Added standard web server timeouts (5m deployment, 2m deletion)
+- ✅ **component_nginx_advanced.yaml**: Added extended timeouts for complex setup (8m deployment, 3m deletion)
+- ✅ **component_postgresql.yaml**: Added database timeouts (15m deployment, 5m deletion)
+- ✅ **component_redis_cache.yaml**: Added cache system timeouts (6m deployment, 3m deletion)
+- ✅ **component_prometheus.yaml**: Added monitoring stack timeouts (20m deployment, 10m deletion)
+- ✅ **component_wordpress.yaml**: Added CMS + database timeouts (12m deployment, 6m deletion)
+- ✅ Fixed missing `releaseName` fields in several samples
+- ✅ Fixed incorrect `namespace` field usage (should be `releaseNamespace`)
+- ✅ All samples compile and validate successfully
+
+**Created new comprehensive timeout examples:**
+
+- ✅ **component_timeout_examples.yaml**: New sample file with 5 different timeout scenarios
+  - Quick application with short timeouts (nginx-quick: 2m/1m)
+  - Extended database timeouts (postgres-extended: 30m/10m)
+  - Mixed duration formats (mixed-timeouts: 2h30m/90s)
+  - Partial configuration example (partial-timeout: 7m deployment only)
+  - Default behavior demonstration (default-timeouts: no config specified)
+
+**Enhanced documentation:**
+
+- ✅ **Updated README.md** with comprehensive timeout configuration section
+- ✅ Added timeout types explanation (actionable vs informational)
+- ✅ Added supported duration format documentation
+- ✅ Added timeout recommendations table by application type
+- ✅ Added timeout behavior explanation with example messages
+- ✅ Added configuration syntax examples and patterns
+
+**Sample improvements:**
+- **Corrected configuration**: Fixed missing releaseName and incorrect namespace usage
+- **Realistic timeouts**: Applied appropriate timeouts based on application complexity
+- **Best practices**: Demonstrated timeout configuration patterns for different use cases
+- **Documentation**: Added inline comments explaining timeout rationale
+- **Validation**: All samples tested and validated for correctness
 5. Phase 5: Implement deletion visibility (informational)
 6. Phase 6: Add tests
 7. Phase 7: Update samples

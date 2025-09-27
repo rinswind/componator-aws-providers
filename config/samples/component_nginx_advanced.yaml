@@ -10,13 +10,17 @@ metadata:
 spec:
   name: nginx-advanced
   handler: helm
-  config: |
+  config:
     repository:
       name: bitnami
       url: https://repo.broadcom.com/bitnami-files
     chart:
       name: nginx
       version: "18.2.4"
+    releaseName: nginx-advanced
+    timeouts:
+      deployment: "8m"     # Longer timeout for complex setup with autoscaling
+      deletion: "3m"       # Extended cleanup time for LoadBalancer resources
     values:
       replicaCount: 3
       image:

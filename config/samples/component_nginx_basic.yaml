@@ -18,6 +18,9 @@ spec:
       name: nginx
       version: "18.2.4"
     releaseName: nginx-basic
+    timeouts:
+      deployment: "5m"     # Standard web server deployment timeout
+      deletion: "2m"       # Quick cleanup for simple apps
     values:
       service:
         type: "ClusterIP"
