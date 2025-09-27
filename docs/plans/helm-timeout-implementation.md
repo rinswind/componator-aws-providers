@@ -317,7 +317,7 @@ spec:
 3. ✅ Phase 3: Add timeout resolution logic (helper method) - **COMPLETED**
 4. ✅ Phase 4: Implement deployment timeout (actionable) - **COMPLETED**
 5. ✅ Phase 5: Implement deletion visibility (informational) - **COMPLETED**
-6. Phase 6: Add tests
+6. ✅ Phase 6: Add tests - **COMPLETED**
 7. Phase 7: Update samples
 
 ### Phase 4: Deployment Timeout Implementation ✅ **COMPLETED**
@@ -375,6 +375,37 @@ spec:
 - When timeout exceeded: status message updated with elapsed time warning, but deletion continues
 - When not timed out: continues with normal deletion progress monitoring
 - Never blocks deletion process - timeout is purely informational for operational awareness
+
+### Phase 6: Configuration Tests ✅ **COMPLETED**
+
+**Implemented comprehensive tests in `internal/controller/helm/config_test.go`:**
+
+- ✅ Added timeout configuration parsing tests covering all scenarios
+- ✅ Test component-level timeout configuration with both deployment and deletion timeouts
+- ✅ Test partial timeout configuration (only deployment timeout specified)
+- ✅ Test default timeout behavior when timeout config is missing
+- ✅ Test various duration formats (2h30m, 90s, 15m, etc.)
+- ✅ Test invalid duration format error handling
+- ✅ Test timeout configuration with complex chart setup and values
+- ✅ All 17 tests pass (6 new timeout tests + 11 existing configuration tests)
+- ✅ Code compiles successfully
+- ✅ Added `time` package import for duration testing
+
+**Test coverage:**
+- **Component-level timeouts**: Validates parsing of custom deployment and deletion timeouts
+- **Default timeout behavior**: Ensures 5-minute defaults are applied when config is missing
+- **Partial configuration**: Tests mixed scenarios (e.g., only deployment timeout specified)
+- **Duration format validation**: Covers standard Go duration formats and error cases
+- **Integration with existing config**: Ensures timeout config doesn't break other chart configuration
+- **Error handling**: Validates proper error messages for invalid duration formats
+
+**Test scenarios validated:**
+- Valid timeout configuration: `"deployment": "10m", "deletion": "5m"`
+- Partial configuration: Only deployment timeout specified, deletion uses default
+- Missing timeout config: Both timeouts use 5-minute defaults
+- Various formats: `"2h30m"`, `"90s"`, `"15m"` all parsed correctly
+- Invalid format: `"invalid-duration"` produces proper error message
+- Complex integration: Timeout config works with PostgreSQL chart configuration and values
 5. Phase 5: Implement deletion visibility (informational)
 6. Phase 6: Add tests
 7. Phase 7: Update samples

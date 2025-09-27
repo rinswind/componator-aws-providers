@@ -21,6 +21,8 @@ limitations under the License.
 package helm
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -326,6 +328,258 @@ var _ = Describe("Helm Configuration", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(config).NotTo(BeNil())
 			Expect(config.ReleaseNamespace).To(Equal("custom-namespace")) // Should preserve explicit config value
+		})
+	})
+
+	Context("When parsing timeout configuration", func() {
+		It("should parse component-level timeout configuration", func() {
+			configJSON := `{
+				"repository": {
+					"url": "https://charts.bitnami.com/bitnami",
+					"name": "bitnami"
+				},
+				"chart": {
+					"name": "nginx",
+					"version": "15.4.4"
+				},
+				"releaseName": "test-nginx",
+				"timeouts": {
+					"deployment": "10m",
+					"deletion": "5m"
+				}
+			}`
+
+			component := &deploymentsv1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-timeout-config",
+					Namespace: "default",
+				},
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "nginx-timeout",
+					Handler: "helm",
+					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
+				},
+			}
+
+			config, err := resolveHelmConfig(component)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(config).NotTo(BeNil())
+			Expect(config.Timeouts).NotTo(BeNil())
+			Expect(config.Timeouts.Deployment).NotTo(BeNil())
+			Expect(config.Timeouts.Deployment.Duration).To(Equal(10 * time.Minute))
+			Expect(config.Timeouts.Deletion).NotTo(BeNil())
+			Expect(config.Timeouts.Deletion.Duration).To(Equal(5 * time.Minute))
+		})
+
+		It("should parse partial timeout configuration", func() {
+			configJSON := `{
+				"repository": {
+					"url": "https://charts.bitnami.com/bitnami",
+					"name": "bitnami"
+				},
+				"chart": {
+					"name": "nginx",
+					"version": "15.4.4"
+				},
+				"releaseName": "test-nginx",
+				"timeouts": {
+					"deployment": "15m"
+				}
+			}`
+
+			component := &deploymentsv1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-partial-timeout",
+					Namespace: "default",
+				},
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "nginx-partial-timeout",
+					Handler: "helm",
+					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
+				},
+			}
+
+			config, err := resolveHelmConfig(component)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(config).NotTo(BeNil())
+			Expect(config.Timeouts).NotTo(BeNil())
+			Expect(config.Timeouts.Deployment).NotTo(BeNil())
+			Expect(config.Timeouts.Deployment.Duration).To(Equal(15 * time.Minute))
+			// Deletion timeout should use default
+			Expect(config.Timeouts.Deletion).NotTo(BeNil())
+			Expect(config.Timeouts.Deletion.Duration).To(Equal(5 * time.Minute))
+		})
+
+		It("should use default timeouts when timeout config is missing", func() {
+			configJSON := `{
+				"repository": {
+					"url": "https://charts.bitnami.com/bitnami",
+					"name": "bitnami"
+				},
+				"chart": {
+					"name": "nginx",
+					"version": "15.4.4"
+				},
+				"releaseName": "test-nginx"
+			}`
+
+			component := &deploymentsv1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-default-timeouts",
+					Namespace: "default",
+				},
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "nginx-default-timeouts",
+					Handler: "helm",
+					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
+				},
+			}
+
+			config, err := resolveHelmConfig(component)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(config).NotTo(BeNil())
+			Expect(config.Timeouts).NotTo(BeNil())
+			// Both timeouts should use 5-minute defaults
+			Expect(config.Timeouts.Deployment).NotTo(BeNil())
+			Expect(config.Timeouts.Deployment.Duration).To(Equal(5 * time.Minute))
+			Expect(config.Timeouts.Deletion).NotTo(BeNil())
+			Expect(config.Timeouts.Deletion.Duration).To(Equal(5 * time.Minute))
+		})
+
+		It("should parse various duration formats", func() {
+			configJSON := `{
+				"repository": {
+					"url": "https://charts.bitnami.com/bitnami",
+					"name": "bitnami"
+				},
+				"chart": {
+					"name": "nginx",
+					"version": "15.4.4"
+				},
+				"releaseName": "test-nginx",
+				"timeouts": {
+					"deployment": "2h30m",
+					"deletion": "90s"
+				}
+			}`
+
+			component := &deploymentsv1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-duration-formats",
+					Namespace: "default",
+				},
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "nginx-duration-formats",
+					Handler: "helm",
+					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
+				},
+			}
+
+			config, err := resolveHelmConfig(component)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(config).NotTo(BeNil())
+			Expect(config.Timeouts).NotTo(BeNil())
+			Expect(config.Timeouts.Deployment).NotTo(BeNil())
+			Expect(config.Timeouts.Deployment.Duration).To(Equal(2*time.Hour + 30*time.Minute))
+			Expect(config.Timeouts.Deletion).NotTo(BeNil())
+			Expect(config.Timeouts.Deletion.Duration).To(Equal(90 * time.Second))
+		})
+
+		It("should fail with invalid duration format", func() {
+			configJSON := `{
+				"repository": {
+					"url": "https://charts.bitnami.com/bitnami",
+					"name": "bitnami"
+				},
+				"chart": {
+					"name": "nginx",
+					"version": "15.4.4"
+				},
+				"releaseName": "test-nginx",
+				"timeouts": {
+					"deployment": "invalid-duration",
+					"deletion": "5m"
+				}
+			}`
+
+			component := &deploymentsv1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-invalid-duration",
+					Namespace: "default",
+				},
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "nginx-invalid-duration",
+					Handler: "helm",
+					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
+				},
+			}
+
+			config, err := resolveHelmConfig(component)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to parse helm config"))
+			Expect(config).To(BeNil())
+		})
+
+		It("should parse timeout configuration with complex chart setup", func() {
+			configJSON := `{
+				"repository": {
+					"url": "https://repo.broadcom.com/bitnami-files",
+					"name": "bitnami"
+				},
+				"chart": {
+					"name": "postgresql",
+					"version": "12.12.10"
+				},
+				"releaseName": "postgres-db",
+				"timeouts": {
+					"deployment": "15m",
+					"deletion": "5m"
+				},
+				"values": {
+					"auth": {
+						"postgresPassword": "changeme123"
+					},
+					"persistence": {
+						"size": "10Gi"
+					}
+				}
+			}`
+
+			component := &deploymentsv1alpha1.Component{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "postgres-timeout-config",
+					Namespace: "database",
+				},
+				Spec: deploymentsv1alpha1.ComponentSpec{
+					Name:    "postgres-db",
+					Handler: "helm",
+					Config:  &apiextensionsv1.JSON{Raw: []byte(configJSON)},
+				},
+			}
+
+			config, err := resolveHelmConfig(component)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(config).NotTo(BeNil())
+			
+			// Verify all configuration is parsed correctly
+			Expect(config.Repository.URL).To(Equal("https://repo.broadcom.com/bitnami-files"))
+			Expect(config.Chart.Name).To(Equal("postgresql"))
+			Expect(config.Chart.Version).To(Equal("12.12.10"))
+			Expect(config.ReleaseName).To(Equal("postgres-db"))
+			
+			// Verify timeout configuration
+			Expect(config.Timeouts).NotTo(BeNil())
+			Expect(config.Timeouts.Deployment).NotTo(BeNil())
+			Expect(config.Timeouts.Deployment.Duration).To(Equal(15 * time.Minute))
+			Expect(config.Timeouts.Deletion).NotTo(BeNil())
+			Expect(config.Timeouts.Deletion.Duration).To(Equal(5 * time.Minute))
+			
+			// Verify values are still parsed correctly
+			authConfig, exists := config.Values["auth"]
+			Expect(exists).To(BeTrue())
+			authMap, ok := authConfig.(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(authMap).To(HaveKeyWithValue("postgresPassword", "changeme123"))
 		})
 	})
 })
