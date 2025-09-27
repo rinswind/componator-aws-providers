@@ -18,12 +18,9 @@ package helm
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
-	"github.com/go-playground/validator/v10"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,10 +44,6 @@ type ComponentReconciler struct {
 	Scheme         *runtime.Scheme
 	claimValidator *util.ClaimingProtocolValidator
 	requeuePeriod  time.Duration
-
-	// Default timeout configurations
-	defaultDeploymentTimeout time.Duration
-	defaultDeletionTimeout   time.Duration
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -61,9 +54,8 @@ func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.claimValidator = util.NewClaimingProtocolValidator(HandlerName)
 
 	// Configure timeouts from environment variables with defaults
-	r.requeuePeriod = parseTimeoutEnv("HELM_REQUEUE_PERIOD", 10*time.Second)
-	r.defaultDeploymentTimeout = parseTimeoutEnv("HELM_DEPLOYMENT_TIMEOUT", 15*time.Minute)
-	r.defaultDeletionTimeout = parseTimeoutEnv("HELM_DELETION_TIMEOUT", 30*time.Minute)
+	// TODO: make this configurable
+	r.requeuePeriod = 5 * time.Second
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&deploymentsv1alpha1.Component{}).
@@ -73,55 +65,6 @@ func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithEventFilter(controllerutils.ComponentHandlerPredicate(HandlerName)).
 		Named(ControllerName).
 		Complete(r)
-}
-
-// parseTimeoutEnv parses a timeout duration from an environment variable
-// Returns the default value if the environment variable is not set or invalid
-func parseTimeoutEnv(envVar string, defaultValue time.Duration) time.Duration {
-	if value := os.Getenv(envVar); value != "" {
-		if duration, err := time.ParseDuration(value); err == nil {
-			return duration
-		}
-	}
-	return defaultValue
-}
-
-// resolveHelmConfigWithDefaults is a helper that resolves helm config with controller's default timeouts
-func (r *ComponentReconciler) resolveHelmConfigWithDefaults(component *deploymentsv1alpha1.Component) (*HelmConfig, error) {
-	if component.Spec.Config == nil {
-		return nil, fmt.Errorf("config is required for helm components")
-	}
-
-	var config HelmConfig
-	if err := json.Unmarshal(component.Spec.Config.Raw, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse helm config: %w", err)
-	}
-
-	// Validate configuration using validator framework
-	validate := validator.New()
-	if err := validate.Struct(&config); err != nil {
-		return nil, fmt.Errorf("helm config validation failed: %w", err)
-	}
-
-	// Resolve target namespace: use configured namespace or fall back to Component's namespace
-	if config.ReleaseNamespace == "" {
-		config.ReleaseNamespace = component.Namespace
-	}
-
-	// Resolve effective timeouts: use component-level configuration if present, otherwise controller defaults
-	config.ResolvedDeploymentTimeout = r.defaultDeploymentTimeout
-	config.ResolvedDeletionTimeout = r.defaultDeletionTimeout
-
-	if config.Timeouts != nil {
-		if config.Timeouts.Deployment != nil {
-			config.ResolvedDeploymentTimeout = config.Timeouts.Deployment.Duration
-		}
-		if config.Timeouts.Deletion != nil {
-			config.ResolvedDeletionTimeout = config.Timeouts.Deletion.Duration
-		}
-	}
-
-	return &config, nil
 }
 
 // +kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
