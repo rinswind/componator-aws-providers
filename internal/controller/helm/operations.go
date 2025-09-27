@@ -50,11 +50,11 @@ func (f *HelmOperationsFactory) CreateOperations(
 	}
 
 	// Initialize the action configuration with Kubernetes client
-	if err := actionConfig.Init(settings.RESTClientGetter(), config.ReleaseName, "secrets", logFunc); err != nil {
+	if err := actionConfig.Init(settings.RESTClientGetter(), config.ReleaseNamespace, "secrets", logFunc); err != nil {
 		return nil, fmt.Errorf("failed to initialize helm action configuration: %w", err)
 	}
 
-	return &HelmOperations{actionConfig: actionConfig, config: config}, nil
+	return &HelmOperations{settings: settings, actionConfig: actionConfig, config: config}, nil
 }
 
 // HelmOperations implements the ComponentOperations interface for Helm-based deployments.
