@@ -124,6 +124,13 @@ func (r *ComponentReconciler) handleCreation(
 	if util.IsClaimed(component) {
 		log.Info("Starting deployment of component")
 
+		// Set the status first so that if we fail we can safely retry without having done destructive ops
+		util.SetDeployingStatus(component, HandlerName)
+		if err := r.Status().Update(ctx, component); err != nil {
+			log.Error(err, "failed to update deploying status", "requeueAfter", r.requeuePeriod)
+			return ctrl.Result{RequeueAfter: r.requeuePeriod}, err
+		}
+
 		err := startHelmReleaseDeployment(ctx, component)
 		if err != nil {
 			log.Error(err, "failed to perform helm deployment")
@@ -131,46 +138,22 @@ func (r *ComponentReconciler) handleCreation(
 			return ctrl.Result{}, r.Status().Update(ctx, component)
 		}
 
-		util.SetDeployingStatus(component, HandlerName)
-		if err := r.Status().Update(ctx, component); err != nil {
-			log.Error(err, "failed to update deploying status")
-			return ctrl.Result{}, err
-		}
-
 		// Start waiting for deployment to complete
-		log.Info("Started deployment, checking again in 10 seconds")
+		log.Info("Started deployment", "requeueAfter", r.requeuePeriod)
 		return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
 	}
 
 	// 3. If Deploying -> check deployment progress
 	if util.IsDeploying(component) {
-		// Get timeout configuration from component config
-		config, err := resolveHelmConfig(component)
-		if err != nil {
-			log.Error(err, "failed to resolve component config for timeout check")
-			return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
-		}
+		// Get elapsed time for timeout checking
+		elapsed := util.GetPhaseElapsedTime(component)
 
-		// Check deployment timeout before readiness check
-		deploymentTimeout := config.Timeouts.Deployment.Duration
-		if util.IsPhaseTimedOut(component, deploymentTimeout) {
-			elapsed := util.GetPhaseElapsedTime(component)
-			log.Error(nil, "deployment timed out",
-				"elapsed", elapsed,
-				"timeout", deploymentTimeout,
-				"chart", config.Chart.Name)
-
-			util.SetFailedStatus(component, HandlerName,
-				fmt.Sprintf("Deployment timed out after %v (timeout: %v)",
-					elapsed.Truncate(time.Second), deploymentTimeout))
-			return ctrl.Result{}, r.Status().Update(ctx, component)
-		}
-
-		// Check deployment status - encapsulates all resource gathering logic
-		ready, ioErr, deploymentErr := checkReleaseDeployed(ctx, component)
+		// Check deployment status - encapsulates all resource gathering logic including timeout
+		ready, ioErr, deploymentErr := checkReleaseDeployed(ctx, component, elapsed)
 
 		// Handle I/O errors with requeue
 		if ioErr != nil {
+			log.Error(ioErr, "failed to check release state", "requeueAfter", r.requeuePeriod)
 			return ctrl.Result{RequeueAfter: r.requeuePeriod}, ioErr
 		}
 
@@ -202,17 +185,18 @@ func (r *ComponentReconciler) handleCreation(
 		// Start upgrade and set back to Deploying
 		log.Info("Component is dirty, starting helm upgrade")
 
+		// Set the status before we start, so that if we fail to set it, we have not done destrictive ops
+		util.SetDeployingStatus(component, HandlerName)
+		if err := r.Status().Update(ctx, component); err != nil {
+			log.Error(err, "failed to update deploying status", "requeueAfter", r.requeuePeriod)
+			return ctrl.Result{RequeueAfter: r.requeuePeriod}, err
+		}
+
 		err := startHelmReleaseUpgrade(ctx, component)
 		if err != nil {
 			log.Error(err, "failed to perform helm upgrade")
 			util.SetFailedStatus(component, HandlerName, err.Error())
 			return ctrl.Result{}, r.Status().Update(ctx, component)
-		}
-
-		util.SetDeployingStatus(component, HandlerName)
-		if err := r.Status().Update(ctx, component); err != nil {
-			log.Error(err, "failed to update deploying status")
-			return ctrl.Result{}, err
 		}
 
 		// Start waiting for upgrade to complete

@@ -320,8 +320,27 @@ func setupHelmRepository(settings *cli.EnvSettings, repoName, repoURL string) er
 
 // checkReleaseDeployed verifies if a Helm release and all its resources are ready
 // Returns (ready, ioError, deploymentError) to distinguish between temporary I/O issues and permanent failures
-func checkReleaseDeployed(ctx context.Context, component *deploymentsv1alpha1.Component) (bool, error, error) {
+func checkReleaseDeployed(
+	ctx context.Context, component *deploymentsv1alpha1.Component, elapsed time.Duration) (bool, error, error) {
+
 	log := logf.FromContext(ctx)
+
+	// Check deployment timeout first
+	config, err := resolveHelmConfig(component)
+	if err != nil {
+		return false, fmt.Errorf("failed to resolve component config for timeout check: %w", err), nil // I/O error
+	}
+
+	deploymentTimeout := config.Timeouts.Deployment.Duration
+	if elapsed >= deploymentTimeout {
+		log.Error(nil, "deployment timed out",
+			"elapsed", elapsed,
+			"timeout", deploymentTimeout,
+			"chart", config.Chart.Name)
+
+		return false, nil, fmt.Errorf("Deployment timed out after %v (timeout: %v)",
+			elapsed.Truncate(time.Second), deploymentTimeout) // Deployment failure
+	}
 
 	// Get the current release
 	rel, err := getHelmRelease(ctx, component)
