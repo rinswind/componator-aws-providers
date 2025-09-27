@@ -133,7 +133,7 @@ func (r *ComponentReconciler) handleCreation(
 
 		err := startHelmReleaseDeployment(ctx, component)
 		if err != nil {
-			log.Error(err, "failed to perform helm deployment")
+			log.Error(err, "failed to perform deployment")
 			util.SetFailedStatus(component, HandlerName, err.Error())
 			return ctrl.Result{}, r.Status().Update(ctx, component)
 		}
@@ -183,7 +183,7 @@ func (r *ComponentReconciler) handleCreation(
 		}
 
 		// Start upgrade and set back to Deploying
-		log.Info("Component is dirty, starting helm upgrade")
+		log.Info("Component is dirty, starting upgrade")
 
 		// Set the status before we start, so that if we fail to set it, we have not done destrictive ops
 		util.SetDeployingStatus(component, HandlerName)
@@ -194,7 +194,7 @@ func (r *ComponentReconciler) handleCreation(
 
 		err := startHelmReleaseUpgrade(ctx, component)
 		if err != nil {
-			log.Error(err, "failed to perform helm upgrade")
+			log.Error(err, "failed to perform upgrade")
 			util.SetFailedStatus(component, HandlerName, err.Error())
 			return ctrl.Result{}, r.Status().Update(ctx, component)
 		}
@@ -230,9 +230,9 @@ func (r *ComponentReconciler) handleDeletion(
 			return ctrl.Result{RequeueAfter: r.requeuePeriod}, nil
 		}
 
-		// Start async helm cleanup
+		// Start async cleanup
 		if err := startHelmReleaseDeletion(ctx, component); err != nil {
-			log.Error(err, "failed to start helm cleanup")
+			log.Error(err, "failed to start cleanup")
 
 			util.SetTerminatingStatus(component, HandlerName, fmt.Sprintf("Cleanup initiation failed: %v", err))
 			if statusErr := r.Status().Update(ctx, component); statusErr != nil {
@@ -270,7 +270,7 @@ func (r *ComponentReconciler) handleDeletion(
 	}
 
 	// 3. Deletion complete -> remove finalizer
-	log.Info("Helm release deletion completed")
+	log.Info("Component deletion completed")
 
 	util.RemoveHandlerFinalizer(component, HandlerName)
 	if err := r.Update(ctx, component); err != nil {
