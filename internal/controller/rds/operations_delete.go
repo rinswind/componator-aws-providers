@@ -1,0 +1,100 @@
+/*
+Copyright 2025.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package rds
+
+import (
+	"context"
+	"time"
+
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
+)
+
+// Delete handles all RDS-specific deletion operations
+// Implements ComponentOperations.Delete interface method.
+func (r *RdsOperations) Delete(ctx context.Context, component *deploymentsv1alpha1.Component) error {
+	log := logf.FromContext(ctx)
+
+	log.Info("Starting RDS deletion", "component", component.Name, "namespace", component.Namespace)
+
+	// TODO: Implement RDS deletion logic here
+	// This should include:
+	// 1. Parse RDS configuration from component.Spec.Config
+	// 2. Create AWS RDS client with appropriate credentials and region
+	// 3. Initiate RDS instance deletion via AWS SDK
+	// 4. Handle deletion options (final snapshot, skip final snapshot, etc.)
+	// 5. Store deletion metadata for status checking
+	//
+	// Example implementation structure:
+	// - config, err := parseRdsConfig(component.Spec.Config)
+	// - if err != nil {
+	//     log.Error(err, "Failed to parse RDS config during deletion, continuing anyway")
+	//     return nil // Don't block deletion on config parsing errors
+	//   }
+	// - rdsClient := r.createRDSClient(config.Region)
+	// - _, err = rdsClient.DeleteDBInstance(ctx, &rds.DeleteDBInstanceInput{
+	//     DBInstanceIdentifier: config.InstanceIdentifier,
+	//     SkipFinalSnapshot:    config.SkipFinalSnapshot,
+	//     FinalDBSnapshotIdentifier: config.FinalSnapshotIdentifier,
+	//   })
+	// - if err != nil && !isInstanceNotFoundError(err) {
+	//     log.Error(err, "Failed to delete RDS instance, continuing anyway")
+	//   }
+
+	// For now, log a placeholder message to indicate this needs implementation
+	log.Info("RDS deletion not yet implemented - placeholder for AWS RDS SDK integration")
+	return nil
+}
+
+// CheckDeletion verifies the current RDS deletion status and completion.
+// Implements ComponentOperations.CheckDeletion interface method.
+func (r *RdsOperations) CheckDeletion(ctx context.Context, component *deploymentsv1alpha1.Component, elapsed time.Duration) (deleted bool, ioError error, deletionError error) {
+	log := logf.FromContext(ctx)
+
+	log.V(1).Info("Checking RDS deletion status",
+		"component", component.Name,
+		"namespace", component.Namespace,
+		"elapsed", elapsed)
+
+	// TODO: Implement RDS deletion status checking here
+	// This should include:
+	// 1. Parse RDS configuration to get instance identifier
+	// 2. Query AWS RDS API for instance existence
+	// 3. Handle "instance not found" as successful deletion
+	// 4. Distinguish between transient errors (network issues) and permanent failures
+	// 5. Handle timeout scenarios for long-running deletions (snapshots can take time)
+	//
+	// Example implementation structure:
+	// - config, err := parseRdsConfig(component.Spec.Config)
+	// - if err != nil {
+	//     log.Error(err, "Failed to parse config during deletion check, assuming deleted")
+	//     return true, nil, nil // Assume deleted if we can't parse config
+	//   }
+	// - rdsClient := r.createRDSClient(config.Region)
+	// - _, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
+	//     DBInstanceIdentifier: config.InstanceIdentifier,
+	//   })
+	// - if isInstanceNotFoundError(err) { return true, nil, nil }
+	// - if isTransientError(err) { return false, err, nil }
+	// - if err != nil { return false, nil, err }
+	// - return false, nil, nil // Instance still exists
+
+	// For now, assume deletion is complete to avoid blocking
+	log.Info("RDS deletion status checking not yet implemented - assuming deletion complete")
+	return true, nil, nil
+}

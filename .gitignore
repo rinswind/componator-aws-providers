@@ -25,3 +25,7 @@ go.work
 *.swp
 *.swo
 *~
+
+# Produced by test calls to "go build cmd/main.go"
+main
+main.exe

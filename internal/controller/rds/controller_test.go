@@ -113,7 +113,7 @@ func getFirstFoundEnvTestBinaryDir() string {
 
 var _ = Describe("RDS Controller", func() {
 	Context("When reconciling a Component", func() {
-		It("should handle rds components", func() {
+		It("should reconcile RDS components", func() {
 			// Create a test component
 			component := &deploymentsv1alpha1.Component{
 				ObjectMeta: metav1.ObjectMeta{
@@ -130,10 +130,7 @@ var _ = Describe("RDS Controller", func() {
 			Expect(k8sClient.Create(ctx, component)).To(Succeed())
 
 			// Create reconciler
-			reconciler := &ComponentReconciler{
-				Client: k8sClient,
-				Scheme: scheme.Scheme,
-			}
+			reconciler := NewComponentReconciler()
 
 			// Test reconciliation
 			req := reconcile.Request{
@@ -169,10 +166,7 @@ var _ = Describe("RDS Controller", func() {
 			Expect(k8sClient.Create(ctx, component)).To(Succeed())
 
 			// Create reconciler
-			reconciler := &ComponentReconciler{
-				Client: k8sClient,
-				Scheme: scheme.Scheme,
-			}
+			reconciler := NewComponentReconciler()
 
 			// Test reconciliation
 			req := reconcile.Request{

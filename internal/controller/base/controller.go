@@ -23,7 +23,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 	"github.com/rinswind/deployment-operator/handler/util"
@@ -63,9 +65,19 @@ func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
 	r.Scheme = mgr.GetScheme()
 
+	isOurComponent := func(obj client.Object) bool {
+		component, ok := obj.(*deploymentsv1alpha1.Component)
+		return ok && !r.claimValidator.ShouldIgnore(component)
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&deploymentsv1alpha1.Component{}).
-		WithEventFilter(ComponentHandlerPredicate(r.config.HandlerName)).
+		WithEventFilter(predicate.Funcs{
+			CreateFunc:  func(e event.CreateEvent) bool { return isOurComponent(e.Object) },
+			UpdateFunc:  func(e event.UpdateEvent) bool { return isOurComponent(e.ObjectNew) },
+			DeleteFunc:  func(e event.DeleteEvent) bool { return isOurComponent(e.Object) },
+			GenericFunc: func(e event.GenericEvent) bool { return isOurComponent(e.Object) },
+		}).
 		Named(r.config.ControllerName).
 		Complete(r)
 }
