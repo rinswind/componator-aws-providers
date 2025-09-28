@@ -111,6 +111,34 @@ func (h *HelmOperations) getHelmRelease(ctx context.Context) (*release.Release, 
 	return rel, nil
 }
 
+// successResult creates an OperationResult for successful operations
+func (h *HelmOperations) successResult() *base.OperationResult {
+	updatedStatus, _ := json.Marshal(h.status)
+	return &base.OperationResult{
+		UpdatedStatus: updatedStatus,
+		Success:       true,
+	}
+}
+
+// errorResult creates an OperationResult for failed operations with error details
+func (h *HelmOperations) errorResult(err error) *base.OperationResult {
+	updatedStatus, _ := json.Marshal(h.status)
+	return &base.OperationResult{
+		UpdatedStatus:  updatedStatus,
+		Success:        false,
+		OperationError: err,
+	}
+}
+
+// pendingResult creates an OperationResult for operations still in progress
+func (h *HelmOperations) pendingResult() *base.OperationResult {
+	updatedStatus, _ := json.Marshal(h.status)
+	return &base.OperationResult{
+		UpdatedStatus: updatedStatus,
+		Success:       false,
+	}
+}
+
 // gatherHelmReleaseResources extracts Kubernetes resources from a Helm release manifest
 // and builds a ResourceList for status checking
 func (h *HelmOperations) gatherHelmReleaseResources(ctx context.Context, rel *release.Release) (kube.ResourceList, error) {

@@ -18,7 +18,6 @@ package helm
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -49,11 +48,7 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*base.OperationResult, err
 		h.status.ReleaseName = rel.Name
 		h.status.ChartVersion = rel.Chart.Metadata.Version
 
-		updatedStatus, _ := json.Marshal(h.status)
-		return &base.OperationResult{
-			UpdatedStatus: updatedStatus,
-			Success:       true,
-		}, nil
+		return h.successResult(), nil
 	}
 
 	// Set up repository configuration properly for ephemeral containers
@@ -85,24 +80,19 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*base.OperationResult, err
 		return nil, fmt.Errorf("failed to install helm release %s: %w", releaseName, err)
 	}
 
-	// Update status with new release information
-	h.status.ReleaseVersion = rel.Version
-	h.status.ReleaseName = rel.Name
-	h.status.ChartVersion = rel.Chart.Metadata.Version
-	h.status.LastDeployTime = time.Now().Format(time.RFC3339)
-
-	updatedStatus, _ := json.Marshal(h.status)
-
 	log.Info("Successfully installed helm release",
 		"releaseName", releaseName,
 		"namespace", releaseNamespace,
 		"version", rel.Version,
 		"status", rel.Info.Status.String())
 
-	return &base.OperationResult{
-		UpdatedStatus: updatedStatus,
-		Success:       true,
-	}, nil
+	// Update status with new release information
+	h.status.ReleaseVersion = rel.Version
+	h.status.ReleaseName = rel.Name
+	h.status.ChartVersion = rel.Chart.Metadata.Version
+	h.status.LastDeployTime = time.Now().Format(time.RFC3339)
+
+	return h.successResult(), nil
 }
 
 // startHelmReleaseUpgrade handles upgrading an existing Helm release using pre-parsed configuration
@@ -145,24 +135,19 @@ func (h *HelmOperations) Upgrade(ctx context.Context) (*base.OperationResult, er
 		return nil, fmt.Errorf("failed to upgrade helm release %s: %w", releaseName, err)
 	}
 
-	// Update status with upgraded release information
-	h.status.ReleaseVersion = rel.Version
-	h.status.ReleaseName = rel.Name
-	h.status.ChartVersion = rel.Chart.Metadata.Version
-	h.status.LastDeployTime = time.Now().Format(time.RFC3339)
-
-	updatedStatus, _ := json.Marshal(h.status)
-
 	log.Info("Successfully started helm release upgrade",
 		"releaseName", releaseName,
 		"namespace", releaseNamespace,
 		"version", rel.Version,
 		"status", rel.Info.Status.String())
 
-	return &base.OperationResult{
-		UpdatedStatus: updatedStatus,
-		Success:       true,
-	}, nil
+	// Update status with upgraded release information
+	h.status.ReleaseVersion = rel.Version
+	h.status.ReleaseName = rel.Name
+	h.status.ChartVersion = rel.Chart.Metadata.Version
+	h.status.LastDeployTime = time.Now().Format(time.RFC3339)
+
+	return h.successResult(), nil
 }
 
 // checkReleaseDeployed verifies if a Helm release and all its resources are ready using pre-parsed configuration
@@ -178,12 +163,7 @@ func (h *HelmOperations) CheckDeployment(ctx context.Context, elapsed time.Durat
 			"timeout", deploymentTimeout,
 			"chart", h.config.Chart.Name)
 
-		updatedStatus, _ := json.Marshal(h.status)
-		return &base.OperationResult{
-			UpdatedStatus:  updatedStatus,
-			Success:        false,
-			OperationError: fmt.Errorf("Deployment timed out after %v (timeout: %v)", elapsed.Truncate(time.Second), deploymentTimeout),
-		}, nil
+		return h.errorResult(fmt.Errorf("Deployment timed out after %v (timeout: %v)", elapsed.Truncate(time.Second), deploymentTimeout)), nil
 	}
 
 	// Get the current release
@@ -201,19 +181,13 @@ func (h *HelmOperations) CheckDeployment(ctx context.Context, elapsed time.Durat
 	// Use non-blocking readiness check
 	ready, err := h.checkResourcesReady(ctx, resourceList)
 	if err != nil {
-		updatedStatus, _ := json.Marshal(h.status)
-		return &base.OperationResult{
-			UpdatedStatus:  updatedStatus,
-			Success:        false,
-			OperationError: fmt.Errorf("deployment failed: %w", err),
-		}, nil
+		return h.errorResult(fmt.Errorf("deployment failed: %w", err)), nil
 	}
 
-	updatedStatus, _ := json.Marshal(h.status)
-	return &base.OperationResult{
-		UpdatedStatus: updatedStatus,
-		Success:       ready,
-	}, nil
+	if ready {
+		return h.successResult(), nil
+	}
+	return h.pendingResult(), nil
 }
 
 // checkResourcesReady performs non-blocking readiness checks on Kubernetes resources

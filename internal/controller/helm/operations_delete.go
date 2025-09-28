@@ -18,7 +18,6 @@ package helm
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -52,11 +51,7 @@ func (h *HelmOperations) Delete(ctx context.Context) (*base.OperationResult, err
 		// Release doesn't exist, which is fine for cleanup
 		log.Info("Release not found, cleanup already complete", "releaseName", releaseName)
 
-		updatedStatus, _ := json.Marshal(h.status)
-		return &base.OperationResult{
-			UpdatedStatus: updatedStatus,
-			Success:       true,
-		}, nil
+		return h.successResult(), nil
 	}
 
 	// Create uninstall action
@@ -83,11 +78,7 @@ func (h *HelmOperations) Delete(ctx context.Context) (*base.OperationResult, err
 		}
 	}
 
-	updatedStatus, _ := json.Marshal(h.status)
-	return &base.OperationResult{
-		UpdatedStatus: updatedStatus,
-		Success:       true,
-	}, nil
+	return h.successResult(), nil
 }
 
 // checkDeletion verifies if a Helm release and all its resources have been deleted using pre-parsed configuration
@@ -103,12 +94,7 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context, elapsed time.Duratio
 			"timeout", deletionTimeout,
 			"chart", h.config.Chart.Name)
 
-		updatedStatus, _ := json.Marshal(h.status)
-		return &base.OperationResult{
-			UpdatedStatus:  updatedStatus,
-			Success:        false,
-			OperationError: fmt.Errorf("Deletion timed out after %v (timeout: %v)", elapsed.Truncate(time.Second), deletionTimeout),
-		}, nil
+		return h.errorResult(fmt.Errorf("Deletion timed out after %v (timeout: %v)", elapsed.Truncate(time.Second), deletionTimeout)), nil
 	}
 
 	// Try to get the current release
@@ -117,11 +103,7 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context, elapsed time.Duratio
 		// If release is gone, deletion is complete
 		if errors.Is(err, driver.ErrReleaseNotFound) {
 			log.Info("Release no longer exists, deletion complete")
-			updatedStatus, _ := json.Marshal(h.status)
-			return &base.OperationResult{
-				UpdatedStatus: updatedStatus,
-				Success:       true,
-			}, nil
+			return h.successResult(), nil
 		}
 		return nil, fmt.Errorf("failed to check release status during deletion: %w", err) // I/O error
 	}
@@ -144,11 +126,7 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context, elapsed time.Duratio
 
 	if !allDeleted {
 		log.Info("Some release resources still exist, deletion in progress")
-		updatedStatus, _ := json.Marshal(h.status)
-		return &base.OperationResult{
-			UpdatedStatus: updatedStatus,
-			Success:       false,
-		}, nil
+		return h.pendingResult(), nil
 	}
 
 	log.Info("All release resources deleted")
@@ -156,11 +134,7 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context, elapsed time.Duratio
 	// Are we managing the namespace too?
 	if !*h.config.ManageNamespace {
 		log.Info("Deletion complete")
-		updatedStatus, _ := json.Marshal(h.status)
-		return &base.OperationResult{
-			UpdatedStatus: updatedStatus,
-			Success:       true,
-		}, nil
+		return h.successResult(), nil
 	}
 
 	exists, err := h.namespaceExists(ctx)
@@ -170,19 +144,11 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context, elapsed time.Duratio
 
 	if exists {
 		log.Info("Managed namespace still exists, deletion in progress")
-		updatedStatus, _ := json.Marshal(h.status)
-		return &base.OperationResult{
-			UpdatedStatus: updatedStatus,
-			Success:       false,
-		}, nil
+		return h.pendingResult(), nil
 	}
 
 	log.Info("Deletion complete")
-	updatedStatus, _ := json.Marshal(h.status)
-	return &base.OperationResult{
-		UpdatedStatus: updatedStatus,
-		Success:       true,
-	}, nil
+	return h.successResult(), nil
 }
 
 // checkResourcesDeleted performs non-blocking deletion checks on Kubernetes resources
