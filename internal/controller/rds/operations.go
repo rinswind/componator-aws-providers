@@ -19,11 +19,12 @@ package rds
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/rds/types"
@@ -64,7 +65,11 @@ func (f *RdsOperationsFactory) CreateOperations(ctx context.Context, config json
 	}
 
 	// Initialize AWS configuration for the specified region
-	awsConfig, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(rdsConfig.Region))
+	// Disable AWS SDK retries since we handle retries via controller requeue
+	awsConfig, err := awsconfig.LoadDefaultConfig(ctx,
+		awsconfig.WithRegion(rdsConfig.Region),
+		awsconfig.WithRetryMaxAttempts(1), // Disable retries - controller handles requeue
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS configuration for region %s: %w", rdsConfig.Region, err)
 	}
@@ -167,6 +172,16 @@ func (r *RdsOperations) errorResult(ctx context.Context, message string, err err
 	}, nil
 }
 
+// updateStatus updates RdsStatus fields from AWS DBInstance data
+// This eliminates repetitive field-by-field copying across all RDS operations
+func (r *RdsOperations) updateStatus(instance *types.DBInstance) {
+	r.status.InstanceStatus = stringValue(instance.DBInstanceStatus)
+	r.status.InstanceARN = stringValue(instance.DBInstanceArn)
+	r.status.Endpoint = endpointAddress(instance.Endpoint)
+	r.status.Port = endpointPort(instance.Endpoint)
+	r.status.AvailabilityZone = stringValue(instance.AvailabilityZone)
+}
+
 // getInstanceData retrieves RDS instance data, handling not-found cases consistently
 func (r *RdsOperations) getInstanceData(ctx context.Context, instanceID string) (*types.DBInstance, error) {
 	input := &rds.DescribeDBInstancesInput{
@@ -189,43 +204,28 @@ func (r *RdsOperations) getInstanceData(ctx context.Context, instanceID string) 
 }
 
 // isInstanceNotFoundError checks if the error indicates the RDS instance was not found
+// Uses AWS SDK error types instead of string matching
 func isInstanceNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "DBInstanceNotFound") ||
-		strings.Contains(err.Error(), "does not exist")
-}
 
-// updateStatus updates RdsStatus fields from AWS DBInstance data
-// This eliminates repetitive field-by-field copying across all RDS operations
-func (r *RdsOperations) updateStatus(instance *types.DBInstance) {
-	r.status.InstanceStatus = stringValue(instance.DBInstanceStatus)
-	r.status.InstanceARN = stringValue(instance.DBInstanceArn)
-	r.status.Endpoint = endpointAddress(instance.Endpoint)
-	r.status.Port = endpointPort(instance.Endpoint)
-	r.status.AvailabilityZone = stringValue(instance.AvailabilityZone)
+	// Check for specific AWS RDS error type
+	var notFoundErr *types.DBInstanceNotFoundFault
+	return errors.As(err, &notFoundErr)
 }
 
 // isTransientError determines if an error is transient and should be retried
+// Uses AWS SDK's built-in error classification instead of custom logic
 func isTransientError(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	errorStr := err.Error()
-	transientErrors := []string{
-		"RequestTimeout",
-		"ThrottlingException",
-		"ServiceUnavailable",
-		"InternalError",
-		"network",
-		"timeout",
-		"connection",
-	}
-
-	for _, transientErr := range transientErrors {
-		if strings.Contains(strings.ToLower(errorStr), strings.ToLower(transientErr)) {
+	// Use AWS SDK's built-in retry classification
+	// This handles all AWS API errors, network errors, and HTTP status codes
+	for _, checker := range retry.DefaultRetryables {
+		if checker.IsErrorRetryable(err) == aws.TrueTernary {
 			return true
 		}
 	}
