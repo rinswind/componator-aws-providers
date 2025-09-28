@@ -50,12 +50,11 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, erro
 	// Check if instance already exists
 	existing, err := r.checkInstanceExists(ctx, instanceID)
 	if err != nil {
-		return r.handleOperationError(ctx, "failed to check if RDS instance exists", err)
+		return r.errorResult(ctx, "failed to check if RDS instance exists", err)
 	}
 
 	if existing {
-		log.Info("RDS instance already exists, checking status",
-			"instanceId", instanceID)
+		log.Info("RDS instance already exists, checking status", "instanceId", instanceID)
 		return r.CheckDeployment(ctx, 0)
 	}
 
@@ -69,7 +68,7 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, erro
 
 	result, err := r.rdsClient.CreateDBInstance(ctx, createInput)
 	if err != nil {
-		return r.handleOperationError(ctx, "failed to create RDS instance", err)
+		return r.errorResult(ctx, "failed to create RDS instance", err)
 	}
 
 	// Update status with deployment information
@@ -97,7 +96,7 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, erro
 		"instanceId", instanceID,
 		"status", r.status.InstanceStatus)
 
-	return r.pendingResult(), nil // Still creating, need to check status
+	return r.pendingResult() // Still creating, need to check status
 }
 
 // CheckDeployment verifies the current deployment status using pre-parsed configuration
@@ -126,7 +125,7 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 
 	if elapsed > createTimeout {
 		timeoutErr := fmt.Errorf("RDS instance creation timed out after %v", elapsed)
-		return r.handleOperationError(ctx, "deployment timeout exceeded", timeoutErr)
+		return r.errorResult(ctx, "deployment timeout exceeded", timeoutErr)
 	}
 
 	// Query RDS instance status
@@ -138,14 +137,14 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 	if err != nil {
 		if r.isInstanceNotFoundError(err) {
 			notFoundErr := fmt.Errorf("RDS instance %s not found during deployment check", instanceID)
-			return r.handleOperationError(ctx, "instance not found", notFoundErr)
+			return r.errorResult(ctx, "instance not found", notFoundErr)
 		}
-		return r.handleOperationError(ctx, "failed to describe RDS instance", err)
+		return r.errorResult(ctx, "failed to describe RDS instance", err)
 	}
 
 	if len(result.DBInstances) == 0 {
 		notFoundErr := fmt.Errorf("no RDS instances returned for identifier %s", instanceID)
-		return r.handleOperationError(ctx, "no instances found", notFoundErr)
+		return r.errorResult(ctx, "no instances found", notFoundErr)
 	}
 
 	instance := result.DBInstances[0]
@@ -196,7 +195,7 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 			"endpoint", r.status.Endpoint,
 			"port", r.status.Port)
 
-		return r.successResult(), nil
+		return r.successResult()
 
 	case "creating", "backing-up", "modifying":
 		// Still in progress
@@ -204,12 +203,12 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 			"instanceId", instanceID,
 			"status", status)
 
-		return r.pendingResult(), nil
+		return r.pendingResult()
 
 	case "failed", "incompatible-restore", "incompatible-network":
 		// Failed states
 		failureErr := fmt.Errorf("RDS instance deployment failed with status: %s", status)
-		return r.handleOperationError(ctx, "deployment failed", failureErr)
+		return r.errorResult(ctx, "deployment failed", failureErr)
 
 	default:
 		// Unknown status - log and continue checking
@@ -217,6 +216,6 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 			"instanceId", instanceID,
 			"status", status)
 
-		return r.pendingResult(), nil
+		return r.pendingResult()
 	}
 }

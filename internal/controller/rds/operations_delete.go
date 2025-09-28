@@ -55,7 +55,7 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 		log.Info("RDS instance already deleted or doesn't exist",
 			"instanceId", instanceID)
 
-		return r.successResult(), nil
+		return r.successResult()
 	}
 
 	// Build delete input
@@ -118,7 +118,7 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 	r.status.LastModifiedTime = time.Now().Format(time.RFC3339)
 	r.status.InstanceStatus = "deleting"
 
-	return r.successResult(), nil // Don't block on deletion errors - best effort cleanup
+	return r.successResult() // Don't block on deletion errors - best effort cleanup
 }
 
 // CheckDeletion verifies the current deletion status using pre-parsed configuration
@@ -151,7 +151,7 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration
 			"elapsed", elapsed,
 			"timeout", deleteTimeout)
 
-		return r.successResult(), nil // Don't block cleanup on timeout
+		return r.successResult() // Don't block cleanup on timeout
 	}
 
 	// Query RDS instance existence
@@ -166,7 +166,7 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration
 				"instanceId", instanceID,
 				"elapsed", elapsed)
 
-			return r.successResult(), nil
+			return r.successResult()
 		}
 
 		// For transient errors, continue checking
@@ -175,12 +175,12 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration
 				"instanceId", instanceID,
 				"error", err.Error())
 
-			return r.pendingResult(), err // Return error to trigger retry
+			return r.pendingResult() // Return error to trigger retry
 		}
 
 		// For other errors, log but don't block deletion
 		log.Error(err, "Error checking RDS deletion status, assuming deletion completed")
-		return r.successResult(), nil // Don't block cleanup on API errors
+		return r.successResult() // Don't block cleanup on API errors
 	}
 
 	if len(result.DBInstances) == 0 {
@@ -188,7 +188,7 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration
 			"instanceId", instanceID,
 			"elapsed", elapsed)
 
-		return r.successResult(), nil
+		return r.successResult()
 	}
 
 	instance := result.DBInstances[0]
@@ -210,7 +210,7 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration
 			"instanceId", instanceID,
 			"elapsed", elapsed)
 
-		return r.pendingResult(), nil
+		return r.pendingResult()
 
 	case "failed":
 		// Deletion failed, but don't block cleanup
@@ -218,7 +218,7 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration
 			"RDS instance deletion failed, but allowing cleanup to continue",
 			"instanceId", instanceID)
 
-		return r.successResult(), nil
+		return r.successResult()
 
 	default:
 		// Instance still exists in some other state
@@ -228,6 +228,6 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration
 			"status", status,
 			"elapsed", elapsed)
 
-		return r.pendingResult(), nil
+		return r.pendingResult()
 	}
 }

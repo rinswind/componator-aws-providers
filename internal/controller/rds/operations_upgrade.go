@@ -54,7 +54,7 @@ func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, err
 				"instanceId", instanceID)
 			return r.Deploy(ctx)
 		}
-		return r.handleOperationError(ctx, "failed to get current RDS instance state", err)
+		return r.errorResult(ctx, "failed to get current RDS instance state", err)
 	}
 
 	// Check if instance is in a modifiable state
@@ -64,7 +64,7 @@ func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, err
 			"instanceId", instanceID,
 			"status", currentStatus)
 
-		return r.pendingResult(), nil
+		return r.pendingResult()
 	}
 
 	// Calculate required modifications
@@ -73,7 +73,7 @@ func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, err
 		log.Info("No modifications required for RDS instance",
 			"instanceId", instanceID)
 
-		return r.successResult(), nil
+		return r.successResult()
 	}
 
 	// Apply modifications
@@ -85,7 +85,7 @@ func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, err
 
 	result, err := r.rdsClient.ModifyDBInstance(ctx, modifyInput)
 	if err != nil {
-		return r.handleOperationError(ctx, "failed to modify RDS instance", err)
+		return r.errorResult(ctx, "failed to modify RDS instance", err)
 	}
 
 	// Update status with upgrade information
@@ -109,7 +109,7 @@ func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, err
 		"instanceId", instanceID,
 		"status", r.status.InstanceStatus)
 
-	return r.pendingResult(), nil // Still modifying, need to check status
+	return r.pendingResult() // Still modifying, need to check status
 }
 
 // getCurrentInstanceState retrieves the current state of an RDS instance

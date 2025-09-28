@@ -124,34 +124,51 @@ func NewRdsOperationsConfig() base.ComponentHandlerConfig {
 // Helper methods for RDS operations
 
 // successResult creates an OperationResult for successful operations
-func (r *RdsOperations) successResult() *base.OperationResult {
+func (r *RdsOperations) successResult() (*base.OperationResult, error) {
 	updatedStatus, _ := json.Marshal(r.status)
 	return &base.OperationResult{
 		UpdatedStatus: updatedStatus,
 		Success:       true,
-	}
-}
-
-// errorResult creates an OperationResult for failed operations with error details
-func (r *RdsOperations) errorResult(err error) *base.OperationResult {
-	updatedStatus, _ := json.Marshal(r.status)
-	return &base.OperationResult{
-		UpdatedStatus:  updatedStatus,
-		Success:        false,
-		OperationError: err,
-	}
+	}, nil
 }
 
 // pendingResult creates an OperationResult for operations still in progress
-func (r *RdsOperations) pendingResult() *base.OperationResult {
+func (r *RdsOperations) pendingResult() (*base.OperationResult, error) {
 	updatedStatus, _ := json.Marshal(r.status)
 	return &base.OperationResult{
 		UpdatedStatus: updatedStatus,
 		Success:       false,
-	}
+	}, nil
 }
 
-// checkInstanceExists checks if an RDS instance already exists
+// errorResult creates a standardized error response for RDS operations
+func (r *RdsOperations) errorResult(ctx context.Context, message string, err error) (*base.OperationResult, error) {
+	log := logf.FromContext(ctx)
+
+	// Update status with error information
+	r.status.LastError = err.Error()
+	r.status.LastErrorTime = time.Now().Format(time.RFC3339)
+
+	updatedStatus, _ := json.Marshal(r.status)
+
+	fullError := fmt.Errorf("%s: %w", message, err)
+	log.Error(fullError, "RDS operation failed")
+
+	// Check if this is a transient error that should be retried
+	if r.isTransientError(err) {
+		return &base.OperationResult{
+			UpdatedStatus: updatedStatus,
+			Success:       false,
+		}, fullError // Return error to trigger retry
+	}
+
+	// Permanent error - don't retry
+	return &base.OperationResult{
+		UpdatedStatus:  updatedStatus,
+		Success:        false,
+		OperationError: fullError,
+	}, nil
+}
 func (r *RdsOperations) checkInstanceExists(ctx context.Context, instanceID string) (bool, error) {
 	input := &rds.DescribeDBInstancesInput{
 		DBInstanceIdentifier: aws.String(instanceID),
@@ -239,26 +256,6 @@ func (r *RdsOperations) buildCreateDBInstanceInput(config *RdsConfig, instanceID
 	}
 
 	return input
-}
-
-// handleOperationError creates a standardized error response for RDS operations
-func (r *RdsOperations) handleOperationError(ctx context.Context, message string, err error) (*base.OperationResult, error) {
-	log := logf.FromContext(ctx)
-
-	// Update status with error information
-	r.status.LastError = err.Error()
-	r.status.LastErrorTime = time.Now().Format(time.RFC3339)
-
-	fullError := fmt.Errorf("%s: %w", message, err)
-	log.Error(fullError, "RDS operation failed")
-
-	// Check if this is a transient error that should be retried
-	if r.isTransientError(err) {
-		return r.pendingResult(), fullError // Return error to trigger retry
-	}
-
-	// Permanent error - don't retry
-	return r.errorResult(fullError), nil
 }
 
 // isInstanceNotFoundError checks if the error indicates the RDS instance was not found
