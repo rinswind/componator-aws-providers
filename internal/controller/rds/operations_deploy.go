@@ -101,9 +101,6 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 	config := r.config
 
 	instanceID := r.status.InstanceID
-	if instanceID == "" {
-		instanceID = fmt.Sprintf("%s-db", config.DatabaseName)
-	}
 
 	log.Info("Checking RDS deployment status using pre-parsed configuration",
 		"databaseName", config.DatabaseName,
@@ -111,12 +108,7 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 		"elapsed", elapsed)
 
 	// Check timeout
-	createTimeout := 40 * time.Minute // Default timeout
-	if config.Timeouts != nil && config.Timeouts.Create != nil {
-		createTimeout = config.Timeouts.Create.Duration
-	}
-
-	if elapsed > createTimeout {
+	if elapsed > config.Timeouts.Create.Duration {
 		timeoutErr := fmt.Errorf("RDS instance creation timed out after %v", elapsed)
 		return r.errorResult(ctx, "deployment timeout exceeded", timeoutErr)
 	}

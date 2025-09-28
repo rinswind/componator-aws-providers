@@ -252,13 +252,13 @@ func applyRdsConfigDefaults(config *RdsConfig) error {
 		config.Timeouts = &RdsTimeouts{}
 	}
 	if config.Timeouts.Create == nil {
-		config.Timeouts.Create = &Duration{Duration: 40 * time.Minute} // RDS creation can take 20-40 minutes
+		config.Timeouts.Create = &Duration{Duration: 15 * time.Minute} // RDS creation can take 20-40 minutes
 	}
 	if config.Timeouts.Update == nil {
-		config.Timeouts.Update = &Duration{Duration: 80 * time.Minute} // Updates can take longer
+		config.Timeouts.Update = &Duration{Duration: 25 * time.Minute} // Updates can take longer
 	}
 	if config.Timeouts.Delete == nil {
-		config.Timeouts.Delete = &Duration{Duration: 60 * time.Minute} // Deletion with final snapshot
+		config.Timeouts.Delete = &Duration{Duration: 25 * time.Minute} // Deletion with final snapshot
 	}
 
 	return nil
