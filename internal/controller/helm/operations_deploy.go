@@ -30,10 +30,14 @@ import (
 
 // Deploy handles all Helm-specific deployment operations using pre-parsed configuration
 // Implements ComponentOperations.Deploy interface method.
+//
+// For initial deployments, uses config.ReleaseName from the Component spec.
+// After successful deployment, persists the actual release name to status so that
+// all subsequent operations use the deployed name for consistency.
 func (h *HelmOperations) Deploy(ctx context.Context) (*base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
-	// Get release name and target namespace from resolved configuration
+	// Use config for initial deployment - this is the only place we use config.ReleaseName
 	releaseName := h.config.ReleaseName
 	releaseNamespace := h.config.ReleaseNamespace
 
@@ -99,8 +103,8 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*base.OperationResult, err
 func (h *HelmOperations) Upgrade(ctx context.Context) (*base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
-	// Get release name and target namespace from resolved configuration
-	releaseName := h.config.ReleaseName
+	// Use effective release name from status for upgrades
+	releaseName := h.status.ReleaseName
 	releaseNamespace := h.config.ReleaseNamespace
 
 	// Verify release exists before attempting upgrade
@@ -163,7 +167,9 @@ func (h *HelmOperations) CheckDeployment(ctx context.Context, elapsed time.Durat
 			"timeout", deploymentTimeout,
 			"chart", h.config.Chart.Name)
 
-		return h.errorResult(fmt.Errorf("Deployment timed out after %v (timeout: %v)", elapsed.Truncate(time.Second), deploymentTimeout)), nil
+		return h.errorResult(
+			fmt.Errorf("Deployment timed out after %v (timeout: %v)",
+				elapsed.Truncate(time.Second), deploymentTimeout)), nil
 	}
 
 	// Get the current release

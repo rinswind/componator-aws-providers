@@ -100,6 +100,26 @@ type HelmTimeouts struct {
 	Deletion *Duration `json:"deletion,omitempty"`
 }
 
+// HelmStatus contains handler-specific status data for Helm deployments.
+// This data is persisted across reconciliation loops in Component.Status.HandlerStatus.
+// After initial deployment, operations use the persisted values rather than spec values
+// to ensure consistency with what was actually deployed.
+type HelmStatus struct {
+	// ReleaseVersion tracks the current Helm release version
+	ReleaseVersion int `json:"releaseVersion,omitempty"`
+
+	// LastDeployTime records when the deployment was last initiated
+	LastDeployTime string `json:"lastDeployTime,omitempty"`
+
+	// ChartVersion tracks the deployed chart version
+	ChartVersion string `json:"chartVersion,omitempty"`
+
+	// ReleaseName tracks the actual release name used for deployment
+	// Once set, all subsequent operations (upgrade, delete, status checks) use this name
+	// instead of the spec value to ensure consistency with the deployed release
+	ReleaseName string `json:"releaseName,omitempty"`
+}
+
 // Duration wraps time.Duration with JSON marshaling support
 type Duration struct {
 	time.Duration
@@ -167,4 +187,18 @@ func resolveHelmConfig(ctx context.Context, rawConfig json.RawMessage) (*HelmCon
 		"valuesCount", len(config.Values))
 
 	return &config, nil
+}
+
+func resolveHelmStatus(ctx context.Context, rawStatus json.RawMessage) (*HelmStatus, error) {
+	status := &HelmStatus{}
+	if len(rawStatus) == 0 {
+		logf.FromContext(ctx).V(1).Info("No existing helm status found, starting with empty status")
+		return status, nil
+	}
+
+	if err := json.Unmarshal(rawStatus, &status); err != nil {
+		return nil, err
+	}
+
+	return status, nil
 }

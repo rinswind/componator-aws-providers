@@ -37,10 +37,11 @@ import (
 func (h *HelmOperations) Delete(ctx context.Context) (*base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
-	releaseName := h.config.ReleaseName
+	// Use effective release name from status for deletion
+	releaseName := h.status.ReleaseName
 	targetNamespace := h.config.ReleaseNamespace
 
-	log.Info("Performing helm cleanup using pre-parsed configuration",
+	log.Info("Performing helm cleanup using effective release name",
 		"releaseName", releaseName,
 		"targetNamespace", targetNamespace)
 
@@ -226,7 +227,8 @@ func (h *HelmOperations) namespaceExists(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
-	_, err = clientset.CoreV1().Namespaces().Get(ctx, h.config.ReleaseName, metav1.GetOptions{})
+	// Use the namespace from config - namespace typically doesn't change
+	_, err = clientset.CoreV1().Namespaces().Get(ctx, h.config.ReleaseNamespace, metav1.GetOptions{})
 	if err == nil {
 		// Managed to get the namespace - so still here
 		return true, nil
@@ -253,12 +255,12 @@ func (h *HelmOperations) deleteNamespace(ctx context.Context) error {
 		return fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
 
-	// Delete namespace - Kubernetes will handle cascade deletion and blocking until empty
-	err = clientset.CoreV1().Namespaces().Delete(ctx, h.config.ReleaseName, metav1.DeleteOptions{})
+	// Delete namespace - use config namespace for deletion
+	err = clientset.CoreV1().Namespaces().Delete(ctx, h.config.ReleaseNamespace, metav1.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete namespace: %w", err)
 	}
 
-	log.Info("Successfully initiated namespace deletion", "namespace", h.config.ReleaseName)
+	log.Info("Successfully initiated namespace deletion", "namespace", h.config.ReleaseNamespace)
 	return nil
 }
