@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/rinswind/deployment-operator/handler/base"
@@ -58,7 +57,7 @@ func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, err
 	}
 
 	// Check if instance is in a modifiable state
-	currentStatus := aws.ToString(currentInstance.DBInstanceStatus)
+	currentStatus := stringValue(currentInstance.DBInstanceStatus)
 	if !r.isInstanceModifiable(currentStatus) {
 		log.Info("RDS instance not in modifiable state, waiting",
 			"instanceId", instanceID,
@@ -93,16 +92,9 @@ func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, err
 	r.status.InstanceStatus = "modifying"
 
 	if result.DBInstance != nil {
-		if result.DBInstance.DBInstanceStatus != nil {
-			r.status.InstanceStatus = *result.DBInstance.DBInstanceStatus
-		}
-		// Update other fields as needed
-		if result.DBInstance.DBInstanceClass != nil {
-			r.status.InstanceClass = *result.DBInstance.DBInstanceClass
-		}
-		if result.DBInstance.AllocatedStorage != nil {
-			r.status.AllocatedStorage = *result.DBInstance.AllocatedStorage
-		}
+		r.status.InstanceStatus = stringValue(result.DBInstance.DBInstanceStatus)
+		r.status.InstanceClass = stringValue(result.DBInstance.DBInstanceClass)
+		r.status.AllocatedStorage = int32Value(result.DBInstance.AllocatedStorage)
 	}
 
 	log.Info("RDS instance modification initiated successfully",

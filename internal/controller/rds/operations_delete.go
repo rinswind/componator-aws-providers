@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/rinswind/deployment-operator/handler/base"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -99,7 +98,7 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 	// Initiate RDS instance deletion
 	log.Info("Deleting RDS instance",
 		"instanceId", instanceID,
-		"skipFinalSnapshot", aws.ToBool(deleteInput.SkipFinalSnapshot))
+		"skipFinalSnapshot", boolValue(deleteInput.SkipFinalSnapshot))
 
 	_, err = r.rdsClient.DeleteDBInstance(ctx, deleteInput)
 	if err != nil {
@@ -192,7 +191,7 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration
 	}
 
 	instance := result.DBInstances[0]
-	status := aws.ToString(instance.DBInstanceStatus)
+	status := stringValue(instance.DBInstanceStatus)
 
 	// Update status with current instance information
 	r.status.InstanceStatus = status

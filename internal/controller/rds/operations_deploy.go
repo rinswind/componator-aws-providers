@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/rinswind/deployment-operator/handler/base"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -81,15 +80,9 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, erro
 	r.status.AllocatedStorage = config.AllocatedStorage
 
 	if result.DBInstance != nil {
-		if result.DBInstance.DBInstanceStatus != nil {
-			r.status.InstanceStatus = *result.DBInstance.DBInstanceStatus
-		}
-		if result.DBInstance.Endpoint != nil && result.DBInstance.Endpoint.Address != nil {
-			r.status.Endpoint = *result.DBInstance.Endpoint.Address
-		}
-		if result.DBInstance.Endpoint != nil && result.DBInstance.Endpoint.Port != nil {
-			r.status.Port = *result.DBInstance.Endpoint.Port
-		}
+		r.status.InstanceStatus = stringValue(result.DBInstance.DBInstanceStatus)
+		r.status.Endpoint = endpointAddress(result.DBInstance.Endpoint)
+		r.status.Port = endpointPort(result.DBInstance.Endpoint)
 	}
 
 	log.Info("RDS instance creation initiated successfully",
@@ -151,38 +144,20 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 
 	// Update status with current instance information
 	r.status.InstanceID = instanceID
-	if instance.DBInstanceStatus != nil {
-		r.status.InstanceStatus = *instance.DBInstanceStatus
-	}
-	if instance.Engine != nil {
-		r.status.EngineVersion = aws.ToString(instance.EngineVersion)
-	}
-	if instance.DBInstanceClass != nil {
-		r.status.InstanceClass = *instance.DBInstanceClass
-	}
-	if instance.AllocatedStorage != nil {
-		r.status.AllocatedStorage = *instance.AllocatedStorage
-	}
-	if instance.Endpoint != nil {
-		if instance.Endpoint.Address != nil {
-			r.status.Endpoint = *instance.Endpoint.Address
-		}
-		if instance.Endpoint.Port != nil {
-			r.status.Port = *instance.Endpoint.Port
-		}
-	}
-	if instance.BackupRetentionPeriod != nil {
-		r.status.BackupRetentionPeriod = *instance.BackupRetentionPeriod
-	}
-	if instance.MultiAZ != nil {
-		r.status.MultiAZ = *instance.MultiAZ
-	}
+	r.status.InstanceStatus = stringValue(instance.DBInstanceStatus)
+	r.status.EngineVersion = stringValue(instance.EngineVersion)
+	r.status.InstanceClass = stringValue(instance.DBInstanceClass)
+	r.status.AllocatedStorage = int32Value(instance.AllocatedStorage)
+	r.status.Endpoint = endpointAddress(instance.Endpoint)
+	r.status.Port = endpointPort(instance.Endpoint)
+	r.status.BackupRetentionPeriod = int32Value(instance.BackupRetentionPeriod)
+	r.status.MultiAZ = boolValue(instance.MultiAZ)
 
 	// Update last modified time
 	r.status.LastModifiedTime = time.Now().Format(time.RFC3339)
 
 	// Check if deployment is complete
-	status := aws.ToString(instance.DBInstanceStatus)
+	status := stringValue(instance.DBInstanceStatus)
 	log.Info("RDS instance status check",
 		"instanceId", instanceID,
 		"status", status,

@@ -22,6 +22,7 @@ package rds
 
 import (
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/rds/types"
 )
 
 // Pointer conversion utilities for required fields
@@ -132,3 +133,53 @@ func stringSlicePtr(vs []string) []*string {
 // optionalStringSlicePtr is an alias for stringSlicePtr for consistency
 // This makes the intent clear when used for optional fields
 var optionalStringSlicePtr = stringSlicePtr
+
+// Reverse conversion utilities: pointer → value with zero-value defaults
+// These eliminate unsafe dereferences and conditional nil-checking boilerplate
+
+// stringValue safely converts *string to string, returning empty string if nil
+// This is equivalent to aws.ToString() but with a clearer name for our use case
+func stringValue(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+// int32Value safely converts *int32 to int32, returning zero if nil
+// This is equivalent to aws.ToInt32() but with a clearer name for our use case
+func int32Value(p *int32) int32 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+// boolValue safely converts *bool to bool, returning false if nil
+// This is equivalent to aws.ToBool() but with a clearer name for our use case
+func boolValue(p *bool) bool {
+	if p == nil {
+		return false
+	}
+	return *p
+}
+
+// Specialized reverse conversion utilities for nested pointer access
+
+// endpointAddress safely extracts address string from RDS Endpoint
+// Handles the pattern: instance.Endpoint != nil && instance.Endpoint.Address != nil
+func endpointAddress(endpoint *types.Endpoint) string {
+	if endpoint == nil || endpoint.Address == nil {
+		return ""
+	}
+	return *endpoint.Address
+}
+
+// endpointPort safely extracts port int32 from RDS Endpoint
+// Handles the pattern: instance.Endpoint != nil && instance.Endpoint.Port != nil
+func endpointPort(endpoint *types.Endpoint) int32 {
+	if endpoint == nil || endpoint.Port == nil {
+		return 0
+	}
+	return *endpoint.Port
+}
