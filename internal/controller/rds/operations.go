@@ -145,10 +145,6 @@ func (r *RdsOperations) pendingResult() (*base.OperationResult, error) {
 func (r *RdsOperations) errorResult(ctx context.Context, message string, err error) (*base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
-	// Update status with error information
-	r.status.LastError = err.Error()
-	r.status.LastErrorTime = time.Now().Format(time.RFC3339)
-
 	updatedStatus, _ := json.Marshal(r.status)
 
 	fullError := fmt.Errorf("%s: %w", message, err)
@@ -169,6 +165,7 @@ func (r *RdsOperations) errorResult(ctx context.Context, message string, err err
 		OperationError: fullError,
 	}, nil
 }
+
 func (r *RdsOperations) checkInstanceExists(ctx context.Context, instanceID string) (bool, error) {
 	input := &rds.DescribeDBInstancesInput{
 		DBInstanceIdentifier: stringPtr(instanceID),
@@ -183,50 +180,6 @@ func (r *RdsOperations) checkInstanceExists(ctx context.Context, instanceID stri
 	}
 
 	return true, nil
-}
-
-// buildCreateDBInstanceInput constructs the CreateDBInstanceInput from RDS configuration
-func (r *RdsOperations) buildCreateDBInstanceInput(config *RdsConfig, instanceID string) *rds.CreateDBInstanceInput {
-	input := &rds.CreateDBInstanceInput{
-		// Required fields - always convert to pointers
-		DBInstanceIdentifier: stringPtr(instanceID),
-		DBInstanceClass:      stringPtr(config.InstanceClass),
-		Engine:               stringPtr(config.DatabaseEngine),
-		EngineVersion:        stringPtr(config.EngineVersion),
-		AllocatedStorage:     int32Ptr(config.AllocatedStorage),
-		MasterUsername:       stringPtr(config.MasterUsername),
-		MasterUserPassword:   stringPtr(config.MasterPassword),
-		DBName:               stringPtr(config.DatabaseName),
-
-		// Optional storage configuration
-		StorageType:      optionalStringPtr(config.StorageType),
-		StorageEncrypted: passthroughBoolPtr(config.StorageEncrypted),
-		KmsKeyId:         optionalStringPtr(config.KmsKeyId),
-
-		// Optional networking configuration
-		VpcSecurityGroupIds: config.VpcSecurityGroupIds, // Already []string type
-		DBSubnetGroupName:   optionalStringPtr(config.SubnetGroupName),
-		PubliclyAccessible:  passthroughBoolPtr(config.PubliclyAccessible),
-		Port:                passthroughInt32Ptr(config.Port),
-
-		// Optional backup configuration
-		BackupRetentionPeriod: passthroughInt32Ptr(config.BackupRetentionPeriod),
-		PreferredBackupWindow: optionalStringPtr(config.PreferredBackupWindow),
-
-		// Optional maintenance configuration
-		PreferredMaintenanceWindow: optionalStringPtr(config.PreferredMaintenanceWindow),
-		AutoMinorVersionUpgrade:    passthroughBoolPtr(config.AutoMinorVersionUpgrade),
-
-		// Optional performance configuration
-		MultiAZ:                   passthroughBoolPtr(config.MultiAZ),
-		EnablePerformanceInsights: passthroughBoolPtr(config.PerformanceInsightsEnabled),
-		MonitoringInterval:        passthroughPositiveInt32Ptr(config.MonitoringInterval),
-
-		// Deletion protection
-		DeletionProtection: passthroughBoolPtr(config.DeletionProtection),
-	}
-
-	return input
 }
 
 // isInstanceNotFoundError checks if the error indicates the RDS instance was not found

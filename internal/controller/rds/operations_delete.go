@@ -114,7 +114,6 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 	}
 
 	// Update status to track deletion initiation
-	r.status.LastModifiedTime = time.Now().Format(time.RFC3339)
 	r.status.InstanceStatus = "deleting"
 
 	return r.successResult() // Don't block on deletion errors - best effort cleanup
@@ -195,7 +194,6 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration
 
 	// Update status with current instance information
 	r.status.InstanceStatus = status
-	r.status.LastModifiedTime = time.Now().Format(time.RFC3339)
 
 	log.Info("RDS instance still exists, checking deletion status",
 		"instanceId", instanceID,

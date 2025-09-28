@@ -99,10 +99,6 @@ type RdsStatus struct {
 	InstanceStatus string `json:"instanceStatus,omitempty"`
 	DatabaseName   string `json:"databaseName,omitempty"`
 
-	// Timing information
-	CreatedAt        string `json:"createdAt,omitempty"`
-	LastModifiedTime string `json:"lastModifiedTime,omitempty"`
-
 	// Deployment metadata
 	EngineVersion    string `json:"engineVersion,omitempty"`
 	InstanceClass    string `json:"instanceClass,omitempty"`
@@ -115,10 +111,6 @@ type RdsStatus struct {
 	// Operational status
 	BackupRetentionPeriod int32 `json:"backupRetentionPeriod,omitempty"`
 	MultiAZ               bool  `json:"multiAZ,omitempty"`
-
-	// Error information
-	LastError     string `json:"lastError,omitempty"`
-	LastErrorTime string `json:"lastErrorTime,omitempty"`
 }
 
 // Duration wraps time.Duration with JSON marshaling support

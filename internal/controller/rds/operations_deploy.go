@@ -58,7 +58,7 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, erro
 	}
 
 	// Create RDS instance
-	createInput := r.buildCreateDBInstanceInput(config, instanceID)
+	createInput := buildCreateDBInstanceInput(config, instanceID)
 
 	log.Info("Creating RDS instance",
 		"instanceId", instanceID,
@@ -73,7 +73,6 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, erro
 	// Update status with deployment information
 	r.status.DatabaseName = config.DatabaseName
 	r.status.InstanceID = instanceID
-	r.status.CreatedAt = time.Now().Format(time.RFC3339)
 	r.status.InstanceStatus = "creating"
 	r.status.EngineVersion = config.EngineVersion
 	r.status.InstanceClass = config.InstanceClass
@@ -145,9 +144,6 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 	r.status.BackupRetentionPeriod = int32Value(instance.BackupRetentionPeriod)
 	r.status.MultiAZ = boolValue(instance.MultiAZ)
 
-	// Update last modified time
-	r.status.LastModifiedTime = time.Now().Format(time.RFC3339)
-
 	// Check if deployment is complete
 	status := stringValue(instance.DBInstanceStatus)
 	log.Info("RDS instance status check",
@@ -184,5 +180,47 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 			"status", status)
 
 		return r.pendingResult()
+	}
+}
+
+// buildCreateDBInstanceInput constructs the CreateDBInstanceInput from RDS configuration
+func buildCreateDBInstanceInput(config *RdsConfig, instanceID string) *rds.CreateDBInstanceInput {
+	return &rds.CreateDBInstanceInput{
+		// Required fields - always convert to pointers
+		DBInstanceIdentifier: stringPtr(instanceID),
+		DBInstanceClass:      stringPtr(config.InstanceClass),
+		Engine:               stringPtr(config.DatabaseEngine),
+		EngineVersion:        stringPtr(config.EngineVersion),
+		AllocatedStorage:     int32Ptr(config.AllocatedStorage),
+		MasterUsername:       stringPtr(config.MasterUsername),
+		MasterUserPassword:   stringPtr(config.MasterPassword),
+		DBName:               stringPtr(config.DatabaseName),
+
+		// Optional storage configuration
+		StorageType:      optionalStringPtr(config.StorageType),
+		StorageEncrypted: passthroughBoolPtr(config.StorageEncrypted),
+		KmsKeyId:         optionalStringPtr(config.KmsKeyId),
+
+		// Optional networking configuration
+		VpcSecurityGroupIds: config.VpcSecurityGroupIds, // Already []string type
+		DBSubnetGroupName:   optionalStringPtr(config.SubnetGroupName),
+		PubliclyAccessible:  passthroughBoolPtr(config.PubliclyAccessible),
+		Port:                passthroughInt32Ptr(config.Port),
+
+		// Optional backup configuration
+		BackupRetentionPeriod: passthroughInt32Ptr(config.BackupRetentionPeriod),
+		PreferredBackupWindow: optionalStringPtr(config.PreferredBackupWindow),
+
+		// Optional maintenance configuration
+		PreferredMaintenanceWindow: optionalStringPtr(config.PreferredMaintenanceWindow),
+		AutoMinorVersionUpgrade:    passthroughBoolPtr(config.AutoMinorVersionUpgrade),
+
+		// Optional performance configuration
+		MultiAZ:                   passthroughBoolPtr(config.MultiAZ),
+		EnablePerformanceInsights: passthroughBoolPtr(config.PerformanceInsightsEnabled),
+		MonitoringInterval:        passthroughPositiveInt32Ptr(config.MonitoringInterval),
+
+		// Deletion protection
+		DeletionProtection: passthroughBoolPtr(config.DeletionProtection),
 	}
 }

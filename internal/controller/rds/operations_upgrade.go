@@ -19,7 +19,6 @@ package rds
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/rds/types"
@@ -88,7 +87,6 @@ func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, err
 	}
 
 	// Update status with upgrade information
-	r.status.LastModifiedTime = time.Now().Format(time.RFC3339)
 	r.status.InstanceStatus = "modifying"
 
 	if result.DBInstance != nil {
