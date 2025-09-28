@@ -1,0 +1,40 @@
+apiVersion: deployment-orchestrator.io/v1alpha1
+kind: Component
+metadata:
+  name: mysql-database
+  namespace: default
+  labels:
+    app.kubernetes.io/name: mysql-database
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: deployment-handlers
+spec:
+  name: mysql-db
+  handler: rds
+  config:
+    # Core Database Configuration
+    databaseEngine: mysql
+    engineVersion: "8.0.35"
+    instanceClass: db.t3.medium
+    databaseName: webapp
+    
+    # AWS Configuration
+    region: us-east-1
+    
+    # Storage Configuration (minimal example with defaults)
+    allocatedStorage: 50
+    # storageType: gp2 (default)
+    # storageEncrypted: true (default)
+    
+    # Database Credentials
+    masterUsername: admin
+    masterPassword: "MySecurePassword456!"
+    
+    # Networking Configuration (minimal)
+    vpcSecurityGroupIds:
+      - sg-abcdef0123456789a
+    subnetGroupName: default-db-subnet-group
+    # publiclyAccessible: false (default)
+    # port: 3306 (default for MySQL)
+    
+    # Use defaults for backup, maintenance, performance, and deletion settings
+    # This demonstrates minimal required configuration

@@ -1,0 +1,62 @@
+apiVersion: deployment-orchestrator.io/v1alpha1
+kind: Component
+metadata:
+  name: postgres-database
+  namespace: default
+  labels:
+    app.kubernetes.io/name: postgres-database
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: deployment-handlers
+spec:
+  name: postgres-db
+  handler: rds
+  config:
+    # Core Database Configuration
+    databaseEngine: postgres
+    engineVersion: "16.2"
+    instanceClass: db.r5.large
+    databaseName: applicationdb
+    
+    # AWS Configuration
+    region: us-west-2
+    
+    # Storage Configuration
+    allocatedStorage: 100
+    storageType: gp3
+    storageEncrypted: true
+    # kmsKeyId: "alias/rds-encryption-key"  # Optional: use custom KMS key
+    
+    # Database Credentials (in production, use Kubernetes secrets)
+    masterUsername: dbadmin
+    masterPassword: "SecurePassword123!"
+    
+    # Networking Configuration
+    vpcSecurityGroupIds:
+      - sg-0123456789abcdef0
+    subnetGroupName: private-db-subnet-group
+    publiclyAccessible: false
+    port: 5432
+    
+    # Backup Configuration
+    backupRetentionPeriod: 14
+    preferredBackupWindow: "07:00-08:00"
+    
+    # Maintenance Configuration
+    preferredMaintenanceWindow: "Sun:08:00-Sun:09:00"
+    autoMinorVersionUpgrade: true
+    
+    # Performance Configuration
+    multiAZ: true
+    performanceInsightsEnabled: true
+    monitoringInterval: 60
+    
+    # Deletion Protection
+    deletionProtection: true
+    skipFinalSnapshot: false
+    finalDBSnapshotIdentifier: "postgres-database-final-snapshot"
+    
+    # Operation Timeouts
+    timeouts:
+      create: "45m"
+      update: "90m"
+      delete: "60m"

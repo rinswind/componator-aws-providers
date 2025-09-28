@@ -22,7 +22,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/rinswind/deployment-operator/handler/base"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -31,22 +35,6 @@ const (
 
 	ControllerName = "rds-component"
 )
-
-// RdsStatus contains handler-specific status data for RDS deployments.
-// This data is persisted across reconciliation loops in Component.Status.HandlerStatus.
-type RdsStatus struct {
-	// InstanceID tracks the actual RDS instance identifier
-	InstanceID string `json:"instanceId,omitempty"`
-
-	// CreatedAt records when the instance was created
-	CreatedAt string `json:"createdAt,omitempty"`
-
-	// LastModifiedTime records when the instance was last modified
-	LastModifiedTime string `json:"lastModifiedTime,omitempty"`
-
-	// DatabaseName tracks the database name
-	DatabaseName string `json:"databaseName,omitempty"`
-}
 
 // RdsOperationsFactory implements the ComponentOperationsFactory interface for RDS deployments.
 // This factory creates stateful RdsOperations instances with pre-parsed configuration,
@@ -59,26 +47,40 @@ type RdsOperationsFactory struct{}
 // The returned RdsOperations instance maintains the parsed configuration and status and can be used
 // throughout the reconciliation loop without re-parsing the same configuration multiple times.
 func (f *RdsOperationsFactory) CreateOperations(ctx context.Context, config json.RawMessage, currentStatus json.RawMessage) (base.ComponentOperations, error) {
+	log := logf.FromContext(ctx)
+
 	// Parse configuration once for this reconciliation loop
-	rdsConfig, err := parseRdsConfigFromRaw(config)
+	rdsConfig, err := resolveRdsConfig(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse rds configuration: %w", err)
 	}
 
 	// Parse existing handler status
-	var status RdsStatus
-	if len(currentStatus) > 0 {
-		if err := json.Unmarshal(currentStatus, &status); err != nil {
-			// Log parsing error but continue with empty status - this is not fatal
-			// log := logf.FromContext(ctx)
-			// log.Info("Failed to parse existing rds status, starting with empty status", "error", err)
-		}
+	status, err := resolveRdsStatus(ctx, currentStatus)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse rds status: %w", err)
 	}
+
+	// Initialize AWS configuration for the specified region
+	awsConfig, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(rdsConfig.Region))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS configuration for region %s: %w", rdsConfig.Region, err)
+	}
+
+	// Create RDS client with the configured region
+	rdsClient := rds.NewFromConfig(awsConfig)
+
+	log.V(1).Info("Created RDS operations with AWS client",
+		"region", rdsConfig.Region,
+		"databaseEngine", rdsConfig.DatabaseEngine,
+		"instanceClass", rdsConfig.InstanceClass)
 
 	// Return stateful operations instance with pre-parsed configuration and status
 	return &RdsOperations{
-		config: rdsConfig,
-		status: status,
+		config:    rdsConfig,
+		status:    status,
+		rdsClient: rdsClient,
+		awsConfig: awsConfig,
 	}, nil
 }
 
@@ -93,13 +95,11 @@ type RdsOperations struct {
 	config *RdsConfig
 
 	// status holds the pre-parsed RDS status for this reconciliation loop
-	status RdsStatus
+	status *RdsStatus
 
-	// TODO: Add AWS SDK clients when implementing actual RDS operations
-	// For example:
-	// - rdsClient *rds.Client
-	// - region string
-	// - credentials aws.CredentialsProvider
+	// AWS SDK clients for RDS operations
+	rdsClient *rds.Client
+	awsConfig aws.Config
 }
 
 // NewRdsOperationsFactory creates a new RdsOperationsFactory instance
@@ -118,40 +118,4 @@ func NewRdsOperationsConfig() base.ComponentHandlerConfig {
 	config.ErrorRequeue = 30 * time.Second       // Give more time for transient errors
 
 	return config
-}
-
-// parseRdsConfigFromRaw parses raw JSON configuration into RdsConfig struct
-// This replaces any existing resolveRdsConfig function and works with raw JSON instead of Component
-func parseRdsConfigFromRaw(rawConfig json.RawMessage) (*RdsConfig, error) {
-	if len(rawConfig) == 0 {
-		return nil, fmt.Errorf("rds configuration is required but not provided")
-	}
-
-	var config RdsConfig
-	if err := json.Unmarshal(rawConfig, &config); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal rds configuration: %w", err)
-	}
-
-	// TODO: Add RDS-specific configuration validation and defaults when implementing
-	// For example:
-	// - Validate AWS region
-	// - Validate database engine
-	// - Apply timeout defaults
-	// - Validate instance class
-
-	return &config, nil
-}
-
-// RdsConfig represents the configuration structure for RDS components
-// that gets unmarshaled from Component.Spec.Config
-type RdsConfig struct {
-	// TODO: Define RDS-specific configuration fields when implementing
-	// For example:
-	// DatabaseEngine string `json:"databaseEngine" validate:"required"`
-	// InstanceClass  string `json:"instanceClass" validate:"required"`
-	// Region         string `json:"region" validate:"required"`
-	// DatabaseName   string `json:"databaseName" validate:"required"`
-
-	// Placeholder for now - actual implementation will define specific fields
-	DatabaseName string `json:"databaseName,omitempty"`
 }

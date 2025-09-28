@@ -1,17 +1,7 @@
 /*
 Copyright 2025.
 
-Licensed under the Apache License, Version 2.// CheckDeletion verifies the current deletion status using pre-parsed configuration
-// Implements ComponentOperations.CheckDeletion interface method.
-func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration) (deleted bool, ioError error, deletionError error) {
-	log := logf.FromContext(ctx)
-
-	// Use pre-parsed configuration from factory (no repeated parsing)
-	config := r.config
-
-	log.Info("Checking RDS deletion status using pre-parsed configuration",
-		"databaseName", config.DatabaseName,
-		"elapsed", elapsed)icense");
+Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 

@@ -1,26 +1,7 @@
 /*
 Copyright 2025.
 
-Licensed under the Apache License// CheckDeployment verifies the current d// Upgrade handles RDS-specific upgrade operations using pre-parsed configuration
-// Implements ComponentOperations.Upgrade interface method.
-func (r *RdsOperations) Upgrade(ctx context.Context) error {
-	log := logf.FromContext(ctx)
-
-	// Use pre-parsed configuration from factory (no repeated parsing)
-	config := r.config
-
-	log.Info("Starting RDS upgrade using pre-parsed configuration",
-		"databaseName", config.DatabaseName)nt status using pre-parsed configuration
-// Implements ComponentOperations.CheckDeployment interface method.
-func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (ready bool, ioError error, deploymentError error) {
-	log := logf.FromContext(ctx)
-
-	// Use pre-parsed configuration from factory (no repeated parsing)
-	config := r.config
-
-	log.Info("Checking RDS deployment status using pre-parsed configuration",
-		"databaseName", config.DatabaseName,
-		"elapsed", elapsed) 2.0 (the "License");
+Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
