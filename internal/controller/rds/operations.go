@@ -26,6 +26,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
+	"github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/rinswind/deployment-operator/handler/base"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -166,20 +167,25 @@ func (r *RdsOperations) errorResult(ctx context.Context, message string, err err
 	}, nil
 }
 
-func (r *RdsOperations) checkInstanceExists(ctx context.Context, instanceID string) (bool, error) {
+// getInstanceData retrieves RDS instance data, handling not-found cases consistently
+func (r *RdsOperations) getInstanceData(ctx context.Context, instanceID string) (*types.DBInstance, error) {
 	input := &rds.DescribeDBInstancesInput{
 		DBInstanceIdentifier: stringPtr(instanceID),
 	}
 
-	_, err := r.rdsClient.DescribeDBInstances(ctx, input)
+	result, err := r.rdsClient.DescribeDBInstances(ctx, input)
 	if err != nil {
 		if isInstanceNotFoundError(err) {
-			return false, nil
+			return nil, nil // Instance not found - return nil without error
 		}
-		return false, fmt.Errorf("failed to check instance existence: %w", err)
+		return nil, fmt.Errorf("failed to describe RDS instance: %w", err)
 	}
 
-	return true, nil
+	if len(result.DBInstances) == 0 {
+		return nil, nil // No instances returned - treat as not found
+	}
+
+	return &result.DBInstances[0], nil
 }
 
 // isInstanceNotFoundError checks if the error indicates the RDS instance was not found

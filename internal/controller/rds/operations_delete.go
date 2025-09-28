@@ -29,33 +29,13 @@ import (
 // Delete handles all RDS-specific deletion operations using pre-parsed configuration
 // Implements ComponentOperations.Delete interface method.
 func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, error) {
-	log := logf.FromContext(ctx)
-
-	// Use pre-parsed configuration from factory (no repeated parsing)
 	config := r.config
 
-	instanceID := r.status.InstanceID
-	if instanceID == "" {
-		instanceID = fmt.Sprintf("%s-db", config.DatabaseName)
-	}
+	instanceID := r.config.InstanceID
 
-	log.Info("Starting RDS deletion using pre-parsed configuration",
-		"databaseName", config.DatabaseName,
-		"instanceId", instanceID)
+	log := logf.FromContext(ctx).WithValues("instanceId", r.config.InstanceID)
 
-	// Check if instance exists
-	exists, err := r.checkInstanceExists(ctx, instanceID)
-	if err != nil {
-		// Log error but don't block deletion - instance might already be gone
-		log.Error(err, "Failed to check instance existence during deletion, continuing anyway")
-	}
-
-	if !exists {
-		log.Info("RDS instance already deleted or doesn't exist",
-			"instanceId", instanceID)
-
-		return r.successResult()
-	}
+	log.Info("Starting RDS deletion using pre-parsed configuration", "databaseName", config.DatabaseName)
 
 	// Build delete input
 	deleteInput := &rds.DeleteDBInstanceInput{
@@ -63,58 +43,35 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 	}
 
 	// Configure final snapshot behavior
-	if config.SkipFinalSnapshot != nil && *config.SkipFinalSnapshot {
+	if boolValue(config.SkipFinalSnapshot) {
 		deleteInput.SkipFinalSnapshot = boolPtr(true)
 	} else {
 		deleteInput.SkipFinalSnapshot = boolPtr(false)
-
-		// Generate final snapshot identifier if not provided
-		finalSnapshotID := config.FinalDBSnapshotIdentifier
-		if finalSnapshotID == "" {
-			finalSnapshotID = fmt.Sprintf("%s-final-snapshot-%d", instanceID, time.Now().Unix())
-		}
-		deleteInput.FinalDBSnapshotIdentifier = stringPtr(finalSnapshotID)
-	}
-
-	// Delete protection must be disabled before deletion
-	if config.DeletionProtection != nil && *config.DeletionProtection {
-		log.Info("Disabling deletion protection before deleting RDS instance",
-			"instanceId", instanceID)
-
-		modifyInput := &rds.ModifyDBInstanceInput{
-			DBInstanceIdentifier: stringPtr(instanceID),
-			DeletionProtection:   boolPtr(false),
-			ApplyImmediately:     boolPtr(true),
-		}
-
-		_, err := r.rdsClient.ModifyDBInstance(ctx, modifyInput)
-		if err != nil {
-			log.Error(err, "Failed to disable deletion protection, attempting deletion anyway")
-		} else {
-			log.Info("Deletion protection disabled successfully")
-		}
+		deleteInput.FinalDBSnapshotIdentifier = stringPtr(config.FinalDBSnapshotIdentifier)
 	}
 
 	// Initiate RDS instance deletion
-	log.Info("Deleting RDS instance",
-		"instanceId", instanceID,
-		"skipFinalSnapshot", boolValue(deleteInput.SkipFinalSnapshot))
+	log.Info("Deleting RDS instance", "skipFinalSnapshot", boolValue(deleteInput.SkipFinalSnapshot))
 
-	_, err = r.rdsClient.DeleteDBInstance(ctx, deleteInput)
+	result, err := r.rdsClient.DeleteDBInstance(ctx, deleteInput)
 	if err != nil {
 		if isInstanceNotFoundError(err) {
-			log.Info("RDS instance already deleted",
-				"instanceId", instanceID)
-		} else {
-			log.Error(err, "Failed to delete RDS instance, continuing anyway to avoid blocking cleanup")
+			log.Info("RDS instance already deleted")
+			return r.successResult()
 		}
-	} else {
-		log.Info("RDS instance deletion initiated successfully",
-			"instanceId", instanceID)
+
+		return r.errorResult(ctx, "delete RDS instance call failed", err)
 	}
 
-	// Update status to track deletion initiation
-	r.status.InstanceStatus = "deleting"
+	log.Info("RDS instance deletion initiated successfully")
+
+	// Update status with AWS response data
+	r.status.InstanceStatus = stringValue(result.DBInstance.DBInstanceStatus)
+	r.status.EngineVersion = stringValue(result.DBInstance.EngineVersion)
+	r.status.InstanceClass = stringValue(result.DBInstance.DBInstanceClass)
+	r.status.AllocatedStorage = int32Value(result.DBInstance.AllocatedStorage)
+	r.status.Endpoint = endpointAddress(result.DBInstance.Endpoint)
+	r.status.Port = endpointPort(result.DBInstance.Endpoint)
 
 	return r.successResult() // Don't block on deletion errors - best effort cleanup
 }
@@ -122,109 +79,57 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 // CheckDeletion verifies the current deletion status using pre-parsed configuration
 // Implements ComponentOperations.CheckDeletion interface method.
 func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration) (*base.OperationResult, error) {
-	log := logf.FromContext(ctx)
-
-	// Use pre-parsed configuration from factory (no repeated parsing)
 	config := r.config
 
-	instanceID := r.status.InstanceID
-	if instanceID == "" {
-		instanceID = fmt.Sprintf("%s-db", config.DatabaseName)
-	}
+	instanceID := r.config.InstanceID
 
-	log.Info("Checking RDS deletion status using pre-parsed configuration",
-		"databaseName", config.DatabaseName,
-		"instanceId", instanceID,
-		"elapsed", elapsed)
+	log := logf.FromContext(ctx).WithValues("instanceId", instanceID, "elapsed", elapsed)
+
+	log.Info("Checking RDS deletion status using pre-parsed configuration", "databaseName", config.DatabaseName)
 
 	// Check timeout
-	deleteTimeout := 60 * time.Minute // Default timeout
-	if config.Timeouts != nil && config.Timeouts.Delete != nil {
-		deleteTimeout = config.Timeouts.Delete.Duration
-	}
+	if elapsed > config.Timeouts.Delete.Duration {
+		err := fmt.Errorf("RDS deletion timeout exceeded: %v", config.Timeouts.Delete.Duration)
 
-	if elapsed > deleteTimeout {
-		log.Info("RDS deletion timeout exceeded, assuming deletion completed",
-			"instanceId", instanceID,
-			"elapsed", elapsed,
-			"timeout", deleteTimeout)
-
-		return r.successResult() // Don't block cleanup on timeout
+		return r.errorResult(ctx, "failed to describe RDS instance during deletion check", err)
 	}
 
 	// Query RDS instance existence
-	input := &rds.DescribeDBInstancesInput{
-		DBInstanceIdentifier: stringPtr(instanceID),
-	}
-
-	result, err := r.rdsClient.DescribeDBInstances(ctx, input)
+	instance, err := r.getInstanceData(ctx, instanceID)
 	if err != nil {
-		if isInstanceNotFoundError(err) {
-			log.Info("RDS instance successfully deleted",
-				"instanceId", instanceID,
-				"elapsed", elapsed)
-
-			return r.successResult()
-		}
-
-		// For transient errors, continue checking
-		if isTransientError(err) {
-			log.Info("Transient error checking RDS deletion status, will retry",
-				"instanceId", instanceID,
-				"error", err.Error())
-
-			return r.pendingResult() // Return error to trigger retry
-		}
-
-		// For other errors, log but don't block deletion
-		log.Error(err, "Error checking RDS deletion status, assuming deletion completed")
-		return r.successResult() // Don't block cleanup on API errors
+		return r.errorResult(ctx, "failed to describe RDS instance during deletion check", err)
 	}
 
-	if len(result.DBInstances) == 0 {
-		log.Info("RDS instance successfully deleted (no instances returned)",
-			"instanceId", instanceID,
-			"elapsed", elapsed)
-
+	if instance == nil {
+		log.Info("RDS instance successfully deleted")
 		return r.successResult()
 	}
-
-	instance := result.DBInstances[0]
 	status := stringValue(instance.DBInstanceStatus)
+
+	log = log.WithValues("status", status)
 
 	// Update status with current instance information
 	r.status.InstanceStatus = status
 
-	log.Info("RDS instance still exists, checking deletion status",
-		"instanceId", instanceID,
-		"status", status,
-		"elapsed", elapsed)
+	log.Info("RDS instance still exists, checking deletion status")
 
 	switch status {
 	case "deleting":
 		// Still deleting - continue waiting
-		log.Info("RDS instance deletion in progress",
-			"instanceId", instanceID,
-			"elapsed", elapsed)
-
+		log.Info("RDS instance deletion in progress")
 		return r.pendingResult()
 
 	case "failed":
 		// Deletion failed, but don't block cleanup
-		log.Error(fmt.Errorf("RDS instance deletion failed"),
-			"RDS instance deletion failed, but allowing cleanup to continue",
-			"instanceId", instanceID)
+		log.Error(
+			fmt.Errorf("RDS instance deletion failed"),
+			"RDS instance deletion failed, but allowing cleanup to continue")
 
 		return r.successResult()
 
 	default:
 		// Instance still exists in some other state
-		// Log but continue waiting - instance might still be deleting
-		log.Info("RDS instance in unexpected state during deletion, continuing to wait",
-			"instanceId", instanceID,
-			"status", status,
-			"elapsed", elapsed)
-
+		log.Info("RDS instance in unexpected state during deletion, continuing to wait", "status", status)
 		return r.pendingResult()
 	}
 }

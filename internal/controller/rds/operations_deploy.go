@@ -29,35 +29,20 @@ import (
 // Deploy handles all RDS-specific deployment operations using pre-parsed configuration
 // Implements ComponentOperations.Deploy interface method.
 func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, error) {
-	log := logf.FromContext(ctx)
+	log := logf.FromContext(ctx).WithValues("instanceId", r.config.InstanceID)
 
 	// Use pre-parsed configuration from factory (no repeated parsing)
 	config := r.config
 
 	log.Info("Starting RDS deployment using pre-parsed configuration",
-		"instanceIdentifier", config.InstanceIdentifier,
+		"instanceIdentifier", config.InstanceID,
 		"databaseName", config.DatabaseName,
 		"instanceClass", config.InstanceClass,
 		"databaseEngine", config.DatabaseEngine,
 		"region", config.Region)
 
 	// Use the user-provided instance identifier
-	instanceID := config.InstanceIdentifier
-	if r.status.InstanceID != "" {
-		// Use existing instance ID from status if already deployed
-		instanceID = r.status.InstanceID
-	}
-
-	// Check if instance already exists
-	existing, err := r.checkInstanceExists(ctx, instanceID)
-	if err != nil {
-		return r.errorResult(ctx, "failed to check if RDS instance exists", err)
-	}
-
-	if existing {
-		log.Info("RDS instance already exists, checking status", "instanceId", instanceID)
-		return r.CheckDeployment(ctx, 0)
-	}
+	instanceID := config.InstanceID
 
 	// Create RDS instance
 	createInput := buildCreateDBInstanceInput(config, instanceID)
@@ -73,22 +58,14 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, erro
 	}
 
 	// Update status with deployment information
-	r.status.DatabaseName = config.DatabaseName
-	r.status.InstanceID = instanceID
-	r.status.InstanceStatus = "creating"
-	r.status.EngineVersion = config.EngineVersion
-	r.status.InstanceClass = config.InstanceClass
-	r.status.AllocatedStorage = config.AllocatedStorage
+	r.status.InstanceStatus = stringValue(result.DBInstance.DBInstanceStatus)
+	r.status.EngineVersion = stringValue(result.DBInstance.EngineVersion)
+	r.status.InstanceClass = stringValue(result.DBInstance.DBInstanceClass)
+	r.status.AllocatedStorage = int32Value(result.DBInstance.AllocatedStorage)
+	r.status.Endpoint = endpointAddress(result.DBInstance.Endpoint)
+	r.status.Port = endpointPort(result.DBInstance.Endpoint)
 
-	if result.DBInstance != nil {
-		r.status.InstanceStatus = stringValue(result.DBInstance.DBInstanceStatus)
-		r.status.Endpoint = endpointAddress(result.DBInstance.Endpoint)
-		r.status.Port = endpointPort(result.DBInstance.Endpoint)
-	}
-
-	log.Info("RDS instance creation initiated successfully",
-		"instanceId", instanceID,
-		"status", r.status.InstanceStatus)
+	log.Info("RDS instance creation initiated successfully", "status", r.status.InstanceStatus)
 
 	return r.pendingResult() // Still creating, need to check status
 }
@@ -99,7 +76,7 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 	// Use pre-parsed configuration from factory (no repeated parsing)
 	config := r.config
 
-	instanceID := r.status.InstanceID
+	instanceID := r.config.InstanceID
 
 	log := logf.FromContext(ctx).WithValues("instanceId", instanceID, "elapsed", elapsed)
 
@@ -112,28 +89,17 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 	}
 
 	// Query RDS instance status
-	input := &rds.DescribeDBInstancesInput{
-		DBInstanceIdentifier: stringPtr(instanceID),
-	}
-
-	result, err := r.rdsClient.DescribeDBInstances(ctx, input)
+	instance, err := r.getInstanceData(ctx, instanceID)
 	if err != nil {
-		if isInstanceNotFoundError(err) {
-			notFoundErr := fmt.Errorf("RDS instance %s not found during deployment check", instanceID)
-			return r.errorResult(ctx, "instance not found", notFoundErr)
-		}
 		return r.errorResult(ctx, "failed to describe RDS instance", err)
 	}
 
-	if len(result.DBInstances) == 0 {
-		notFoundErr := fmt.Errorf("no RDS instances returned for identifier %s", instanceID)
-		return r.errorResult(ctx, "no instances found", notFoundErr)
+	if instance == nil {
+		notFoundErr := fmt.Errorf("RDS instance %s not found during deployment check", instanceID)
+		return r.errorResult(ctx, "instance not found", notFoundErr)
 	}
 
-	instance := result.DBInstances[0]
-
 	// Update status with current instance information
-	r.status.InstanceID = instanceID
 	r.status.InstanceStatus = stringValue(instance.DBInstanceStatus)
 	r.status.EngineVersion = stringValue(instance.EngineVersion)
 	r.status.InstanceClass = stringValue(instance.DBInstanceClass)
@@ -144,11 +110,9 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 	r.status.MultiAZ = boolValue(instance.MultiAZ)
 
 	// Check if deployment is complete
-	status := stringValue(instance.DBInstanceStatus)
+	log = log.WithValues("status", r.status.InstanceStatus)
 
-	log = log.WithValues("status", status)
-
-	switch status {
+	switch r.status.InstanceStatus {
 	case "available":
 		log.Info("RDS instance deployment completed successfully",
 			"endpoint", r.status.Endpoint,
@@ -163,7 +127,7 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 
 	case "failed", "incompatible-restore", "incompatible-network":
 		// Failed states
-		failureErr := fmt.Errorf("RDS instance deployment failed with status: %s", status)
+		failureErr := fmt.Errorf("RDS instance deployment failed with status: %s", r.status.InstanceStatus)
 		return r.errorResult(ctx, "deployment failed", failureErr)
 
 	default:

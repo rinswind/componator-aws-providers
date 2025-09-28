@@ -33,7 +33,7 @@ import (
 // that gets unmarshaled from Component.Spec.Config
 type RdsConfig struct {
 	// Instance Configuration - Required
-	InstanceIdentifier string `json:"instanceIdentifier"`
+	InstanceID string `json:"instanceID"`
 
 	// Core Database Configuration
 	DatabaseEngine string `json:"databaseEngine"`
@@ -98,9 +98,7 @@ type RdsTimeouts struct {
 // This data is persisted across reconciliation loops in Component.Status.HandlerStatus.
 type RdsStatus struct {
 	// Instance identification and state
-	InstanceID     string `json:"instanceId,omitempty"`
 	InstanceStatus string `json:"instanceStatus,omitempty"`
-	DatabaseName   string `json:"databaseName,omitempty"`
 
 	// Deployment metadata
 	EngineVersion    string `json:"engineVersion,omitempty"`
@@ -146,7 +144,7 @@ func resolveRdsConfig(ctx context.Context, rawConfig json.RawMessage) (*RdsConfi
 	}
 
 	// Validate required fields
-	if config.InstanceIdentifier == "" {
+	if config.InstanceID == "" {
 		return nil, fmt.Errorf("instanceIdentifier is required and cannot be empty")
 	}
 
@@ -157,7 +155,7 @@ func resolveRdsConfig(ctx context.Context, rawConfig json.RawMessage) (*RdsConfi
 
 	log := logf.FromContext(ctx)
 	log.V(1).Info("Resolved rds config",
-		"instanceIdentifier", config.InstanceIdentifier,
+		"instanceIdentifier", config.InstanceID,
 		"region", config.Region,
 		"databaseEngine", config.DatabaseEngine,
 		"instanceClass", config.InstanceClass,
@@ -195,21 +193,6 @@ func applyRdsConfigDefaults(config *RdsConfig) error {
 	if config.PubliclyAccessible == nil {
 		defaultPublicAccess := false
 		config.PubliclyAccessible = &defaultPublicAccess
-	}
-
-	// Set default port based on engine
-	if config.Port == nil {
-		var defaultPort int32
-		switch config.DatabaseEngine {
-		case "postgres":
-			defaultPort = 5432
-		case "mysql":
-			defaultPort = 3306
-		default:
-			// Let AWS validate the engine - don't fail here
-			defaultPort = 5432 // Default to postgres port
-		}
-		config.Port = &defaultPort
 	}
 
 	// Backup defaults
