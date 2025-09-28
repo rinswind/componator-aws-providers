@@ -102,7 +102,7 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 
 	_, err = r.rdsClient.DeleteDBInstance(ctx, deleteInput)
 	if err != nil {
-		if r.isInstanceNotFoundError(err) {
+		if isInstanceNotFoundError(err) {
 			log.Info("RDS instance already deleted",
 				"instanceId", instanceID)
 		} else {
@@ -159,7 +159,7 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration
 
 	result, err := r.rdsClient.DescribeDBInstances(ctx, input)
 	if err != nil {
-		if r.isInstanceNotFoundError(err) {
+		if isInstanceNotFoundError(err) {
 			log.Info("RDS instance successfully deleted",
 				"instanceId", instanceID,
 				"elapsed", elapsed)
@@ -168,7 +168,7 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration
 		}
 
 		// For transient errors, continue checking
-		if r.isTransientError(err) {
+		if isTransientError(err) {
 			log.Info("Transient error checking RDS deletion status, will retry",
 				"instanceId", instanceID,
 				"error", err.Error())

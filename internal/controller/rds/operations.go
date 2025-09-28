@@ -151,7 +151,7 @@ func (r *RdsOperations) errorResult(ctx context.Context, message string, err err
 	log.Error(fullError, "RDS operation failed")
 
 	// Check if this is a transient error that should be retried
-	if r.isTransientError(err) {
+	if isTransientError(err) {
 		return &base.OperationResult{
 			UpdatedStatus: updatedStatus,
 			Success:       false,
@@ -173,7 +173,7 @@ func (r *RdsOperations) checkInstanceExists(ctx context.Context, instanceID stri
 
 	_, err := r.rdsClient.DescribeDBInstances(ctx, input)
 	if err != nil {
-		if r.isInstanceNotFoundError(err) {
+		if isInstanceNotFoundError(err) {
 			return false, nil
 		}
 		return false, fmt.Errorf("failed to check instance existence: %w", err)
@@ -183,7 +183,7 @@ func (r *RdsOperations) checkInstanceExists(ctx context.Context, instanceID stri
 }
 
 // isInstanceNotFoundError checks if the error indicates the RDS instance was not found
-func (r *RdsOperations) isInstanceNotFoundError(err error) bool {
+func isInstanceNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -192,7 +192,7 @@ func (r *RdsOperations) isInstanceNotFoundError(err error) bool {
 }
 
 // isTransientError determines if an error is transient and should be retried
-func (r *RdsOperations) isTransientError(err error) bool {
+func isTransientError(err error) bool {
 	if err == nil {
 		return false
 	}

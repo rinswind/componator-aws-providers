@@ -46,7 +46,7 @@ func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, err
 	// Get current instance state
 	currentInstance, err := r.getCurrentInstanceState(ctx, instanceID)
 	if err != nil {
-		if r.isInstanceNotFoundError(err) {
+		if isInstanceNotFoundError(err) {
 			// If instance doesn't exist, treat as new deployment
 			log.Info("RDS instance not found during upgrade, treating as new deployment",
 				"instanceId", instanceID)

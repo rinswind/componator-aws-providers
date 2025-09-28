@@ -32,6 +32,9 @@ import (
 // RdsConfig represents the configuration structure for RDS components
 // that gets unmarshaled from Component.Spec.Config
 type RdsConfig struct {
+	// Instance Configuration - Required
+	InstanceIdentifier string `json:"instanceIdentifier"`
+
 	// Core Database Configuration
 	DatabaseEngine string `json:"databaseEngine"`
 	EngineVersion  string `json:"engineVersion"`
@@ -142,6 +145,11 @@ func resolveRdsConfig(ctx context.Context, rawConfig json.RawMessage) (*RdsConfi
 		return nil, fmt.Errorf("failed to parse rds config: %w", err)
 	}
 
+	// Validate required fields
+	if config.InstanceIdentifier == "" {
+		return nil, fmt.Errorf("instanceIdentifier is required and cannot be empty")
+	}
+
 	// Apply defaults for optional fields
 	if err := applyRdsConfigDefaults(&config); err != nil {
 		return nil, fmt.Errorf("failed to apply configuration defaults: %w", err)
@@ -149,6 +157,7 @@ func resolveRdsConfig(ctx context.Context, rawConfig json.RawMessage) (*RdsConfi
 
 	log := logf.FromContext(ctx)
 	log.V(1).Info("Resolved rds config",
+		"instanceIdentifier", config.InstanceIdentifier,
 		"region", config.Region,
 		"databaseEngine", config.DatabaseEngine,
 		"instanceClass", config.InstanceClass,

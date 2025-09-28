@@ -35,14 +35,16 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, erro
 	config := r.config
 
 	log.Info("Starting RDS deployment using pre-parsed configuration",
+		"instanceIdentifier", config.InstanceIdentifier,
 		"databaseName", config.DatabaseName,
 		"instanceClass", config.InstanceClass,
 		"databaseEngine", config.DatabaseEngine,
 		"region", config.Region)
 
-	// Generate instance identifier if not already set
-	instanceID := fmt.Sprintf("%s-db", config.DatabaseName)
+	// Use the user-provided instance identifier
+	instanceID := config.InstanceIdentifier
 	if r.status.InstanceID != "" {
+		// Use existing instance ID from status if already deployed
 		instanceID = r.status.InstanceID
 	}
 
@@ -94,17 +96,14 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, erro
 // CheckDeployment verifies the current deployment status using pre-parsed configuration
 // Implements ComponentOperations.CheckDeployment interface method.
 func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (*base.OperationResult, error) {
-	log := logf.FromContext(ctx)
-
 	// Use pre-parsed configuration from factory (no repeated parsing)
 	config := r.config
 
 	instanceID := r.status.InstanceID
 
-	log.Info("Checking RDS deployment status using pre-parsed configuration",
-		"databaseName", config.DatabaseName,
-		"instanceId", instanceID,
-		"elapsed", elapsed)
+	log := logf.FromContext(ctx).WithValues("instanceId", instanceID, "elapsed", elapsed)
+
+	log.Info("Checking RDS deployment status using pre-parsed configuration", "databaseName", config.DatabaseName)
 
 	// Check timeout
 	if elapsed > config.Timeouts.Create.Duration {
@@ -119,7 +118,7 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 
 	result, err := r.rdsClient.DescribeDBInstances(ctx, input)
 	if err != nil {
-		if r.isInstanceNotFoundError(err) {
+		if isInstanceNotFoundError(err) {
 			notFoundErr := fmt.Errorf("RDS instance %s not found during deployment check", instanceID)
 			return r.errorResult(ctx, "instance not found", notFoundErr)
 		}
@@ -146,15 +145,12 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 
 	// Check if deployment is complete
 	status := stringValue(instance.DBInstanceStatus)
-	log.Info("RDS instance status check",
-		"instanceId", instanceID,
-		"status", status,
-		"elapsed", elapsed)
+
+	log = log.WithValues("status", status)
 
 	switch status {
 	case "available":
 		log.Info("RDS instance deployment completed successfully",
-			"instanceId", instanceID,
 			"endpoint", r.status.Endpoint,
 			"port", r.status.Port)
 
@@ -162,10 +158,7 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 
 	case "creating", "backing-up", "modifying":
 		// Still in progress
-		log.Info("RDS instance deployment in progress",
-			"instanceId", instanceID,
-			"status", status)
-
+		log.Info("RDS instance deployment in progress")
 		return r.pendingResult()
 
 	case "failed", "incompatible-restore", "incompatible-network":
@@ -175,15 +168,13 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 
 	default:
 		// Unknown status - log and continue checking
-		log.Info("RDS instance in unknown status, continuing to monitor",
-			"instanceId", instanceID,
-			"status", status)
-
+		log.Info("RDS instance in unknown status, continuing to monitor")
 		return r.pendingResult()
 	}
 }
 
 // buildCreateDBInstanceInput constructs the CreateDBInstanceInput from RDS configuration
+// Uses the user-provided instanceIdentifier from the configuration
 func buildCreateDBInstanceInput(config *RdsConfig, instanceID string) *rds.CreateDBInstanceInput {
 	return &rds.CreateDBInstanceInput{
 		// Required fields - always convert to pointers
