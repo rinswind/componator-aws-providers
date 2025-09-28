@@ -28,14 +28,16 @@ package rds
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
+	"github.com/rinswind/deployment-operator/handler/base"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // Delete handles all RDS-specific deletion operations using pre-parsed configuration
 // Implements ComponentOperations.Delete interface method.
-func (r *RdsOperations) Delete(ctx context.Context) error {
+func (r *RdsOperations) Delete(ctx context.Context) (base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Use pre-parsed configuration from factory (no repeated parsing)
@@ -56,7 +58,7 @@ func (r *RdsOperations) Delete(ctx context.Context) error {
 	// - config, err := parseRdsConfig(component.Spec.Config)
 	// - if err != nil {
 	//     log.Error(err, "Failed to parse RDS config during deletion, continuing anyway")
-	//     return nil // Don't block deletion on config parsing errors
+	//     return base.OperationResult{Success: true}, nil // Don't block deletion on config parsing errors
 	//   }
 	// - rdsClient := r.createRDSClient(config.Region)
 	// - _, err = rdsClient.DeleteDBInstance(ctx, &rds.DeleteDBInstanceInput{
@@ -68,14 +70,21 @@ func (r *RdsOperations) Delete(ctx context.Context) error {
 	//     log.Error(err, "Failed to delete RDS instance, continuing anyway")
 	//   }
 
+	// Update status to track deletion initiation
+	updatedStatus, _ := json.Marshal(r.status)
+
 	// For now, log a placeholder message to indicate this needs implementation
 	log.Info("RDS deletion not yet implemented - placeholder for AWS RDS SDK integration")
-	return nil
+
+	return base.OperationResult{
+		UpdatedStatus: updatedStatus,
+		Success:       true,
+	}, nil
 }
 
 // CheckDeletion verifies the current deletion status using pre-parsed configuration
 // Implements ComponentOperations.CheckDeletion interface method.
-func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration) (deleted bool, ioError error, deletionError error) {
+func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration) (base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Use pre-parsed configuration from factory (no repeated parsing)
@@ -98,12 +107,18 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration
 	// - _, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
 	//     DBInstanceIdentifier: config.InstanceIdentifier,
 	//   })
-	// - if isInstanceNotFoundError(err) { return true, nil, nil }
-	// - if isTransientError(err) { return false, err, nil }
-	// - if err != nil { return false, nil, err }
-	// - return false, nil, nil // Instance still exists
+	// - if isInstanceNotFoundError(err) { return base.OperationResult{Success: true}, nil }
+	// - if isTransientError(err) { return base.OperationResult{}, err }
+	// - if err != nil { return base.OperationResult{OperationError: err}, nil }
+	// - return base.OperationResult{Success: false}, nil // Instance still exists
+
+	updatedStatus, _ := json.Marshal(r.status)
 
 	// For now, assume deletion is complete to avoid blocking
 	log.Info("RDS deletion status checking not yet implemented - assuming deletion complete")
-	return true, nil, nil
+
+	return base.OperationResult{
+		UpdatedStatus: updatedStatus,
+		Success:       true,
+	}, nil
 }

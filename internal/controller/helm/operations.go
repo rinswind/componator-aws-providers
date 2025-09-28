@@ -30,15 +30,41 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+// HelmStatus contains handler-specific status data for Helm deployments.
+// This data is persisted across reconciliation loops in Component.Status.HandlerStatus.
+type HelmStatus struct {
+	// ReleaseVersion tracks the current Helm release version
+	ReleaseVersion int `json:"releaseVersion,omitempty"`
+
+	// LastDeployTime records when the deployment was last initiated
+	LastDeployTime string `json:"lastDeployTime,omitempty"`
+
+	// ChartVersion tracks the deployed chart version
+	ChartVersion string `json:"chartVersion,omitempty"`
+
+	// ReleaseName tracks the actual release name used
+	ReleaseName string `json:"releaseName,omitempty"`
+}
+
 // HelmOperationsFactory implements the ComponentOperationsFactory interface for Helm deployments.
 type HelmOperationsFactory struct{}
 
 func (f *HelmOperationsFactory) CreateOperations(
-	ctx context.Context, rawConfig json.RawMessage) (base.ComponentOperations, error) {
+	ctx context.Context, rawConfig json.RawMessage, currentStatus json.RawMessage) (base.ComponentOperations, error) {
 
 	config, err := resolveHelmConfig(ctx, rawConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse helm configuration: %w", err)
+	}
+
+	// Parse existing handler status
+	var status HelmStatus
+	if len(currentStatus) > 0 {
+		if err := json.Unmarshal(currentStatus, &status); err != nil {
+			// Log parsing error but continue with empty status - this is not fatal
+			log := logf.FromContext(ctx)
+			log.Info("Failed to parse existing helm status, starting with empty status", "error", err)
+		}
 	}
 
 	settings := cli.New()
@@ -54,7 +80,12 @@ func (f *HelmOperationsFactory) CreateOperations(
 		return nil, fmt.Errorf("failed to initialize helm action configuration: %w", err)
 	}
 
-	return &HelmOperations{settings: settings, actionConfig: actionConfig, config: config}, nil
+	return &HelmOperations{
+		settings:     settings,
+		actionConfig: actionConfig,
+		config:       config,
+		status:       status,
+	}, nil
 }
 
 // HelmOperations implements the ComponentOperations interface for Helm-based deployments.
@@ -62,6 +93,7 @@ func (f *HelmOperationsFactory) CreateOperations(
 // with pre-parsed configuration maintained throughout the reconciliation loop.
 type HelmOperations struct {
 	config *HelmConfig
+	status HelmStatus
 
 	settings     *cli.EnvSettings
 	actionConfig *action.Configuration

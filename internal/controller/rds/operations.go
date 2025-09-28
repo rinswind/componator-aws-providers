@@ -32,26 +32,53 @@ const (
 	ControllerName = "rds-component"
 )
 
+// RdsStatus contains handler-specific status data for RDS deployments.
+// This data is persisted across reconciliation loops in Component.Status.HandlerStatus.
+type RdsStatus struct {
+	// InstanceID tracks the actual RDS instance identifier
+	InstanceID string `json:"instanceId,omitempty"`
+
+	// CreatedAt records when the instance was created
+	CreatedAt string `json:"createdAt,omitempty"`
+
+	// LastModifiedTime records when the instance was last modified
+	LastModifiedTime string `json:"lastModifiedTime,omitempty"`
+
+	// DatabaseName tracks the database name
+	DatabaseName string `json:"databaseName,omitempty"`
+}
+
 // RdsOperationsFactory implements the ComponentOperationsFactory interface for RDS deployments.
 // This factory creates stateful RdsOperations instances with pre-parsed configuration,
 // eliminating repeated configuration parsing during reconciliation loops.
 type RdsOperationsFactory struct{}
 
-// CreateOperations creates a new stateful RdsOperations instance with pre-parsed configuration.
+// CreateOperations creates a new stateful RdsOperations instance with pre-parsed configuration and status.
 // This method is called once per reconciliation loop to eliminate repeated configuration parsing.
 //
-// The returned RdsOperations instance maintains the parsed configuration and can be used
+// The returned RdsOperations instance maintains the parsed configuration and status and can be used
 // throughout the reconciliation loop without re-parsing the same configuration multiple times.
-func (f *RdsOperationsFactory) CreateOperations(ctx context.Context, config json.RawMessage) (base.ComponentOperations, error) {
+func (f *RdsOperationsFactory) CreateOperations(ctx context.Context, config json.RawMessage, currentStatus json.RawMessage) (base.ComponentOperations, error) {
 	// Parse configuration once for this reconciliation loop
 	rdsConfig, err := parseRdsConfigFromRaw(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse rds configuration: %w", err)
 	}
 
-	// Return stateful operations instance with pre-parsed configuration
+	// Parse existing handler status
+	var status RdsStatus
+	if len(currentStatus) > 0 {
+		if err := json.Unmarshal(currentStatus, &status); err != nil {
+			// Log parsing error but continue with empty status - this is not fatal
+			// log := logf.FromContext(ctx)
+			// log.Info("Failed to parse existing rds status, starting with empty status", "error", err)
+		}
+	}
+
+	// Return stateful operations instance with pre-parsed configuration and status
 	return &RdsOperations{
 		config: rdsConfig,
+		status: status,
 	}, nil
 }
 
@@ -64,6 +91,9 @@ func (f *RdsOperationsFactory) CreateOperations(ctx context.Context, config json
 type RdsOperations struct {
 	// config holds the pre-parsed RDS configuration for this reconciliation loop
 	config *RdsConfig
+
+	// status holds the pre-parsed RDS status for this reconciliation loop
+	status RdsStatus
 
 	// TODO: Add AWS SDK clients when implementing actual RDS operations
 	// For example:

@@ -18,9 +18,11 @@ package helm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/rinswind/deployment-operator/handler/base"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/kube"
 	"k8s.io/client-go/kubernetes"
@@ -29,7 +31,7 @@ import (
 
 // Deploy handles all Helm-specific deployment operations using pre-parsed configuration
 // Implements ComponentOperations.Deploy interface method.
-func (h *HelmOperations) Deploy(ctx context.Context) error {
+func (h *HelmOperations) Deploy(ctx context.Context) (base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Get release name and target namespace from resolved configuration
@@ -41,18 +43,28 @@ func (h *HelmOperations) Deploy(ctx context.Context) error {
 	getAction.Version = 0 // Get latest version
 	if rel, err := getAction.Run(releaseName); err == nil && rel != nil {
 		log.Info("Release already exists, skipping installation", "releaseName", releaseName, "version", rel.Version)
-		return nil
+
+		// Update status with existing release information
+		h.status.ReleaseVersion = rel.Version
+		h.status.ReleaseName = rel.Name
+		h.status.ChartVersion = rel.Chart.Metadata.Version
+
+		updatedStatus, _ := json.Marshal(h.status)
+		return base.OperationResult{
+			UpdatedStatus: updatedStatus,
+			Success:       true,
+		}, nil
 	}
 
 	// Set up repository configuration properly for ephemeral containers
 	if _, err := setupHelmRepository(h.config, h.settings); err != nil {
-		return fmt.Errorf("failed to setup helm repository: %w", err)
+		return base.OperationResult{}, fmt.Errorf("failed to setup helm repository: %w", err)
 	}
 
 	// Prepare chart for installation
 	chart, err := loadHelmChart(h.config, h.settings)
 	if err != nil {
-		return err
+		return base.OperationResult{}, err
 	}
 
 	// Create install action
@@ -70,8 +82,16 @@ func (h *HelmOperations) Deploy(ctx context.Context) error {
 	// Install the chart
 	rel, err := installAction.Run(chart, vals)
 	if err != nil {
-		return fmt.Errorf("failed to install helm release %s: %w", releaseName, err)
+		return base.OperationResult{}, fmt.Errorf("failed to install helm release %s: %w", releaseName, err)
 	}
+
+	// Update status with new release information
+	h.status.ReleaseVersion = rel.Version
+	h.status.ReleaseName = rel.Name
+	h.status.ChartVersion = rel.Chart.Metadata.Version
+	h.status.LastDeployTime = time.Now().Format(time.RFC3339)
+
+	updatedStatus, _ := json.Marshal(h.status)
 
 	log.Info("Successfully installed helm release",
 		"releaseName", releaseName,
@@ -79,11 +99,14 @@ func (h *HelmOperations) Deploy(ctx context.Context) error {
 		"version", rel.Version,
 		"status", rel.Info.Status.String())
 
-	return nil
+	return base.OperationResult{
+		UpdatedStatus: updatedStatus,
+		Success:       true,
+	}, nil
 }
 
 // startHelmReleaseUpgrade handles upgrading an existing Helm release using pre-parsed configuration
-func (h *HelmOperations) Upgrade(ctx context.Context) error {
+func (h *HelmOperations) Upgrade(ctx context.Context) (base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Get release name and target namespace from resolved configuration
@@ -93,18 +116,18 @@ func (h *HelmOperations) Upgrade(ctx context.Context) error {
 	// Verify release exists before attempting upgrade
 	getAction := action.NewGet(h.actionConfig)
 	if _, err := getAction.Run(releaseName); err != nil {
-		return fmt.Errorf("release %s not found for upgrade: %w", releaseName, err)
+		return base.OperationResult{}, fmt.Errorf("release %s not found for upgrade: %w", releaseName, err)
 	}
 
 	// Set up repository configuration properly for ephemeral containers
 	if _, err := setupHelmRepository(h.config, h.settings); err != nil {
-		return fmt.Errorf("failed to setup helm repository: %w", err)
+		return base.OperationResult{}, fmt.Errorf("failed to setup helm repository: %w", err)
 	}
 
 	// Prepare chart for upgrade
 	chart, err := loadHelmChart(h.config, h.settings)
 	if err != nil {
-		return err
+		return base.OperationResult{}, err
 	}
 
 	// Create upgrade action
@@ -119,8 +142,16 @@ func (h *HelmOperations) Upgrade(ctx context.Context) error {
 	// Upgrade the chart
 	rel, err := upgradeAction.Run(releaseName, chart, vals)
 	if err != nil {
-		return fmt.Errorf("failed to upgrade helm release %s: %w", releaseName, err)
+		return base.OperationResult{}, fmt.Errorf("failed to upgrade helm release %s: %w", releaseName, err)
 	}
+
+	// Update status with upgraded release information
+	h.status.ReleaseVersion = rel.Version
+	h.status.ReleaseName = rel.Name
+	h.status.ChartVersion = rel.Chart.Metadata.Version
+	h.status.LastDeployTime = time.Now().Format(time.RFC3339)
+
+	updatedStatus, _ := json.Marshal(h.status)
 
 	log.Info("Successfully started helm release upgrade",
 		"releaseName", releaseName,
@@ -128,12 +159,15 @@ func (h *HelmOperations) Upgrade(ctx context.Context) error {
 		"version", rel.Version,
 		"status", rel.Info.Status.String())
 
-	return nil
+	return base.OperationResult{
+		UpdatedStatus: updatedStatus,
+		Success:       true,
+	}, nil
 }
 
 // checkReleaseDeployed verifies if a Helm release and all its resources are ready using pre-parsed configuration
-// Returns (ready, ioError, deploymentError) to distinguish between temporary I/O issues and permanent failures
-func (h *HelmOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (bool, error, error) {
+// Returns OperationResult with Success indicating readiness status
+func (h *HelmOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Check deployment timeout first
@@ -144,29 +178,42 @@ func (h *HelmOperations) CheckDeployment(ctx context.Context, elapsed time.Durat
 			"timeout", deploymentTimeout,
 			"chart", h.config.Chart.Name)
 
-		return false, nil, fmt.Errorf("Deployment timed out after %v (timeout: %v)",
-			elapsed.Truncate(time.Second), deploymentTimeout) // Deployment failure
+		updatedStatus, _ := json.Marshal(h.status)
+		return base.OperationResult{
+			UpdatedStatus:  updatedStatus,
+			Success:        false,
+			OperationError: fmt.Errorf("Deployment timed out after %v (timeout: %v)", elapsed.Truncate(time.Second), deploymentTimeout),
+		}, nil
 	}
 
 	// Get the current release
 	rel, err := h.getHelmRelease(ctx)
 	if err != nil {
-		return false, fmt.Errorf("failed to check helm release readiness: %w", err), nil // I/O error
+		return base.OperationResult{}, fmt.Errorf("failed to check helm release readiness: %w", err) // I/O error
 	}
 
 	// Build ResourceList from release manifest for non-blocking status checking
 	resourceList, err := h.gatherHelmReleaseResources(ctx, rel)
 	if err != nil {
-		return false, fmt.Errorf("failed to build resource list from release: %w", err), nil // I/O error
+		return base.OperationResult{}, fmt.Errorf("failed to build resource list from release: %w", err) // I/O error
 	}
 
 	// Use non-blocking readiness check
 	ready, err := h.checkResourcesReady(ctx, resourceList)
 	if err != nil {
-		return false, nil, fmt.Errorf("deployment failed: %w", err) // Deployment failure
+		updatedStatus, _ := json.Marshal(h.status)
+		return base.OperationResult{
+			UpdatedStatus:  updatedStatus,
+			Success:        false,
+			OperationError: fmt.Errorf("deployment failed: %w", err),
+		}, nil
 	}
 
-	return ready, nil, nil
+	updatedStatus, _ := json.Marshal(h.status)
+	return base.OperationResult{
+		UpdatedStatus: updatedStatus,
+		Success:       ready,
+	}, nil
 }
 
 // checkResourcesReady performs non-blocking readiness checks on Kubernetes resources

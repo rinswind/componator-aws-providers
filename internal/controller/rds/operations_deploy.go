@@ -37,15 +37,17 @@ package rds
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/rinswind/deployment-operator/handler/base"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // Deploy handles all RDS-specific deployment operations using pre-parsed configuration
 // Implements ComponentOperations.Deploy interface method.
-func (r *RdsOperations) Deploy(ctx context.Context) error {
+func (r *RdsOperations) Deploy(ctx context.Context) (base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Use pre-parsed configuration from factory (no repeated parsing)
@@ -64,15 +66,26 @@ func (r *RdsOperations) Deploy(ctx context.Context) error {
 	// Example implementation structure:
 	// - rdsClient := r.createRDSClient(config.Region)
 	// - _, err = rdsClient.CreateDBInstance(ctx, &rds.CreateDBInstanceInput{...})
-	// - if err != nil { return fmt.Errorf("failed to create RDS instance: %w", err) }
+	// - if err != nil { return base.OperationResult{}, fmt.Errorf("failed to create RDS instance: %w", err) }
+
+	// Update status with deployment information
+	r.status.DatabaseName = config.DatabaseName
+	r.status.CreatedAt = time.Now().Format(time.RFC3339)
+	// r.status.InstanceID = "placeholder-instance-id" // Would be set from actual AWS response
+
+	updatedStatus, _ := json.Marshal(r.status)
 
 	// For now, return a placeholder error to indicate this needs implementation
-	return fmt.Errorf("RDS deployment not yet implemented - placeholder for AWS RDS SDK integration")
+	return base.OperationResult{
+		UpdatedStatus:  updatedStatus,
+		Success:        false,
+		OperationError: fmt.Errorf("RDS deployment not yet implemented - placeholder for AWS RDS SDK integration"),
+	}, nil
 }
 
 // CheckDeployment verifies the current deployment status using pre-parsed configuration
 // Implements ComponentOperations.CheckDeployment interface method.
-func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (ready bool, ioError error, deploymentError error) {
+func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Use pre-parsed configuration from factory (no repeated parsing)
@@ -93,17 +106,23 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 	// Example implementation structure:
 	// - rdsClient := r.createRDSClient(config.Region)
 	// - resp, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{...})
-	// - if isTransientError(err) { return false, err, nil }
-	// - if err != nil { return false, nil, err }
-	// - return resp.DBInstances[0].DBInstanceStatus == "available", nil, nil
+	// - if isTransientError(err) { return base.OperationResult{}, err }
+	// - if err != nil { return base.OperationResult{UpdatedStatus: updatedStatus, OperationError: err}, nil }
+	// - return base.OperationResult{UpdatedStatus: updatedStatus, Success: resp.DBInstances[0].DBInstanceStatus == "available"}, nil
+
+	updatedStatus, _ := json.Marshal(r.status)
 
 	// For now, return not ready to indicate this needs implementation
-	return false, nil, fmt.Errorf("RDS deployment status checking not yet implemented - placeholder for AWS RDS SDK integration")
+	return base.OperationResult{
+		UpdatedStatus:  updatedStatus,
+		Success:        false,
+		OperationError: fmt.Errorf("RDS deployment status checking not yet implemented - placeholder for AWS RDS SDK integration"),
+	}, nil
 }
 
 // Upgrade handles RDS-specific upgrade operations using pre-parsed configuration
 // Implements ComponentOperations.Upgrade interface method.
-func (r *RdsOperations) Upgrade(ctx context.Context) error {
+func (r *RdsOperations) Upgrade(ctx context.Context) (base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Use pre-parsed configuration from factory (no repeated parsing)
@@ -122,12 +141,21 @@ func (r *RdsOperations) Upgrade(ctx context.Context) error {
 	//
 	// Example implementation structure:
 	// - currentState, err := r.getCurrentRdsState(ctx, config.InstanceIdentifier)
-	// - if err != nil { return fmt.Errorf("failed to get current state: %w", err) }
+	// - if err != nil { return base.OperationResult{}, fmt.Errorf("failed to get current state: %w", err) }
 	// - modifications := r.calculateRequiredModifications(currentState, config)
 	// - rdsClient := r.createRDSClient(config.Region)
 	// - _, err = rdsClient.ModifyDBInstance(ctx, &rds.ModifyDBInstanceInput{...})
-	// - if err != nil { return fmt.Errorf("failed to upgrade RDS instance: %w", err) }
+	// - if err != nil { return base.OperationResult{}, fmt.Errorf("failed to upgrade RDS instance: %w", err) }
+
+	// Update status with upgrade information
+	r.status.LastModifiedTime = time.Now().Format(time.RFC3339)
+
+	updatedStatus, _ := json.Marshal(r.status)
 
 	// For now, return a placeholder error to indicate this needs implementation
-	return fmt.Errorf("RDS upgrade not yet implemented - placeholder for AWS RDS SDK integration")
+	return base.OperationResult{
+		UpdatedStatus:  updatedStatus,
+		Success:        false,
+		OperationError: fmt.Errorf("RDS upgrade not yet implemented - placeholder for AWS RDS SDK integration"),
+	}, nil
 }
