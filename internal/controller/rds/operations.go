@@ -197,6 +197,16 @@ func isInstanceNotFoundError(err error) bool {
 		strings.Contains(err.Error(), "does not exist")
 }
 
+// updateStatus updates RdsStatus fields from AWS DBInstance data
+// This eliminates repetitive field-by-field copying across all RDS operations
+func (r *RdsOperations) updateStatus(instance *types.DBInstance) {
+	r.status.InstanceStatus = stringValue(instance.DBInstanceStatus)
+	r.status.InstanceARN = stringValue(instance.DBInstanceArn)
+	r.status.Endpoint = endpointAddress(instance.Endpoint)
+	r.status.Port = endpointPort(instance.Endpoint)
+	r.status.AvailabilityZone = stringValue(instance.AvailabilityZone)
+}
+
 // isTransientError determines if an error is transient and should be retried
 func isTransientError(err error) bool {
 	if err == nil {

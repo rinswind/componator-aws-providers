@@ -45,98 +45,7 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, erro
 	instanceID := config.InstanceID
 
 	// Create RDS instance
-	createInput := buildCreateDBInstanceInput(config, instanceID)
-
-	log.Info("Creating RDS instance",
-		"instanceId", instanceID,
-		"databaseEngine", config.DatabaseEngine,
-		"instanceClass", config.InstanceClass)
-
-	result, err := r.rdsClient.CreateDBInstance(ctx, createInput)
-	if err != nil {
-		return r.errorResult(ctx, "failed to create RDS instance", err)
-	}
-
-	// Update status with deployment information
-	r.status.InstanceStatus = stringValue(result.DBInstance.DBInstanceStatus)
-	r.status.InstanceARN = stringValue(result.DBInstance.DBInstanceArn)
-	r.status.Endpoint = endpointAddress(result.DBInstance.Endpoint)
-	r.status.Port = endpointPort(result.DBInstance.Endpoint)
-	r.status.AvailabilityZone = stringValue(result.DBInstance.AvailabilityZone)
-
-	log.Info("RDS instance creation initiated successfully", "status", r.status.InstanceStatus)
-
-	return r.pendingResult() // Still creating, need to check status
-}
-
-// CheckDeployment verifies the current deployment status using pre-parsed configuration
-// Implements ComponentOperations.CheckDeployment interface method.
-func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (*base.OperationResult, error) {
-	// Use pre-parsed configuration from factory (no repeated parsing)
-	config := r.config
-
-	instanceID := r.config.InstanceID
-
-	log := logf.FromContext(ctx).WithValues("instanceId", instanceID, "elapsed", elapsed)
-
-	log.Info("Checking RDS deployment status using pre-parsed configuration", "databaseName", config.DatabaseName)
-
-	// Check timeout
-	if elapsed > config.Timeouts.Create.Duration {
-		timeoutErr := fmt.Errorf("RDS instance creation timed out after %v", elapsed)
-		return r.errorResult(ctx, "deployment timeout exceeded", timeoutErr)
-	}
-
-	// Query RDS instance status
-	instance, err := r.getInstanceData(ctx, instanceID)
-	if err != nil {
-		return r.errorResult(ctx, "failed to describe RDS instance", err)
-	}
-
-	if instance == nil {
-		notFoundErr := fmt.Errorf("RDS instance %s not found during deployment check", instanceID)
-		return r.errorResult(ctx, "instance not found", notFoundErr)
-	}
-
-	// Update status with current instance information
-	r.status.InstanceStatus = stringValue(instance.DBInstanceStatus)
-	r.status.InstanceARN = stringValue(instance.DBInstanceArn)
-	r.status.Endpoint = endpointAddress(instance.Endpoint)
-	r.status.Port = endpointPort(instance.Endpoint)
-	r.status.AvailabilityZone = stringValue(instance.AvailabilityZone)
-
-	// Check if deployment is complete
-	log = log.WithValues("status", r.status.InstanceStatus)
-
-	switch r.status.InstanceStatus {
-	case "available":
-		log.Info("RDS instance deployment completed successfully",
-			"endpoint", r.status.Endpoint,
-			"port", r.status.Port)
-
-		return r.successResult()
-
-	case "creating", "backing-up", "modifying":
-		// Still in progress
-		log.Info("RDS instance deployment in progress")
-		return r.pendingResult()
-
-	case "failed", "incompatible-restore", "incompatible-network":
-		// Failed states
-		failureErr := fmt.Errorf("RDS instance deployment failed with status: %s", r.status.InstanceStatus)
-		return r.errorResult(ctx, "deployment failed", failureErr)
-
-	default:
-		// Unknown status - log and continue checking
-		log.Info("RDS instance in unknown status, continuing to monitor")
-		return r.pendingResult()
-	}
-}
-
-// buildCreateDBInstanceInput constructs the CreateDBInstanceInput from RDS configuration
-// Uses the user-provided instanceIdentifier from the configuration
-func buildCreateDBInstanceInput(config *RdsConfig, instanceID string) *rds.CreateDBInstanceInput {
-	return &rds.CreateDBInstanceInput{
+	createInput := &rds.CreateDBInstanceInput{
 		// Required fields - always convert to pointers
 		DBInstanceIdentifier: stringPtr(instanceID),
 		DBInstanceClass:      stringPtr(config.InstanceClass),
@@ -173,5 +82,125 @@ func buildCreateDBInstanceInput(config *RdsConfig, instanceID string) *rds.Creat
 
 		// Deletion protection
 		DeletionProtection: passthroughBoolPtr(config.DeletionProtection),
+	}
+
+	log.Info("Creating RDS instance",
+		"instanceId", instanceID,
+		"databaseEngine", config.DatabaseEngine,
+		"instanceClass", config.InstanceClass)
+
+	result, err := r.rdsClient.CreateDBInstance(ctx, createInput)
+	if err != nil {
+		return r.errorResult(ctx, "failed to create RDS instance", err)
+	}
+
+	// Update status with deployment information
+	r.updateStatus(result.DBInstance)
+
+	log.Info("RDS instance creation initiated successfully", "status", r.status.InstanceStatus)
+
+	return r.pendingResult() // Still creating, need to check status
+}
+
+// Upgrade handles RDS-specific upgrade operations using pre-parsed configuration
+// Implements ComponentOperations.Upgrade interface method.
+func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, error) {
+	config := r.config
+
+	instanceID := r.config.InstanceID
+
+	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)
+
+	log.Info("Starting RDS upgrade using pre-parsed configuration", "databaseName", config.DatabaseName)
+
+	// Build modify input with all config values - AWS RDS handles idempotency
+	input := &rds.ModifyDBInstanceInput{
+		DBInstanceIdentifier:       stringPtr(instanceID),
+		DBInstanceClass:            stringPtr(config.InstanceClass),
+		AllocatedStorage:           int32Ptr(config.AllocatedStorage),
+		EngineVersion:              stringPtr(config.EngineVersion),
+		BackupRetentionPeriod:      passthroughInt32Ptr(config.BackupRetentionPeriod),
+		MultiAZ:                    passthroughBoolPtr(config.MultiAZ),
+		PreferredBackupWindow:      optionalStringPtr(config.PreferredBackupWindow),
+		PreferredMaintenanceWindow: optionalStringPtr(config.PreferredMaintenanceWindow),
+		AutoMinorVersionUpgrade:    passthroughBoolPtr(config.AutoMinorVersionUpgrade),
+		DeletionProtection:         passthroughBoolPtr(config.DeletionProtection),
+		// TODO: Figure out how to make this configurable.
+		// Right now we need this to be immediate because users need to take down deletion protection fast prior to cleanup
+		ApplyImmediately: boolPtr(true),
+	}
+
+	log.Info("Applying RDS modifications")
+
+	result, err := r.rdsClient.ModifyDBInstance(ctx, input)
+	if err != nil {
+		return r.errorResult(ctx, "failed to modify RDS instance", err)
+	}
+
+	// Update status with modification information
+	r.updateStatus(result.DBInstance)
+
+	log.Info("RDS instance modification initiated successfully", "status", r.status.InstanceStatus)
+
+	return r.pendingResult() // Still modifying, need to check status
+}
+
+// CheckDeployment verifies the current deployment status using pre-parsed configuration
+// Implements ComponentOperations.CheckDeployment interface method.
+func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (*base.OperationResult, error) {
+	// Use pre-parsed configuration from factory (no repeated parsing)
+	config := r.config
+
+	instanceID := r.config.InstanceID
+
+	log := logf.FromContext(ctx).WithValues("instanceId", instanceID, "elapsed", elapsed)
+
+	log.Info("Checking RDS deployment status using pre-parsed configuration", "databaseName", config.DatabaseName)
+
+	// Check timeout
+	if elapsed > config.Timeouts.Create.Duration {
+		timeoutErr := fmt.Errorf("RDS instance creation timed out after %v", elapsed)
+		return r.errorResult(ctx, "deployment timeout exceeded", timeoutErr)
+	}
+
+	// Query RDS instance status
+	instance, err := r.getInstanceData(ctx, instanceID)
+	if err != nil {
+		return r.errorResult(ctx, "failed to describe RDS instance", err)
+	}
+
+	if instance == nil {
+		notFoundErr := fmt.Errorf("RDS instance %s not found during deployment check", instanceID)
+		return r.errorResult(ctx, "instance not found", notFoundErr)
+	}
+
+	// Update status with current instance information
+	r.updateStatus(instance)
+
+	// Check if deployment is complete
+	log = log.WithValues("status", r.status.InstanceStatus)
+
+	switch r.status.InstanceStatus {
+	case "available":
+		log.Info("RDS instance deployment completed successfully",
+			"endpoint", r.status.Endpoint,
+			"port", r.status.Port)
+
+		return r.successResult()
+
+	case "creating", "backing-up", "modifying":
+		// Still in progress
+		log.Info("RDS instance deployment in progress")
+		return r.pendingResult()
+
+	case "failed", "incompatible-restore", "incompatible-network":
+		// Failed states
+		failureErr := fmt.Errorf("RDS instance deployment failed with status: %s", r.status.InstanceStatus)
+		return r.errorResult(ctx, "deployment failed", failureErr)
+
+	default:
+		// Unknown status - log and continue checking
+		log.Info("RDS instance in unknown status, continuing to monitor")
+		return r.pendingResult()
 	}
 }

@@ -66,11 +66,7 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 	log.Info("RDS instance deletion initiated successfully")
 
 	// Update status with AWS response data
-	r.status.InstanceStatus = stringValue(result.DBInstance.DBInstanceStatus)
-	r.status.InstanceARN = stringValue(result.DBInstance.DBInstanceArn)
-	r.status.Endpoint = endpointAddress(result.DBInstance.Endpoint)
-	r.status.Port = endpointPort(result.DBInstance.Endpoint)
-	r.status.AvailabilityZone = stringValue(result.DBInstance.AvailabilityZone)
+	r.updateStatus(result.DBInstance)
 
 	return r.successResult() // Don't block on deletion errors - best effort cleanup
 }
