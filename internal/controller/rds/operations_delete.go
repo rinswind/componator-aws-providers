@@ -67,11 +67,10 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 
 	// Update status with AWS response data
 	r.status.InstanceStatus = stringValue(result.DBInstance.DBInstanceStatus)
-	r.status.EngineVersion = stringValue(result.DBInstance.EngineVersion)
-	r.status.InstanceClass = stringValue(result.DBInstance.DBInstanceClass)
-	r.status.AllocatedStorage = int32Value(result.DBInstance.AllocatedStorage)
+	r.status.InstanceARN = stringValue(result.DBInstance.DBInstanceArn)
 	r.status.Endpoint = endpointAddress(result.DBInstance.Endpoint)
 	r.status.Port = endpointPort(result.DBInstance.Endpoint)
+	r.status.AvailabilityZone = stringValue(result.DBInstance.AvailabilityZone)
 
 	return r.successResult() // Don't block on deletion errors - best effort cleanup
 }

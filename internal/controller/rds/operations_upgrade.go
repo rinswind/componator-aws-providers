@@ -61,8 +61,10 @@ func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, err
 
 	// Update status with modification information
 	r.status.InstanceStatus = stringValue(result.DBInstance.DBInstanceStatus)
-	r.status.InstanceClass = stringValue(result.DBInstance.DBInstanceClass)
-	r.status.AllocatedStorage = int32Value(result.DBInstance.AllocatedStorage)
+	r.status.InstanceARN = stringValue(result.DBInstance.DBInstanceArn)
+	r.status.Endpoint = endpointAddress(result.DBInstance.Endpoint)
+	r.status.Port = endpointPort(result.DBInstance.Endpoint)
+	r.status.AvailabilityZone = stringValue(result.DBInstance.AvailabilityZone)
 
 	log.Info("RDS instance modification initiated successfully", "status", r.status.InstanceStatus)
 

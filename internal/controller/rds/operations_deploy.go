@@ -59,11 +59,10 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, erro
 
 	// Update status with deployment information
 	r.status.InstanceStatus = stringValue(result.DBInstance.DBInstanceStatus)
-	r.status.EngineVersion = stringValue(result.DBInstance.EngineVersion)
-	r.status.InstanceClass = stringValue(result.DBInstance.DBInstanceClass)
-	r.status.AllocatedStorage = int32Value(result.DBInstance.AllocatedStorage)
+	r.status.InstanceARN = stringValue(result.DBInstance.DBInstanceArn)
 	r.status.Endpoint = endpointAddress(result.DBInstance.Endpoint)
 	r.status.Port = endpointPort(result.DBInstance.Endpoint)
+	r.status.AvailabilityZone = stringValue(result.DBInstance.AvailabilityZone)
 
 	log.Info("RDS instance creation initiated successfully", "status", r.status.InstanceStatus)
 
@@ -101,13 +100,10 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 
 	// Update status with current instance information
 	r.status.InstanceStatus = stringValue(instance.DBInstanceStatus)
-	r.status.EngineVersion = stringValue(instance.EngineVersion)
-	r.status.InstanceClass = stringValue(instance.DBInstanceClass)
-	r.status.AllocatedStorage = int32Value(instance.AllocatedStorage)
+	r.status.InstanceARN = stringValue(instance.DBInstanceArn)
 	r.status.Endpoint = endpointAddress(instance.Endpoint)
 	r.status.Port = endpointPort(instance.Endpoint)
-	r.status.BackupRetentionPeriod = int32Value(instance.BackupRetentionPeriod)
-	r.status.MultiAZ = boolValue(instance.MultiAZ)
+	r.status.AvailabilityZone = stringValue(instance.AvailabilityZone)
 
 	// Check if deployment is complete
 	log = log.WithValues("status", r.status.InstanceStatus)

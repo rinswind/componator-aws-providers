@@ -99,19 +99,12 @@ type RdsTimeouts struct {
 type RdsStatus struct {
 	// Instance identification and state
 	InstanceStatus string `json:"instanceStatus,omitempty"`
-
-	// Deployment metadata
-	EngineVersion    string `json:"engineVersion,omitempty"`
-	InstanceClass    string `json:"instanceClass,omitempty"`
-	AllocatedStorage int32  `json:"allocatedStorage,omitempty"`
+	InstanceARN    string `json:"instanceARN,omitempty"`
 
 	// Network information
-	Endpoint string `json:"endpoint,omitempty"`
-	Port     int32  `json:"port,omitempty"`
-
-	// Operational status
-	BackupRetentionPeriod int32 `json:"backupRetentionPeriod,omitempty"`
-	MultiAZ               bool  `json:"multiAZ,omitempty"`
+	Endpoint         string `json:"endpoint,omitempty"`
+	Port             int32  `json:"port,omitempty"`
+	AvailabilityZone string `json:"availabilityZone,omitempty"`
 }
 
 // Duration wraps time.Duration with JSON marshaling support
