@@ -31,7 +31,7 @@ import (
 
 // Deploy handles all Helm-specific deployment operations using pre-parsed configuration
 // Implements ComponentOperations.Deploy interface method.
-func (h *HelmOperations) Deploy(ctx context.Context) (base.OperationResult, error) {
+func (h *HelmOperations) Deploy(ctx context.Context) (*base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Get release name and target namespace from resolved configuration
@@ -50,7 +50,7 @@ func (h *HelmOperations) Deploy(ctx context.Context) (base.OperationResult, erro
 		h.status.ChartVersion = rel.Chart.Metadata.Version
 
 		updatedStatus, _ := json.Marshal(h.status)
-		return base.OperationResult{
+		return &base.OperationResult{
 			UpdatedStatus: updatedStatus,
 			Success:       true,
 		}, nil
@@ -58,13 +58,13 @@ func (h *HelmOperations) Deploy(ctx context.Context) (base.OperationResult, erro
 
 	// Set up repository configuration properly for ephemeral containers
 	if _, err := setupHelmRepository(h.config, h.settings); err != nil {
-		return base.OperationResult{}, fmt.Errorf("failed to setup helm repository: %w", err)
+		return nil, fmt.Errorf("failed to setup helm repository: %w", err)
 	}
 
 	// Prepare chart for installation
 	chart, err := loadHelmChart(h.config, h.settings)
 	if err != nil {
-		return base.OperationResult{}, err
+		return nil, err
 	}
 
 	// Create install action
@@ -82,7 +82,7 @@ func (h *HelmOperations) Deploy(ctx context.Context) (base.OperationResult, erro
 	// Install the chart
 	rel, err := installAction.Run(chart, vals)
 	if err != nil {
-		return base.OperationResult{}, fmt.Errorf("failed to install helm release %s: %w", releaseName, err)
+		return nil, fmt.Errorf("failed to install helm release %s: %w", releaseName, err)
 	}
 
 	// Update status with new release information
@@ -99,14 +99,14 @@ func (h *HelmOperations) Deploy(ctx context.Context) (base.OperationResult, erro
 		"version", rel.Version,
 		"status", rel.Info.Status.String())
 
-	return base.OperationResult{
+	return &base.OperationResult{
 		UpdatedStatus: updatedStatus,
 		Success:       true,
 	}, nil
 }
 
 // startHelmReleaseUpgrade handles upgrading an existing Helm release using pre-parsed configuration
-func (h *HelmOperations) Upgrade(ctx context.Context) (base.OperationResult, error) {
+func (h *HelmOperations) Upgrade(ctx context.Context) (*base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Get release name and target namespace from resolved configuration
@@ -116,18 +116,18 @@ func (h *HelmOperations) Upgrade(ctx context.Context) (base.OperationResult, err
 	// Verify release exists before attempting upgrade
 	getAction := action.NewGet(h.actionConfig)
 	if _, err := getAction.Run(releaseName); err != nil {
-		return base.OperationResult{}, fmt.Errorf("release %s not found for upgrade: %w", releaseName, err)
+		return nil, fmt.Errorf("release %s not found for upgrade: %w", releaseName, err)
 	}
 
 	// Set up repository configuration properly for ephemeral containers
 	if _, err := setupHelmRepository(h.config, h.settings); err != nil {
-		return base.OperationResult{}, fmt.Errorf("failed to setup helm repository: %w", err)
+		return nil, fmt.Errorf("failed to setup helm repository: %w", err)
 	}
 
 	// Prepare chart for upgrade
 	chart, err := loadHelmChart(h.config, h.settings)
 	if err != nil {
-		return base.OperationResult{}, err
+		return nil, err
 	}
 
 	// Create upgrade action
@@ -142,7 +142,7 @@ func (h *HelmOperations) Upgrade(ctx context.Context) (base.OperationResult, err
 	// Upgrade the chart
 	rel, err := upgradeAction.Run(releaseName, chart, vals)
 	if err != nil {
-		return base.OperationResult{}, fmt.Errorf("failed to upgrade helm release %s: %w", releaseName, err)
+		return nil, fmt.Errorf("failed to upgrade helm release %s: %w", releaseName, err)
 	}
 
 	// Update status with upgraded release information
@@ -159,7 +159,7 @@ func (h *HelmOperations) Upgrade(ctx context.Context) (base.OperationResult, err
 		"version", rel.Version,
 		"status", rel.Info.Status.String())
 
-	return base.OperationResult{
+	return &base.OperationResult{
 		UpdatedStatus: updatedStatus,
 		Success:       true,
 	}, nil
@@ -167,7 +167,7 @@ func (h *HelmOperations) Upgrade(ctx context.Context) (base.OperationResult, err
 
 // checkReleaseDeployed verifies if a Helm release and all its resources are ready using pre-parsed configuration
 // Returns OperationResult with Success indicating readiness status
-func (h *HelmOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (base.OperationResult, error) {
+func (h *HelmOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (*base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Check deployment timeout first
@@ -179,7 +179,7 @@ func (h *HelmOperations) CheckDeployment(ctx context.Context, elapsed time.Durat
 			"chart", h.config.Chart.Name)
 
 		updatedStatus, _ := json.Marshal(h.status)
-		return base.OperationResult{
+		return &base.OperationResult{
 			UpdatedStatus:  updatedStatus,
 			Success:        false,
 			OperationError: fmt.Errorf("Deployment timed out after %v (timeout: %v)", elapsed.Truncate(time.Second), deploymentTimeout),
@@ -189,20 +189,20 @@ func (h *HelmOperations) CheckDeployment(ctx context.Context, elapsed time.Durat
 	// Get the current release
 	rel, err := h.getHelmRelease(ctx)
 	if err != nil {
-		return base.OperationResult{}, fmt.Errorf("failed to check helm release readiness: %w", err) // I/O error
+		return nil, fmt.Errorf("failed to check helm release readiness: %w", err) // I/O error
 	}
 
 	// Build ResourceList from release manifest for non-blocking status checking
 	resourceList, err := h.gatherHelmReleaseResources(ctx, rel)
 	if err != nil {
-		return base.OperationResult{}, fmt.Errorf("failed to build resource list from release: %w", err) // I/O error
+		return nil, fmt.Errorf("failed to build resource list from release: %w", err) // I/O error
 	}
 
 	// Use non-blocking readiness check
 	ready, err := h.checkResourcesReady(ctx, resourceList)
 	if err != nil {
 		updatedStatus, _ := json.Marshal(h.status)
-		return base.OperationResult{
+		return &base.OperationResult{
 			UpdatedStatus:  updatedStatus,
 			Success:        false,
 			OperationError: fmt.Errorf("deployment failed: %w", err),
@@ -210,7 +210,7 @@ func (h *HelmOperations) CheckDeployment(ctx context.Context, elapsed time.Durat
 	}
 
 	updatedStatus, _ := json.Marshal(h.status)
-	return base.OperationResult{
+	return &base.OperationResult{
 		UpdatedStatus: updatedStatus,
 		Success:       ready,
 	}, nil

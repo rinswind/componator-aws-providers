@@ -47,7 +47,7 @@ import (
 
 // Deploy handles all RDS-specific deployment operations using pre-parsed configuration
 // Implements ComponentOperations.Deploy interface method.
-func (r *RdsOperations) Deploy(ctx context.Context) (base.OperationResult, error) {
+func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Use pre-parsed configuration from factory (no repeated parsing)
@@ -76,7 +76,7 @@ func (r *RdsOperations) Deploy(ctx context.Context) (base.OperationResult, error
 	updatedStatus, _ := json.Marshal(r.status)
 
 	// For now, return a placeholder error to indicate this needs implementation
-	return base.OperationResult{
+	return &base.OperationResult{
 		UpdatedStatus:  updatedStatus,
 		Success:        false,
 		OperationError: fmt.Errorf("RDS deployment not yet implemented - placeholder for AWS RDS SDK integration"),
@@ -85,7 +85,7 @@ func (r *RdsOperations) Deploy(ctx context.Context) (base.OperationResult, error
 
 // CheckDeployment verifies the current deployment status using pre-parsed configuration
 // Implements ComponentOperations.CheckDeployment interface method.
-func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (base.OperationResult, error) {
+func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (*base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Use pre-parsed configuration from factory (no repeated parsing)
@@ -113,7 +113,7 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 	updatedStatus, _ := json.Marshal(r.status)
 
 	// For now, return not ready to indicate this needs implementation
-	return base.OperationResult{
+	return &base.OperationResult{
 		UpdatedStatus:  updatedStatus,
 		Success:        false,
 		OperationError: fmt.Errorf("RDS deployment status checking not yet implemented - placeholder for AWS RDS SDK integration"),
@@ -122,7 +122,7 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 
 // Upgrade handles RDS-specific upgrade operations using pre-parsed configuration
 // Implements ComponentOperations.Upgrade interface method.
-func (r *RdsOperations) Upgrade(ctx context.Context) (base.OperationResult, error) {
+func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Use pre-parsed configuration from factory (no repeated parsing)
@@ -153,7 +153,7 @@ func (r *RdsOperations) Upgrade(ctx context.Context) (base.OperationResult, erro
 	updatedStatus, _ := json.Marshal(r.status)
 
 	// For now, return a placeholder error to indicate this needs implementation
-	return base.OperationResult{
+	return &base.OperationResult{
 		UpdatedStatus:  updatedStatus,
 		Success:        false,
 		OperationError: fmt.Errorf("RDS upgrade not yet implemented - placeholder for AWS RDS SDK integration"),

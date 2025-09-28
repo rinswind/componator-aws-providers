@@ -37,7 +37,7 @@ import (
 
 // Delete handles all RDS-specific deletion operations using pre-parsed configuration
 // Implements ComponentOperations.Delete interface method.
-func (r *RdsOperations) Delete(ctx context.Context) (base.OperationResult, error) {
+func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Use pre-parsed configuration from factory (no repeated parsing)
@@ -76,7 +76,7 @@ func (r *RdsOperations) Delete(ctx context.Context) (base.OperationResult, error
 	// For now, log a placeholder message to indicate this needs implementation
 	log.Info("RDS deletion not yet implemented - placeholder for AWS RDS SDK integration")
 
-	return base.OperationResult{
+	return &base.OperationResult{
 		UpdatedStatus: updatedStatus,
 		Success:       true,
 	}, nil
@@ -84,7 +84,7 @@ func (r *RdsOperations) Delete(ctx context.Context) (base.OperationResult, error
 
 // CheckDeletion verifies the current deletion status using pre-parsed configuration
 // Implements ComponentOperations.CheckDeletion interface method.
-func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration) (base.OperationResult, error) {
+func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration) (*base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Use pre-parsed configuration from factory (no repeated parsing)
@@ -117,7 +117,7 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration
 	// For now, assume deletion is complete to avoid blocking
 	log.Info("RDS deletion status checking not yet implemented - assuming deletion complete")
 
-	return base.OperationResult{
+	return &base.OperationResult{
 		UpdatedStatus: updatedStatus,
 		Success:       true,
 	}, nil
