@@ -60,21 +60,21 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 
 	// Build delete input
 	deleteInput := &rds.DeleteDBInstanceInput{
-		DBInstanceIdentifier: aws.String(instanceID),
+		DBInstanceIdentifier: stringPtr(instanceID),
 	}
 
 	// Configure final snapshot behavior
 	if config.SkipFinalSnapshot != nil && *config.SkipFinalSnapshot {
-		deleteInput.SkipFinalSnapshot = aws.Bool(true)
+		deleteInput.SkipFinalSnapshot = boolPtr(true)
 	} else {
-		deleteInput.SkipFinalSnapshot = aws.Bool(false)
+		deleteInput.SkipFinalSnapshot = boolPtr(false)
 
 		// Generate final snapshot identifier if not provided
 		finalSnapshotID := config.FinalDBSnapshotIdentifier
 		if finalSnapshotID == "" {
 			finalSnapshotID = fmt.Sprintf("%s-final-snapshot-%d", instanceID, time.Now().Unix())
 		}
-		deleteInput.FinalDBSnapshotIdentifier = aws.String(finalSnapshotID)
+		deleteInput.FinalDBSnapshotIdentifier = stringPtr(finalSnapshotID)
 	}
 
 	// Delete protection must be disabled before deletion
@@ -83,9 +83,9 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 			"instanceId", instanceID)
 
 		modifyInput := &rds.ModifyDBInstanceInput{
-			DBInstanceIdentifier: aws.String(instanceID),
-			DeletionProtection:   aws.Bool(false),
-			ApplyImmediately:     aws.Bool(true),
+			DBInstanceIdentifier: stringPtr(instanceID),
+			DeletionProtection:   boolPtr(false),
+			ApplyImmediately:     boolPtr(true),
 		}
 
 		_, err := r.rdsClient.ModifyDBInstance(ctx, modifyInput)
@@ -156,7 +156,7 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration
 
 	// Query RDS instance existence
 	input := &rds.DescribeDBInstancesInput{
-		DBInstanceIdentifier: aws.String(instanceID),
+		DBInstanceIdentifier: stringPtr(instanceID),
 	}
 
 	result, err := r.rdsClient.DescribeDBInstances(ctx, input)

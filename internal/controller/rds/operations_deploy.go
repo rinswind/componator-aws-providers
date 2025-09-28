@@ -130,7 +130,7 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 
 	// Query RDS instance status
 	input := &rds.DescribeDBInstancesInput{
-		DBInstanceIdentifier: aws.String(instanceID),
+		DBInstanceIdentifier: stringPtr(instanceID),
 	}
 
 	result, err := r.rdsClient.DescribeDBInstances(ctx, input)

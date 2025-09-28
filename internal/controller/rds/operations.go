@@ -171,7 +171,7 @@ func (r *RdsOperations) errorResult(ctx context.Context, message string, err err
 }
 func (r *RdsOperations) checkInstanceExists(ctx context.Context, instanceID string) (bool, error) {
 	input := &rds.DescribeDBInstancesInput{
-		DBInstanceIdentifier: aws.String(instanceID),
+		DBInstanceIdentifier: stringPtr(instanceID),
 	}
 
 	_, err := r.rdsClient.DescribeDBInstances(ctx, input)
@@ -188,71 +188,42 @@ func (r *RdsOperations) checkInstanceExists(ctx context.Context, instanceID stri
 // buildCreateDBInstanceInput constructs the CreateDBInstanceInput from RDS configuration
 func (r *RdsOperations) buildCreateDBInstanceInput(config *RdsConfig, instanceID string) *rds.CreateDBInstanceInput {
 	input := &rds.CreateDBInstanceInput{
-		DBInstanceIdentifier: aws.String(instanceID),
-		DBInstanceClass:      aws.String(config.InstanceClass),
-		Engine:               aws.String(config.DatabaseEngine),
-		EngineVersion:        aws.String(config.EngineVersion),
-		AllocatedStorage:     aws.Int32(config.AllocatedStorage),
-		MasterUsername:       aws.String(config.MasterUsername),
-		MasterUserPassword:   aws.String(config.MasterPassword),
-		DBName:               aws.String(config.DatabaseName),
-	}
+		// Required fields - always convert to pointers
+		DBInstanceIdentifier: stringPtr(instanceID),
+		DBInstanceClass:      stringPtr(config.InstanceClass),
+		Engine:               stringPtr(config.DatabaseEngine),
+		EngineVersion:        stringPtr(config.EngineVersion),
+		AllocatedStorage:     int32Ptr(config.AllocatedStorage),
+		MasterUsername:       stringPtr(config.MasterUsername),
+		MasterUserPassword:   stringPtr(config.MasterPassword),
+		DBName:               stringPtr(config.DatabaseName),
 
-	// Optional storage configuration
-	if config.StorageType != "" {
-		input.StorageType = aws.String(config.StorageType)
-	}
-	if config.StorageEncrypted != nil {
-		input.StorageEncrypted = aws.Bool(*config.StorageEncrypted)
-	}
-	if config.KmsKeyId != "" {
-		input.KmsKeyId = aws.String(config.KmsKeyId)
-	}
+		// Optional storage configuration
+		StorageType:      optionalStringPtr(config.StorageType),
+		StorageEncrypted: passthroughBoolPtr(config.StorageEncrypted),
+		KmsKeyId:         optionalStringPtr(config.KmsKeyId),
 
-	// Optional networking configuration
-	if len(config.VpcSecurityGroupIds) > 0 {
-		input.VpcSecurityGroupIds = config.VpcSecurityGroupIds
-	}
-	if config.SubnetGroupName != "" {
-		input.DBSubnetGroupName = aws.String(config.SubnetGroupName)
-	}
-	if config.PubliclyAccessible != nil {
-		input.PubliclyAccessible = aws.Bool(*config.PubliclyAccessible)
-	}
-	if config.Port != nil {
-		input.Port = aws.Int32(*config.Port)
-	}
+		// Optional networking configuration
+		VpcSecurityGroupIds: config.VpcSecurityGroupIds, // Already []string type
+		DBSubnetGroupName:   optionalStringPtr(config.SubnetGroupName),
+		PubliclyAccessible:  passthroughBoolPtr(config.PubliclyAccessible),
+		Port:                passthroughInt32Ptr(config.Port),
 
-	// Optional backup configuration
-	if config.BackupRetentionPeriod != nil {
-		input.BackupRetentionPeriod = aws.Int32(*config.BackupRetentionPeriod)
-	}
-	if config.PreferredBackupWindow != "" {
-		input.PreferredBackupWindow = aws.String(config.PreferredBackupWindow)
-	}
+		// Optional backup configuration
+		BackupRetentionPeriod: passthroughInt32Ptr(config.BackupRetentionPeriod),
+		PreferredBackupWindow: optionalStringPtr(config.PreferredBackupWindow),
 
-	// Optional maintenance configuration
-	if config.PreferredMaintenanceWindow != "" {
-		input.PreferredMaintenanceWindow = aws.String(config.PreferredMaintenanceWindow)
-	}
-	if config.AutoMinorVersionUpgrade != nil {
-		input.AutoMinorVersionUpgrade = aws.Bool(*config.AutoMinorVersionUpgrade)
-	}
+		// Optional maintenance configuration
+		PreferredMaintenanceWindow: optionalStringPtr(config.PreferredMaintenanceWindow),
+		AutoMinorVersionUpgrade:    passthroughBoolPtr(config.AutoMinorVersionUpgrade),
 
-	// Optional performance configuration
-	if config.MultiAZ != nil {
-		input.MultiAZ = aws.Bool(*config.MultiAZ)
-	}
-	if config.PerformanceInsightsEnabled != nil {
-		input.EnablePerformanceInsights = aws.Bool(*config.PerformanceInsightsEnabled)
-	}
-	if config.MonitoringInterval != nil && *config.MonitoringInterval > 0 {
-		input.MonitoringInterval = aws.Int32(*config.MonitoringInterval)
-	}
+		// Optional performance configuration
+		MultiAZ:                   passthroughBoolPtr(config.MultiAZ),
+		EnablePerformanceInsights: passthroughBoolPtr(config.PerformanceInsightsEnabled),
+		MonitoringInterval:        passthroughPositiveInt32Ptr(config.MonitoringInterval),
 
-	// Deletion protection
-	if config.DeletionProtection != nil {
-		input.DeletionProtection = aws.Bool(*config.DeletionProtection)
+		// Deletion protection
+		DeletionProtection: passthroughBoolPtr(config.DeletionProtection),
 	}
 
 	return input

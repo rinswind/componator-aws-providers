@@ -115,7 +115,7 @@ func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, err
 // getCurrentInstanceState retrieves the current state of an RDS instance
 func (r *RdsOperations) getCurrentInstanceState(ctx context.Context, instanceID string) (*types.DBInstance, error) {
 	input := &rds.DescribeDBInstancesInput{
-		DBInstanceIdentifier: aws.String(instanceID),
+		DBInstanceIdentifier: stringPtr(instanceID),
 	}
 
 	result, err := r.rdsClient.DescribeDBInstances(ctx, input)
@@ -210,40 +210,30 @@ func (r *RdsOperations) calculateRequiredModifications(currentInstance *types.DB
 // buildModifyDBInstanceInput constructs the ModifyDBInstanceInput for applying changes
 func (r *RdsOperations) buildModifyDBInstanceInput(config *RdsConfig, instanceID string, modifications []ModificationRequest) *rds.ModifyDBInstanceInput {
 	input := &rds.ModifyDBInstanceInput{
-		DBInstanceIdentifier: aws.String(instanceID),
-		ApplyImmediately:     aws.Bool(false), // Apply during next maintenance window by default
+		DBInstanceIdentifier: stringPtr(instanceID),
+		ApplyImmediately:     boolPtr(false), // Apply during next maintenance window by default
 	}
 
 	// Apply modifications based on the calculated requirements
 	for _, mod := range modifications {
 		switch mod.Type {
 		case "instance_class":
-			input.DBInstanceClass = aws.String(config.InstanceClass)
+			input.DBInstanceClass = stringPtr(config.InstanceClass)
 		case "allocated_storage":
-			input.AllocatedStorage = aws.Int32(config.AllocatedStorage)
+			input.AllocatedStorage = int32Ptr(config.AllocatedStorage)
 		case "engine_version":
-			input.EngineVersion = aws.String(config.EngineVersion)
+			input.EngineVersion = stringPtr(config.EngineVersion)
 		case "backup_retention":
-			if config.BackupRetentionPeriod != nil {
-				input.BackupRetentionPeriod = aws.Int32(*config.BackupRetentionPeriod)
-			}
+			input.BackupRetentionPeriod = passthroughInt32Ptr(config.BackupRetentionPeriod)
 		case "multi_az":
-			if config.MultiAZ != nil {
-				input.MultiAZ = aws.Bool(*config.MultiAZ)
-			}
+			input.MultiAZ = passthroughBoolPtr(config.MultiAZ)
 		}
 	}
 
 	// Add other optional modifications
-	if config.PreferredBackupWindow != "" {
-		input.PreferredBackupWindow = aws.String(config.PreferredBackupWindow)
-	}
-	if config.PreferredMaintenanceWindow != "" {
-		input.PreferredMaintenanceWindow = aws.String(config.PreferredMaintenanceWindow)
-	}
-	if config.AutoMinorVersionUpgrade != nil {
-		input.AutoMinorVersionUpgrade = aws.Bool(*config.AutoMinorVersionUpgrade)
-	}
+	input.PreferredBackupWindow = optionalStringPtr(config.PreferredBackupWindow)
+	input.PreferredMaintenanceWindow = optionalStringPtr(config.PreferredMaintenanceWindow)
+	input.AutoMinorVersionUpgrade = passthroughBoolPtr(config.AutoMinorVersionUpgrade)
 
 	return input
 }
