@@ -1,8 +1,24 @@
-# Helm Handler Rollback Support Architecture
+# Helm Handler Automatic Rollback Support Architecture
 
 ## Overview
 
-This document specifies the architecture for rollback operation support in the Helm handler. These enhancements provide controlled rollback capabilities for failed deployments or version downgrades while maintaining protocol compliance and production stability.
+This document specifies the architecture for automatic rollback support in the Helm handler. This enhancement provides automatic rollback capabilities as error recovery when deployments fail, using Helm's native rollback functionality while maintaining protocol compliance with the Component state machine.
+
+### Implementation Status
+
+**Current Recommendation**: Implementation of this feature is **not recommended** for production use based on empirical research of Helm rollback reliability issues.
+
+**Research Findings**: Investigation of Helm GitHub issues revealed systematic reliability problems that make automatic rollback unsuitable as error recovery mechanism:
+
+- **Three-Way Merge State Corruption**: Rollbacks fail to restore original state when upgrades fail mid-deployment. Resources added during failed upgrades become "sticky" and persist after rollback due to three-way strategic merge patches using the last successful release as base while ignoring failed attempts.
+
+- **Resource Policy Annotation Failures**: `helm.sh/resource-policy` annotations cause rollbacks to fail 100% of the time on first attempt with "resource not found" errors, even when resources exist in the cluster. This indicates fundamental state tracking problems between Helm's knowledge and cluster reality.
+
+- **Resource Tracking Inconsistencies**: When upgrades fail before deleting resources, rollbacks fail with "no resource found" errors despite valid cluster state. Helm cannot match existing cluster resources to stored manifests, completely blocking rollback execution.
+
+**Success Context Analysis**: Limited success stories involve manual intervention, immediate execution, and simple configurations - none of which apply to automatic rollback as error recovery in complex distributed systems.
+
+**Design Preservation**: This complete architecture specification is maintained for potential future implementation should Helm rollback reliability improve, or for adaptation to alternative rollback mechanisms that address the identified systematic issues.
 
 ## Current Implementation Context
 
@@ -15,47 +31,40 @@ This document specifies the architecture for rollback operation support in the H
 
 **Architecture Foundation**: Built on the factory pattern with `HelmOperationsFactory` and stateful `HelmOperations` instances that maintain parsed configuration throughout reconciliation loops.
 
-## Rollback Operation Support
+## Automatic Rollback Support
 
-**Objective**: Provide controlled rollback capabilities for failed deployments or version downgrades.
+**Objective**: Provide automatic rollback as error recovery mechanism when deployments fail.
 
-**Conceptual Analysis**:
-Helm rollback operates on release history, reverting to previous successful releases rather than installing older chart versions. This differs from version downgrades, which install older chart versions as new releases.
+**Approach**: When deployment operations fail, automatically attempt rollback to previous stable revision to maintain system stability, then report deployment failure through Failed state.
 
-**Configuration Schema Extension**:
+**Configuration Schema**:
 
 ```yaml
-operations:
-  rollback:
-    enabled: true
-    targetRevision: 2
-    strategy: automatic
+source:
+  chart:
+    version: "1.2.0"
+autoRollback: true  # Optional: enable automatic rollback on deployment failure
 ```
 
-**Implementation Patterns**:
+**Error Recovery Logic**:
 
-- **Rollback Detection**: Identify scenarios where rollback is appropriate (deployment failures, explicit version downgrades)
-- **History Management**: Maintain awareness of release revision history through Helm's native tracking
-- **Rollback Execution**: Implement rollback operations using Helm's rollback action with proper validation
-- **Status Integration**: Report rollback operations through Component status conditions
+- Handler attempts install (no existing release) or upgrade (existing release) based on release existence
+- On deployment failure, if `autoRollback: true`, automatically rollback to previous revision
+- Always transition to Failed state when deployment attempt fails (regardless of rollback success)
+- Rollback provides stability - prevents leaving system in broken state
 
-**Rollback Strategies**:
+**Optional Handler Feature**:
 
-- **Automatic Rollback**: Automatically rollback failed upgrades to last known good state
-- **Manual Rollback**: Support explicit rollback requests through Component configuration
-- **Version-Based Rollback**: Interpret older chart versions as rollback requests when release history exists
-
-**Operational Considerations**:
-
-- **History Retention**: Configure release history retention policies to support rollback capabilities
-- **State Validation**: Verify rollback target validity before execution
-- **Coordination**: Ensure rollback operations maintain protocol compliance with status reporting
+- Automatic rollback support is optional, similar to timeout functionality
+- Handlers that don't implement rollback simply ignore the `autoRollback` configuration
+- Simple handlers remain simple without forced rollback complexity
+- Advanced handlers can implement sophisticated error recovery
 
 ## Configuration Architecture
 
-### Rollback Configuration Structure
+### Automatic Rollback Configuration Structure
 
-**Updated Configuration Structure**: The existing `HelmConfig` struct will be extended to support rollback operations:
+**Updated Configuration Structure**: The existing `HelmConfig` struct will be extended to support automatic rollback:
 
 ```go
 type HelmConfig struct {
@@ -69,195 +78,194 @@ type HelmConfig struct {
     // Source configuration (from chart sources architecture)
     Source SourceConfig `json:"source" validate:"required"`
     
-    // Optional rollback configuration
-    Operations *HelmOperations `json:"operations,omitempty"`
-}
-
-type HelmOperations struct {
-    Rollback *RollbackConfig `json:"rollback,omitempty"`
-}
-
-type RollbackConfig struct {
-    Enabled        bool   `json:"enabled,omitempty"`
-    TargetRevision int    `json:"targetRevision,omitempty"`
-    Strategy       string `json:"strategy,omitempty" validate:"oneof=automatic manual"`
+    // Optional automatic rollback on deployment failure
+    AutoRollback *bool `json:"autoRollback,omitempty"`
 }
 ```
 
-### Rollback Strategy Specifications
+### Optional Handler Feature Pattern
 
-**Automatic Strategy**:
-- Triggers rollback automatically when deployment failures are detected
-- Uses last known successful revision as rollback target
-- Integrates with Component status conditions for failure detection
+**Similar to Timeout Support**: Automatic rollback follows the same optional implementation pattern as timeouts:
 
-**Manual Strategy**:
-- Requires explicit configuration of target revision
-- Validates target revision exists in release history
-- Provides controlled rollback execution with user oversight
+- **Optional Implementation**: Rollback support is not required for all handlers
+- **Handler Autonomy**: Each handler decides whether to implement automatic rollback functionality
+- **Configuration Handling**: Handlers that don't support rollback can ignore the `autoRollback` field
+- **Simple Handlers Stay Simple**: Basic handlers remain straightforward without forced rollback complexity
 
-**Version-Based Strategy**:
-- Interprets chart version downgrades as rollback requests
-- Compares current chart version with requested version
-- Falls back to revision-based rollback when version history is available
+**Handler Examples**:
 
-## Rollback Operations Interface
+- **helm-webapp**: Implements automatic rollback due to complex application deployments
+- **terraform-rds**: May implement rollback due to long provisioning times and failure recovery needs
+- **kubectl-manifests**: Likely doesn't implement rollback due to fast, simple operations
 
-### Enhanced Operations Interface
+## Automatic Rollback Operations Interface
 
-```go
-// ComponentOperations interface extension for rollback support
-type ComponentOperations interface {
-    // Existing operations
-    Deploy(ctx context.Context) error
-    Upgrade(ctx context.Context) error
-    Delete(ctx context.Context) error
-    GetStatus(ctx context.Context) (ComponentStatus, error)
-    
-    // New rollback operation
-    Rollback(ctx context.Context) error
-    
-    // Rollback support operations
-    GetReleaseHistory(ctx context.Context) ([]ReleaseRevision, error)
-    ValidateRollbackTarget(ctx context.Context, revision int) error
-}
+### Rollback Logic
 
-type ReleaseRevision struct {
-    Revision    int       `json:"revision"`
-    ChartVersion string   `json:"chartVersion"`
-    Status      string    `json:"status"`
-    DeployedAt  time.Time `json:"deployedAt"`
-    Description string    `json:"description"`
-}
-```
+**Error Recovery Flow**:
 
-### Rollback Detection Logic
+- Record current Helm revision before attempting deployment operation
+- Attempt install (no existing release) or upgrade (existing release) based on release existence
+- On deployment failure, if `autoRollback: true`, initiate rollback to recorded revision
+- Transition to RollingBack state during rollback operation (requires Component state machine extension)
+- Always transition to Failed state when rollback completes (regardless of rollback success/failure)
 
-**Failure-Based Rollback Detection**:
-- Monitor Component status conditions for deployment failures
-- Detect timeout conditions in deployment operations
-- Identify resource creation or readiness failures
-- Trigger automatic rollback when configured strategy permits
+**Rollback Implementation**:
 
-**Version-Based Rollback Detection**:
-- Compare requested chart version with currently deployed version
-- Identify semantic version downgrades (e.g., 1.3.0 → 1.2.0)
-- Check release history for target version availability
-- Execute rollback to matching historical revision
+- **Revision Tracking**: Record current revision before deployment attempts
+- **Async Operations**: Handle rollback as async operation requiring state tracking
+- **Status Integration**: Report rollback progress and results through Component status conditions
+- **State Machine Integration**: Requires RollingBack state for proper async operation tracking
 
-**Manual Rollback Triggers**:
-- Process explicit rollback requests through configuration updates
-- Validate target revision specification against release history
-- Execute rollback with comprehensive status reporting
+**State Transitions for Rollback**:
+
+- **Deploying → RollingBack**: Deployment failed, rollback initiated
+- **RollingBack → Failed**: Rollback completed (success or failure both go to Failed)
+- **Failed State Message**: Includes rollback information for user visibility
 
 ## Implementation Strategy
 
 ### Development Phases
 
-#### Phase 1: Rollback Configuration Foundation
+#### Phase 1: Downgrade Strategy Configuration
 
 **File Changes Required**:
 
-- `config.go`: Add rollback configuration structures to `HelmConfig`
-- `config.go`: Extend configuration parsing to handle rollback options
-- `operations.go`: Add `Rollback()` method to `HelmOperations` interface
-- `operations.go`: Add rollback support methods to operations interface
+- `config.go`: Add `DowngradeStrategy` string field to `HelmConfig` struct
+- `config.go`: Add validation for downgrade strategy values
 
 **Implementation Steps**:
 
-1. Define rollback configuration structures with validation
-2. Extend configuration parsing to handle rollback options
-3. Add rollback method to operations interface
-4. Implement release history management utilities
-5. Add rollback target validation logic
+1. Add downgrade strategy field to `HelmConfig`
+2. Add validation for "rollback" and "reinstall" strategy values
+3. Extend configuration parsing to handle downgrade strategy
 
-#### Phase 2: Rollback Detection and Strategy Implementation
+#### Phase 2: Version Detection and Strategy Implementation
 
 **File Changes Required**:
 
-- New file `operations_rollback.go`: Rollback detection and execution logic
+- `operations.go`: Add version comparison utilities
+- New file `operations_rollback.go`: Rollback and downgrade strategy logic
+- `operations_deploy.go`: Add version detection in deployment operations
+
+**Implementation Steps**:
+
+1. Implement chart version comparison logic (semantic versioning)
+2. Add version downgrade detection during deployment operations
+3. Implement rollback strategy (Helm rollback to target version)
+4. Implement reinstall strategy (install older version as new release)
+5. Integrate strategy selection with deployment flow
+
+#### Phase 3: Controller Integration
+
+**File Changes Required**:
+
 - `controller.go`: Integrate rollback operations into reconciliation logic
-- `operations_deploy.go`: Add rollback triggers to deployment failure paths
 - `operations.go`: Extend status reporting for rollback operations
 
 **Implementation Steps**:
 
-1. Implement rollback detection based on release history analysis
-2. Add failure-based rollback triggers to deployment operations
-3. Implement version-based rollback detection logic
-4. Add rollback execution using Helm's rollback action with proper validation
-5. Integrate rollback status reporting with Component conditions
-
-#### Phase 3: History Management and Validation
-
-**File Changes Required**:
-
-- `operations_rollback.go`: Release history management and validation
-- `operations.go`: History retention policy implementation
-- `config.go`: Add history retention configuration options
-- `controller.go`: Integrate history cleanup with Component lifecycle
-
-**Implementation Steps**:
-
-1. Implement release history retrieval and management
-2. Add rollback target validation against available revisions
-3. Implement history retention policies with configurable limits
-4. Add comprehensive error handling for rollback validation failures
-5. Integrate history cleanup with Component deletion operations
-
-#### Phase 4: Advanced Rollback Features
-
-**File Changes Required**:
-
-- `operations_rollback.go`: Advanced rollback strategies and automation
-- `controller.go`: Enhanced rollback integration with reconciliation loops
-- `operations.go`: Rollback metrics and monitoring integration
-- Configuration updates for advanced rollback options
-
-**Implementation Steps**:
-
-1. Implement advanced rollback strategies (automatic, manual, version-based)
-2. Add rollback automation triggers based on deployment health monitoring
-3. Implement rollback metrics and observability features
-4. Add comprehensive rollback testing and validation scenarios
-5. Document rollback operation patterns and troubleshooting guidance
+1. Integrate version-aware deployment logic into reconciliation
+2. Add comprehensive error handling for both rollback and reinstall strategies
+3. Add testing scenarios for version upgrades and downgrades
 
 ### Implementation Sequence
 
-**Recommended Order**: Implement phases sequentially to build rollback capabilities incrementally:
+**Recommended Order**: Implement phases sequentially to build version-aware downgrade capabilities:
 
-1. Rollback Configuration Foundation (enables basic rollback support)
-2. Rollback Detection and Strategy Implementation (core rollback functionality)
-3. History Management and Validation (robust rollback operations)
-4. Advanced Rollback Features (production-ready rollback automation)
+1. Downgrade Strategy Configuration (enables strategy configuration)
+2. Version Detection and Strategy Implementation (core version-aware functionality)
+3. Controller Integration (complete downgrade support)
 
 **Key Implementation Files**:
 
-- `internal/controller/helm/config.go` - Rollback configuration extensions
-- `internal/controller/helm/operations.go` - Operations interface extensions
-- `internal/controller/helm/operations_rollback.go` - Rollback operations implementation (new)
-- `internal/controller/helm/controller.go` - Controller integration for rollback operations
+- `internal/controller/helm/config.go` - Downgrade strategy configuration
+- `internal/controller/helm/operations.go` - Version comparison utilities
+- `internal/controller/helm/operations_rollback.go` - Version-aware rollback implementation (new)
+- `internal/controller/helm/operations_deploy.go` - Version detection integration
+- `internal/controller/helm/controller.go` - Controller integration
 
 ## Architectural Constraints
 
+### Component State Machine Compliance
+
+**State Transition Requirements**: Rollback operations must comply with Component state machine:
+
+- **Failed → Deploying**: Only triggered by Component spec changes (dirty detection)
+- **Version Changes**: Chart version or downgrade strategy changes make Component "dirty"
+- **Recovery Principle**: External intervention (spec modification) required for recovery from Failed state
+
+**Implementation Approach**:
+
+- Chart version or downgrade strategy changes make Component "dirty" (`component.Generation != observedGeneration`)
+- Standard Failed → Deploying transition occurs per existing state machine
+- Version-aware logic executes during deployment phase, selecting appropriate strategy
+
 ### Protocol Compliance
 
-**Existing Requirements**: All rollback enhancements must maintain compliance with the three core protocols:
+**Existing Requirements**: Rollback enhancements must maintain compliance with the three core protocols:
 
 - **Claiming Protocol**: Handler-specific finalizers and atomic resource discovery
 - **Creation Protocol**: Status-driven progression with proper condition reporting
 - **Deletion Protocol**: Coordinated cleanup through finalizer management
 
-**Rollback Integration**: Rollback operations must integrate seamlessly with existing protocol patterns without disrupting normal deployment workflows.
+**Rollback Integration**: Rollback operations integrate with existing protocol patterns without disrupting normal deployment workflows.
 
 ### Operational Reliability
 
-**Error Handling**: Rollback operations must provide clear error categorization between rollback failures, validation errors, and operational issues
-**Status Reporting**: Rollback operations must integrate with existing Component status conditions and phase reporting
-**Recovery Patterns**: Rollback features must support graceful recovery from rollback failures without compromising system stability
+**Error Handling**: Downgrade operations provide clear error reporting for rollback failures and validation errors
+**Status Reporting**: Downgrade operations integrate with existing Component status conditions and phase reporting
+**Recovery Patterns**: Downgrade features support graceful recovery from rollback failures through standard retry mechanisms
 
-### Helm Integration Constraints
+### Usage Pattern
 
-**Release History Dependency**: Rollback operations depend on Helm's native release history tracking and retention policies
-**Revision Validation**: All rollback operations must validate target revisions against available Helm release history
-**State Consistency**: Rollback operations must maintain consistency between Component status and actual Helm release state
+**Automatic Rollback Workflow**:
+
+1. Component has deployed chart version 1.2.0, currently in Ready state
+2. User requests upgrade to version 1.3.0 with automatic rollback enabled
+3. User updates Component spec: chart version → 1.3.0, autoRollback → true
+4. Component becomes "dirty", triggers Ready → Deploying transition per state machine
+5. Helm handler records current revision (e.g., revision 2) before attempting upgrade
+6. Handler attempts upgrade to version 1.3.0, upgrade fails
+7. Handler initiates rollback to revision 2, transitions Component to RollingBack state
+8. Handler polls rollback status on subsequent reconciles
+9. When rollback completes, Component transitions to Failed state with rollback information
+
+**Configuration Examples**:
+
+```yaml
+# Enable automatic rollback on deployment failure
+source:
+  chart:
+    version: "1.3.0"
+autoRollback: true
+
+# Disable automatic rollback (default)
+source:
+  chart:
+    version: "1.3.0"
+autoRollback: false
+```
+
+**Status Communication Examples**:
+
+**Successful rollback**:
+
+```yaml
+status:
+  phase: Failed
+  message: "Chart upgrade to v1.3.0 failed: timeout exceeded. Successfully rolled back to revision 2 (v1.2.0)."
+```
+
+**Failed rollback**:
+
+```yaml
+status:
+  phase: Failed
+  message: "Chart upgrade to v1.3.0 failed: timeout exceeded. Rollback to revision 2 also failed: release not found."
+```
+
+### Helm Integration
+
+**Release History Dependency**: Downgrade operations use Helm's native release history tracking
+**State Consistency**: Downgrade operations maintain consistency between Component status and actual Helm release state
