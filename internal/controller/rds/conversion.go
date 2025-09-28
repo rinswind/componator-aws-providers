@@ -55,24 +55,6 @@ func optionalStringPtr(s string) *string {
 	return aws.String(s)
 }
 
-// optionalInt32Ptr converts an int32 to *int32, returning nil for zero values
-// This allows AWS to use default values or omit optional fields entirely
-func optionalInt32Ptr(i int32) *int32 {
-	if i == 0 {
-		return nil
-	}
-	return aws.Int32(i)
-}
-
-// positiveInt32Ptr converts an int32 to *int32, returning nil for zero or negative values
-// This is useful for fields like MonitoringInterval that only accept positive values
-func positiveInt32Ptr(i int32) *int32 {
-	if i <= 0 {
-		return nil
-	}
-	return aws.Int32(i)
-}
-
 // passthroughPositiveInt32Ptr handles *int32 fields that should only be set for positive values
 // Returns nil if input is nil or points to zero/negative value
 func passthroughPositiveInt32Ptr(p *int32) *int32 {
@@ -82,24 +64,8 @@ func passthroughPositiveInt32Ptr(p *int32) *int32 {
 	return aws.Int32(*p)
 }
 
-// optionalBoolPtr converts a bool to *bool, with special handling for false values
-// For AWS, false is often meaningful, so this only returns nil for explicit zero-initialization
-// Use this carefully - most bool fields should use passthroughBoolPtr instead
-func optionalBoolPtr(b bool) *bool {
-	return aws.Bool(b)
-}
-
 // Pointer conversion utilities for fields that are already pointers in RdsConfig
 // These handle the case where our config uses pointers but needs AWS SDK wrapping
-
-// passthroughStringPtr handles *string fields that need AWS SDK conversion
-// Returns nil if input is nil, otherwise wraps the dereferenced value
-func passthroughStringPtr(p *string) *string {
-	if p == nil {
-		return nil
-	}
-	return aws.String(*p)
-}
 
 // passthroughInt32Ptr handles *int32 fields that need AWS SDK conversion
 // Returns nil if input is nil, otherwise wraps the dereferenced value
@@ -119,49 +85,25 @@ func passthroughBoolPtr(p *bool) *bool {
 	return aws.Bool(*p)
 }
 
-// String slice utilities for AWS SDK conversion
-
-// stringSlicePtr converts []string to []*string, handling nil/empty slices
-// Returns nil for empty slices to omit from AWS requests
-func stringSlicePtr(vs []string) []*string {
-	if len(vs) == 0 {
-		return nil
-	}
-	return aws.StringSlice(vs)
-}
-
-// optionalStringSlicePtr is an alias for stringSlicePtr for consistency
-// This makes the intent clear when used for optional fields
-var optionalStringSlicePtr = stringSlicePtr
-
 // Reverse conversion utilities: pointer → value with zero-value defaults
 // These eliminate unsafe dereferences and conditional nil-checking boilerplate
 
 // stringValue safely converts *string to string, returning empty string if nil
 // This is equivalent to aws.ToString() but with a clearer name for our use case
 func stringValue(p *string) string {
-	if p == nil {
-		return ""
-	}
-	return *p
+	return aws.ToString(p)
 }
 
 // int32Value safely converts *int32 to int32, returning zero if nil
 // This is equivalent to aws.ToInt32() but with a clearer name for our use case
 func int32Value(p *int32) int32 {
-	if p == nil {
-		return 0
-	}
-	return *p
+	return aws.ToInt32(p)
 }
 
 // boolValue safely converts *bool to bool, returning false if nil
 // This is equivalent to aws.ToBool() but with a clearer name for our use case
 func boolValue(p *bool) bool {
-	if p == nil {
-		return false
-	}
-	return *p
+	return aws.ToBool(p)
 }
 
 // Specialized reverse conversion utilities for nested pointer access
