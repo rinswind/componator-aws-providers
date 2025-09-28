@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -118,4 +119,179 @@ func NewRdsOperationsConfig() base.ComponentHandlerConfig {
 	config.ErrorRequeue = 30 * time.Second       // Give more time for transient errors
 
 	return config
+}
+
+// Helper methods for RDS operations
+
+// successResult creates an OperationResult for successful operations
+func (r *RdsOperations) successResult() *base.OperationResult {
+	updatedStatus, _ := json.Marshal(r.status)
+	return &base.OperationResult{
+		UpdatedStatus: updatedStatus,
+		Success:       true,
+	}
+}
+
+// errorResult creates an OperationResult for failed operations with error details
+func (r *RdsOperations) errorResult(err error) *base.OperationResult {
+	updatedStatus, _ := json.Marshal(r.status)
+	return &base.OperationResult{
+		UpdatedStatus:  updatedStatus,
+		Success:        false,
+		OperationError: err,
+	}
+}
+
+// pendingResult creates an OperationResult for operations still in progress
+func (r *RdsOperations) pendingResult() *base.OperationResult {
+	updatedStatus, _ := json.Marshal(r.status)
+	return &base.OperationResult{
+		UpdatedStatus: updatedStatus,
+		Success:       false,
+	}
+}
+
+// checkInstanceExists checks if an RDS instance already exists
+func (r *RdsOperations) checkInstanceExists(ctx context.Context, instanceID string) (bool, error) {
+	input := &rds.DescribeDBInstancesInput{
+		DBInstanceIdentifier: aws.String(instanceID),
+	}
+
+	_, err := r.rdsClient.DescribeDBInstances(ctx, input)
+	if err != nil {
+		if r.isInstanceNotFoundError(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check instance existence: %w", err)
+	}
+
+	return true, nil
+}
+
+// buildCreateDBInstanceInput constructs the CreateDBInstanceInput from RDS configuration
+func (r *RdsOperations) buildCreateDBInstanceInput(config *RdsConfig, instanceID string) *rds.CreateDBInstanceInput {
+	input := &rds.CreateDBInstanceInput{
+		DBInstanceIdentifier: aws.String(instanceID),
+		DBInstanceClass:      aws.String(config.InstanceClass),
+		Engine:               aws.String(config.DatabaseEngine),
+		EngineVersion:        aws.String(config.EngineVersion),
+		AllocatedStorage:     aws.Int32(config.AllocatedStorage),
+		MasterUsername:       aws.String(config.MasterUsername),
+		MasterUserPassword:   aws.String(config.MasterPassword),
+		DBName:               aws.String(config.DatabaseName),
+	}
+
+	// Optional storage configuration
+	if config.StorageType != "" {
+		input.StorageType = aws.String(config.StorageType)
+	}
+	if config.StorageEncrypted != nil {
+		input.StorageEncrypted = aws.Bool(*config.StorageEncrypted)
+	}
+	if config.KmsKeyId != "" {
+		input.KmsKeyId = aws.String(config.KmsKeyId)
+	}
+
+	// Optional networking configuration
+	if len(config.VpcSecurityGroupIds) > 0 {
+		input.VpcSecurityGroupIds = config.VpcSecurityGroupIds
+	}
+	if config.SubnetGroupName != "" {
+		input.DBSubnetGroupName = aws.String(config.SubnetGroupName)
+	}
+	if config.PubliclyAccessible != nil {
+		input.PubliclyAccessible = aws.Bool(*config.PubliclyAccessible)
+	}
+	if config.Port != nil {
+		input.Port = aws.Int32(*config.Port)
+	}
+
+	// Optional backup configuration
+	if config.BackupRetentionPeriod != nil {
+		input.BackupRetentionPeriod = aws.Int32(*config.BackupRetentionPeriod)
+	}
+	if config.PreferredBackupWindow != "" {
+		input.PreferredBackupWindow = aws.String(config.PreferredBackupWindow)
+	}
+
+	// Optional maintenance configuration
+	if config.PreferredMaintenanceWindow != "" {
+		input.PreferredMaintenanceWindow = aws.String(config.PreferredMaintenanceWindow)
+	}
+	if config.AutoMinorVersionUpgrade != nil {
+		input.AutoMinorVersionUpgrade = aws.Bool(*config.AutoMinorVersionUpgrade)
+	}
+
+	// Optional performance configuration
+	if config.MultiAZ != nil {
+		input.MultiAZ = aws.Bool(*config.MultiAZ)
+	}
+	if config.PerformanceInsightsEnabled != nil {
+		input.EnablePerformanceInsights = aws.Bool(*config.PerformanceInsightsEnabled)
+	}
+	if config.MonitoringInterval != nil && *config.MonitoringInterval > 0 {
+		input.MonitoringInterval = aws.Int32(*config.MonitoringInterval)
+	}
+
+	// Deletion protection
+	if config.DeletionProtection != nil {
+		input.DeletionProtection = aws.Bool(*config.DeletionProtection)
+	}
+
+	return input
+}
+
+// handleOperationError creates a standardized error response for RDS operations
+func (r *RdsOperations) handleOperationError(ctx context.Context, message string, err error) (*base.OperationResult, error) {
+	log := logf.FromContext(ctx)
+
+	// Update status with error information
+	r.status.LastError = err.Error()
+	r.status.LastErrorTime = time.Now().Format(time.RFC3339)
+
+	fullError := fmt.Errorf("%s: %w", message, err)
+	log.Error(fullError, "RDS operation failed")
+
+	// Check if this is a transient error that should be retried
+	if r.isTransientError(err) {
+		return r.pendingResult(), fullError // Return error to trigger retry
+	}
+
+	// Permanent error - don't retry
+	return r.errorResult(fullError), nil
+}
+
+// isInstanceNotFoundError checks if the error indicates the RDS instance was not found
+func (r *RdsOperations) isInstanceNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "DBInstanceNotFound") ||
+		strings.Contains(err.Error(), "does not exist")
+}
+
+// isTransientError determines if an error is transient and should be retried
+func (r *RdsOperations) isTransientError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errorStr := err.Error()
+	transientErrors := []string{
+		"RequestTimeout",
+		"ThrottlingException",
+		"ServiceUnavailable",
+		"InternalError",
+		"network",
+		"timeout",
+		"connection",
+	}
+
+	for _, transientErr := range transientErrors {
+		if strings.Contains(strings.ToLower(errorStr), strings.ToLower(transientErr)) {
+			return true
+		}
+	}
+
+	return false
 }

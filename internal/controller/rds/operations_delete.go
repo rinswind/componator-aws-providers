@@ -18,9 +18,11 @@ package rds
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/rinswind/deployment-operator/handler/base"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -33,43 +35,90 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 	// Use pre-parsed configuration from factory (no repeated parsing)
 	config := r.config
 
-	log.Info("Starting RDS deletion using pre-parsed configuration",
-		"databaseName", config.DatabaseName)
+	instanceID := r.status.InstanceID
+	if instanceID == "" {
+		instanceID = fmt.Sprintf("%s-db", config.DatabaseName)
+	}
 
-	// TODO: Implement RDS deletion logic here
-	// This should include:
-	// 1. Use pre-parsed configuration (already available in r.config)
-	// 2. Create AWS RDS client with appropriate credentials and region
-	// 3. Initiate RDS instance deletion via AWS SDK
-	// 4. Handle deletion options (final snapshot, skip final snapshot, etc.)
-	// 5. Store deletion metadata for status checking
-	//
-	// Example implementation structure:
-	// - config, err := parseRdsConfig(component.Spec.Config)
-	// - if err != nil {
-	//     log.Error(err, "Failed to parse RDS config during deletion, continuing anyway")
-	//     return base.OperationResult{Success: true}, nil // Don't block deletion on config parsing errors
-	//   }
-	// - rdsClient := r.createRDSClient(config.Region)
-	// - _, err = rdsClient.DeleteDBInstance(ctx, &rds.DeleteDBInstanceInput{
-	//     DBInstanceIdentifier: config.InstanceIdentifier,
-	//     SkipFinalSnapshot:    config.SkipFinalSnapshot,
-	//     FinalDBSnapshotIdentifier: config.FinalSnapshotIdentifier,
-	//   })
-	// - if err != nil && !isInstanceNotFoundError(err) {
-	//     log.Error(err, "Failed to delete RDS instance, continuing anyway")
-	//   }
+	log.Info("Starting RDS deletion using pre-parsed configuration",
+		"databaseName", config.DatabaseName,
+		"instanceId", instanceID)
+
+	// Check if instance exists
+	exists, err := r.checkInstanceExists(ctx, instanceID)
+	if err != nil {
+		// Log error but don't block deletion - instance might already be gone
+		log.Error(err, "Failed to check instance existence during deletion, continuing anyway")
+	}
+
+	if !exists {
+		log.Info("RDS instance already deleted or doesn't exist",
+			"instanceId", instanceID)
+
+		return r.successResult(), nil
+	}
+
+	// Build delete input
+	deleteInput := &rds.DeleteDBInstanceInput{
+		DBInstanceIdentifier: aws.String(instanceID),
+	}
+
+	// Configure final snapshot behavior
+	if config.SkipFinalSnapshot != nil && *config.SkipFinalSnapshot {
+		deleteInput.SkipFinalSnapshot = aws.Bool(true)
+	} else {
+		deleteInput.SkipFinalSnapshot = aws.Bool(false)
+
+		// Generate final snapshot identifier if not provided
+		finalSnapshotID := config.FinalDBSnapshotIdentifier
+		if finalSnapshotID == "" {
+			finalSnapshotID = fmt.Sprintf("%s-final-snapshot-%d", instanceID, time.Now().Unix())
+		}
+		deleteInput.FinalDBSnapshotIdentifier = aws.String(finalSnapshotID)
+	}
+
+	// Delete protection must be disabled before deletion
+	if config.DeletionProtection != nil && *config.DeletionProtection {
+		log.Info("Disabling deletion protection before deleting RDS instance",
+			"instanceId", instanceID)
+
+		modifyInput := &rds.ModifyDBInstanceInput{
+			DBInstanceIdentifier: aws.String(instanceID),
+			DeletionProtection:   aws.Bool(false),
+			ApplyImmediately:     aws.Bool(true),
+		}
+
+		_, err := r.rdsClient.ModifyDBInstance(ctx, modifyInput)
+		if err != nil {
+			log.Error(err, "Failed to disable deletion protection, attempting deletion anyway")
+		} else {
+			log.Info("Deletion protection disabled successfully")
+		}
+	}
+
+	// Initiate RDS instance deletion
+	log.Info("Deleting RDS instance",
+		"instanceId", instanceID,
+		"skipFinalSnapshot", aws.ToBool(deleteInput.SkipFinalSnapshot))
+
+	_, err = r.rdsClient.DeleteDBInstance(ctx, deleteInput)
+	if err != nil {
+		if r.isInstanceNotFoundError(err) {
+			log.Info("RDS instance already deleted",
+				"instanceId", instanceID)
+		} else {
+			log.Error(err, "Failed to delete RDS instance, continuing anyway to avoid blocking cleanup")
+		}
+	} else {
+		log.Info("RDS instance deletion initiated successfully",
+			"instanceId", instanceID)
+	}
 
 	// Update status to track deletion initiation
-	updatedStatus, _ := json.Marshal(r.status)
+	r.status.LastModifiedTime = time.Now().Format(time.RFC3339)
+	r.status.InstanceStatus = "deleting"
 
-	// For now, log a placeholder message to indicate this needs implementation
-	log.Info("RDS deletion not yet implemented - placeholder for AWS RDS SDK integration")
-
-	return &base.OperationResult{
-		UpdatedStatus: updatedStatus,
-		Success:       true,
-	}, nil
+	return r.successResult(), nil // Don't block on deletion errors - best effort cleanup
 }
 
 // CheckDeletion verifies the current deletion status using pre-parsed configuration
@@ -80,35 +129,105 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration
 	// Use pre-parsed configuration from factory (no repeated parsing)
 	config := r.config
 
+	instanceID := r.status.InstanceID
+	if instanceID == "" {
+		instanceID = fmt.Sprintf("%s-db", config.DatabaseName)
+	}
+
 	log.Info("Checking RDS deletion status using pre-parsed configuration",
 		"databaseName", config.DatabaseName,
+		"instanceId", instanceID,
 		"elapsed", elapsed)
 
-	// TODO: Implement RDS deletion status checking here
-	// This should include:
-	// 1. Use pre-parsed configuration (already available in r.config)
-	// 2. Query AWS RDS API for instance existence
-	// 3. Handle "instance not found" as successful deletion
-	// 4. Distinguish between transient errors (network issues) and permanent failures
-	// 5. Handle timeout scenarios for long-running deletions (snapshots can take time)
-	//
-	// Example implementation structure:
-	// - rdsClient := r.createRDSClient(config.Region)
-	// - _, err := rdsClient.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
-	//     DBInstanceIdentifier: config.InstanceIdentifier,
-	//   })
-	// - if isInstanceNotFoundError(err) { return base.OperationResult{Success: true}, nil }
-	// - if isTransientError(err) { return base.OperationResult{}, err }
-	// - if err != nil { return base.OperationResult{OperationError: err}, nil }
-	// - return base.OperationResult{Success: false}, nil // Instance still exists
+	// Check timeout
+	deleteTimeout := 60 * time.Minute // Default timeout
+	if config.Timeouts != nil && config.Timeouts.Delete != nil {
+		deleteTimeout = config.Timeouts.Delete.Duration
+	}
 
-	updatedStatus, _ := json.Marshal(r.status)
+	if elapsed > deleteTimeout {
+		log.Info("RDS deletion timeout exceeded, assuming deletion completed",
+			"instanceId", instanceID,
+			"elapsed", elapsed,
+			"timeout", deleteTimeout)
 
-	// For now, assume deletion is complete to avoid blocking
-	log.Info("RDS deletion status checking not yet implemented - assuming deletion complete")
+		return r.successResult(), nil // Don't block cleanup on timeout
+	}
 
-	return &base.OperationResult{
-		UpdatedStatus: updatedStatus,
-		Success:       true,
-	}, nil
+	// Query RDS instance existence
+	input := &rds.DescribeDBInstancesInput{
+		DBInstanceIdentifier: aws.String(instanceID),
+	}
+
+	result, err := r.rdsClient.DescribeDBInstances(ctx, input)
+	if err != nil {
+		if r.isInstanceNotFoundError(err) {
+			log.Info("RDS instance successfully deleted",
+				"instanceId", instanceID,
+				"elapsed", elapsed)
+
+			return r.successResult(), nil
+		}
+
+		// For transient errors, continue checking
+		if r.isTransientError(err) {
+			log.Info("Transient error checking RDS deletion status, will retry",
+				"instanceId", instanceID,
+				"error", err.Error())
+
+			return r.pendingResult(), err // Return error to trigger retry
+		}
+
+		// For other errors, log but don't block deletion
+		log.Error(err, "Error checking RDS deletion status, assuming deletion completed")
+		return r.successResult(), nil // Don't block cleanup on API errors
+	}
+
+	if len(result.DBInstances) == 0 {
+		log.Info("RDS instance successfully deleted (no instances returned)",
+			"instanceId", instanceID,
+			"elapsed", elapsed)
+
+		return r.successResult(), nil
+	}
+
+	instance := result.DBInstances[0]
+	status := aws.ToString(instance.DBInstanceStatus)
+
+	// Update status with current instance information
+	r.status.InstanceStatus = status
+	r.status.LastModifiedTime = time.Now().Format(time.RFC3339)
+
+	log.Info("RDS instance still exists, checking deletion status",
+		"instanceId", instanceID,
+		"status", status,
+		"elapsed", elapsed)
+
+	switch status {
+	case "deleting":
+		// Still deleting - continue waiting
+		log.Info("RDS instance deletion in progress",
+			"instanceId", instanceID,
+			"elapsed", elapsed)
+
+		return r.pendingResult(), nil
+
+	case "failed":
+		// Deletion failed, but don't block cleanup
+		log.Error(fmt.Errorf("RDS instance deletion failed"),
+			"RDS instance deletion failed, but allowing cleanup to continue",
+			"instanceId", instanceID)
+
+		return r.successResult(), nil
+
+	default:
+		// Instance still exists in some other state
+		// Log but continue waiting - instance might still be deleting
+		log.Info("RDS instance in unexpected state during deletion, continuing to wait",
+			"instanceId", instanceID,
+			"status", status,
+			"elapsed", elapsed)
+
+		return r.pendingResult(), nil
+	}
 }
