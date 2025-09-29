@@ -138,7 +138,7 @@ func resolveRdsConfig(ctx context.Context, rawConfig json.RawMessage) (*RdsConfi
 
 	// Validate required fields
 	if config.InstanceID == "" {
-		return nil, fmt.Errorf("instanceIdentifier is required and cannot be empty")
+		return nil, fmt.Errorf("InstanceID is required and cannot be empty")
 	}
 
 	// Apply defaults for optional fields

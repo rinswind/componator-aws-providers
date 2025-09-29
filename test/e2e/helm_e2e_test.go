@@ -40,18 +40,18 @@ import (
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 
-var (
-	ctx       context.Context
-	cancel    context.CancelFunc
-	k8sClient client.Client
-	mgr       manager.Manager
-)
-
 var _ = Describe("Helm Handler E2E", Ordered, func() {
+	var (
+		helmCtx       context.Context
+		helmCancel    context.CancelFunc
+		helmK8sClient client.Client
+		helmMgr       manager.Manager
+	)
+
 	// Run the Helm handler controller locally against a real Kubernetes cluster
 	// This gives us the benefits of integration testing but against real Kubernetes
 	BeforeAll(func() {
-		ctx, cancel = context.WithCancel(context.Background())
+		helmCtx, helmCancel = context.WithCancel(context.Background())
 
 		By("setting up Kubernetes client using current kubeconfig")
 		kubeconfig := filepath.Join(os.Getenv("HOME"), ".kube", "config")
@@ -63,11 +63,11 @@ var _ = Describe("Helm Handler E2E", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred(), "Failed to add deployment API to scheme")
 
 		// Create Kubernetes client
-		k8sClient, err = client.New(config, client.Options{Scheme: scheme.Scheme})
+		helmK8sClient, err = client.New(config, client.Options{Scheme: scheme.Scheme})
 		Expect(err).NotTo(HaveOccurred(), "Failed to create Kubernetes client")
 
-		By("setting up controller manager")
-		mgr, err = manager.New(config, manager.Options{
+		By("setting up controller manager for Helm handler")
+		helmMgr, err = manager.New(config, manager.Options{
 			Scheme: scheme.Scheme,
 			Logger: zap.New(zap.UseDevMode(true)),
 		})
@@ -75,34 +75,34 @@ var _ = Describe("Helm Handler E2E", Ordered, func() {
 
 		By("registering Helm controller")
 		err = (&helmcontroller.ComponentReconciler{
-			Client: mgr.GetClient(),
-			Scheme: mgr.GetScheme(),
-		}).SetupWithManager(mgr)
+			Client: helmMgr.GetClient(),
+			Scheme: helmMgr.GetScheme(),
+		}).SetupWithManager(helmMgr)
 		Expect(err).NotTo(HaveOccurred(), "Failed to setup Helm controller")
 
-		By("starting controller manager")
+		By("starting Helm controller manager")
 		go func() {
 			defer GinkgoRecover()
-			err := mgr.Start(ctx)
+			err := helmMgr.Start(helmCtx)
 			Expect(err).NotTo(HaveOccurred(), "Failed to start controller manager")
 		}()
 
 		// Wait for manager to be ready
 		Eventually(func() bool {
-			return mgr.GetCache().WaitForCacheSync(ctx)
+			return helmMgr.GetCache().WaitForCacheSync(helmCtx)
 		}, 30*time.Second, time.Second).Should(BeTrue(), "Controller manager cache should sync")
 	})
 
 	// Clean up controller manager
 	AfterAll(func() {
-		By("stopping controller manager")
-		cancel()
+		By("stopping Helm controller manager")
+		helmCancel()
 
 		By("cleaning up any test components")
 		componentList := &deploymentsv1alpha1.ComponentList{}
-		if err := k8sClient.List(ctx, componentList, client.InNamespace("default")); err == nil {
+		if err := helmK8sClient.List(helmCtx, componentList, client.InNamespace("default")); err == nil {
 			for i := range componentList.Items {
-				_ = k8sClient.Delete(ctx, &componentList.Items[i])
+				_ = helmK8sClient.Delete(helmCtx, &componentList.Items[i])
 			}
 		}
 	})
@@ -112,10 +112,10 @@ var _ = Describe("Helm Handler E2E", Ordered, func() {
 		if CurrentSpecReport().Failed() {
 			By("cleaning up failed test components")
 			componentList := &deploymentsv1alpha1.ComponentList{}
-			if err := k8sClient.List(ctx, componentList, client.InNamespace("default")); err == nil {
+			if err := helmK8sClient.List(helmCtx, componentList, client.InNamespace("default")); err == nil {
 				for i := range componentList.Items {
 					if componentList.Items[i].Name == "test-nginx" {
-						_ = k8sClient.Delete(ctx, &componentList.Items[i])
+						_ = helmK8sClient.Delete(helmCtx, &componentList.Items[i])
 					}
 				}
 			}
@@ -134,10 +134,10 @@ var _ = Describe("Helm Handler E2E", Ordered, func() {
 					Namespace: "default",
 				},
 			}
-			_ = k8sClient.Delete(ctx, component)
+			_ = helmK8sClient.Delete(helmCtx, component)
 			// Wait for deletion to complete if it existed
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{
+				return helmK8sClient.Get(helmCtx, types.NamespacedName{
 					Name:      "test-nginx",
 					Namespace: "default",
 				}, component)
@@ -173,12 +173,12 @@ var _ = Describe("Helm Handler E2E", Ordered, func() {
 				},
 			}
 
-			Expect(k8sClient.Create(ctx, nginxComponent)).To(Succeed(), "Failed to create nginx Component")
+			Expect(helmK8sClient.Create(helmCtx, nginxComponent)).To(Succeed(), "Failed to create nginx Component")
 
 			By("waiting for Component to be claimed by Helm handler")
 			Eventually(func(g Gomega) {
 				var component deploymentsv1alpha1.Component
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := helmK8sClient.Get(helmCtx, types.NamespacedName{
 					Name:      "test-nginx",
 					Namespace: "default",
 				}, &component)
@@ -189,7 +189,7 @@ var _ = Describe("Helm Handler E2E", Ordered, func() {
 			By("waiting for Component to reach Ready status")
 			Eventually(func(g Gomega) {
 				var component deploymentsv1alpha1.Component
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := helmK8sClient.Get(helmCtx, types.NamespacedName{
 					Name:      "test-nginx",
 					Namespace: "default",
 				}, &component)
@@ -206,18 +206,18 @@ var _ = Describe("Helm Handler E2E", Ordered, func() {
 						Kind:       "PodList",
 					},
 				}
-				err := k8sClient.List(ctx, podList, client.InNamespace("default"), client.MatchingLabels{"app.kubernetes.io/name": "nginx"})
+				err := helmK8sClient.List(helmCtx, podList, client.InNamespace("default"), client.MatchingLabels{"app.kubernetes.io/name": "nginx"})
 				g.Expect(err).NotTo(HaveOccurred(), "Should be able to list nginx pods")
 				g.Expect(podList.Items).To(HaveLen(1), "Should have exactly 1 nginx pod from Helm chart")
 			}, 2*time.Minute, 5*time.Second).Should(Succeed())
 
 			By("cleaning up the test component")
-			Expect(k8sClient.Delete(ctx, nginxComponent)).To(Succeed(), "Failed to delete test component")
+			Expect(helmK8sClient.Delete(helmCtx, nginxComponent)).To(Succeed(), "Failed to delete test component")
 
 			By("waiting for Component deletion to complete")
 			Eventually(func(g Gomega) {
 				var component deploymentsv1alpha1.Component
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := helmK8sClient.Get(helmCtx, types.NamespacedName{
 					Name:      "test-nginx",
 					Namespace: "default",
 				}, &component)
@@ -232,7 +232,7 @@ var _ = Describe("Helm Handler E2E", Ordered, func() {
 						Kind:       "PodList",
 					},
 				}
-				err := k8sClient.List(ctx, podList, client.InNamespace("default"), client.MatchingLabels{"app.kubernetes.io/name": "nginx"})
+				err := helmK8sClient.List(helmCtx, podList, client.InNamespace("default"), client.MatchingLabels{"app.kubernetes.io/name": "nginx"})
 				if err == nil {
 					g.Expect(podList.Items).To(HaveLen(0), "nginx pods should be cleaned up")
 				}

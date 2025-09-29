@@ -11,9 +11,10 @@ spec:
   name: mysql-db
   handler: rds
   config:
+    instanceID: rds-handler-test
     # Core Database Configuration
     databaseEngine: mysql
-    engineVersion: "8.0.35"
+    engineVersion: "8.0.42"
     instanceClass: db.t3.medium
     databaseName: webapp
     
@@ -23,18 +24,19 @@ spec:
     # Storage Configuration (minimal example with defaults)
     allocatedStorage: 50
     # storageType: gp2 (default)
-    # storageEncrypted: true (default)
+    storageEncrypted: false
     
     # Database Credentials
     masterUsername: admin
-    masterPassword: "MySecurePassword456!"
+    masterPassword: "control-the-db456!"
     
     # Networking Configuration (minimal)
     vpcSecurityGroupIds:
-      - sg-abcdef0123456789a
-    subnetGroupName: default-db-subnet-group
+      - sg-0218389200791d4a2
+    subnetGroupName: rds-handler-test
     # publiclyAccessible: false (default)
-    # port: 3306 (default for MySQL)
+    port: 3306
     
-    # Use defaults for backup, maintenance, performance, and deletion settings
-    # This demonstrates minimal required configuration
+    skipFinalSnapshot:  true
+    deletionProtection: false
+    multiAZ:            false

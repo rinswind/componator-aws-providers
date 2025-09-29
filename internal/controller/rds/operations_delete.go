@@ -30,19 +30,15 @@ import (
 // Implements ComponentOperations.Delete interface method.
 func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, error) {
 	config := r.config
-
 	instanceID := r.config.InstanceID
 
-	log := logf.FromContext(ctx).WithValues("instanceId", r.config.InstanceID)
-
-	log.Info("Starting RDS deletion using pre-parsed configuration", "databaseName", config.DatabaseName)
+	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)
 
 	// Build delete input
 	deleteInput := &rds.DeleteDBInstanceInput{
 		DBInstanceIdentifier: stringPtr(instanceID),
 	}
 
-	// Configure final snapshot behavior
 	if boolValue(config.SkipFinalSnapshot) {
 		deleteInput.SkipFinalSnapshot = boolPtr(true)
 	} else {
@@ -50,7 +46,6 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 		deleteInput.FinalDBSnapshotIdentifier = stringPtr(config.FinalDBSnapshotIdentifier)
 	}
 
-	// Initiate RDS instance deletion
 	log.Info("Deleting RDS instance", "skipFinalSnapshot", boolValue(deleteInput.SkipFinalSnapshot))
 
 	result, err := r.rdsClient.DeleteDBInstance(ctx, deleteInput)
@@ -75,12 +70,11 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 // Implements ComponentOperations.CheckDeletion interface method.
 func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration) (*base.OperationResult, error) {
 	config := r.config
-
 	instanceID := r.config.InstanceID
 
 	log := logf.FromContext(ctx).WithValues("instanceId", instanceID, "elapsed", elapsed)
 
-	log.Info("Checking RDS deletion status using pre-parsed configuration", "databaseName", config.DatabaseName)
+	log.Info("Checking RDS deleted")
 
 	// Check timeout
 	if elapsed > config.Timeouts.Delete.Duration {
@@ -119,7 +113,6 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration
 		log.Error(
 			fmt.Errorf("RDS instance deletion failed"),
 			"RDS instance deletion failed, but allowing cleanup to continue")
-
 		return r.successResult()
 
 	default:
