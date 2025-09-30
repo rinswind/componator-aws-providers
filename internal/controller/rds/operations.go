@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -213,6 +214,22 @@ func isInstanceNotFoundError(err error) bool {
 	// Check for specific AWS RDS error type
 	var notFoundErr *types.DBInstanceNotFoundFault
 	return errors.As(err, &notFoundErr)
+}
+
+// isInstanceAlreadyBeingDeletedError checks if the error indicates the RDS instance is already being deleted
+func isInstanceAlreadyBeingDeletedError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for InvalidDBInstanceState error when instance is already being deleted
+	var invalidStateErr *types.InvalidDBInstanceStateFault
+	if errors.As(err, &invalidStateErr) {
+		// Check if the error message indicates the instance is already being deleted
+		return strings.Contains(strings.ToLower(invalidStateErr.ErrorMessage()), "already being deleted")
+	}
+
+	return false
 }
 
 // isTransientError determines if an error is transient and should be retried

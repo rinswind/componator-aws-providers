@@ -29,20 +29,11 @@ import (
 // Deploy handles all RDS-specific deployment operations using pre-parsed configuration
 // Implements ComponentOperations.Deploy interface method.
 func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, error) {
-	log := logf.FromContext(ctx).WithValues("instanceId", r.config.InstanceID)
-	log.Info("Starting RDS deployment")
-
-	return r.createInstance(ctx)
-}
-
-// Upgrade handles RDS-specific upgrade operations using pre-parsed configuration
-// Implements ComponentOperations.Upgrade interface method.
-func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, error) {
 	instanceID := r.config.InstanceID
 
 	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)
 
-	log.Info("Starting RDS upgrade - checking if instance exists")
+	log.Info("Starting RDS deployment")
 
 	// Check if the instance exists
 	instance, err := r.getInstanceData(ctx, instanceID)
@@ -59,6 +50,14 @@ func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, err
 	}
 }
 
+// Upgrade handles RDS-specific upgrade operations using pre-parsed configuration
+// Implements ComponentOperations.Upgrade interface method.
+//
+// TODO: Should remove this
+func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, error) {
+	return r.Deploy(ctx) // Upgrade is same as deploy for RDS
+}
+
 // CheckDeployment verifies the current deployment status using pre-parsed configuration
 // Implements ComponentOperations.CheckDeployment interface method.
 func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (*base.OperationResult, error) {
@@ -69,7 +68,7 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Durati
 
 	log := logf.FromContext(ctx).WithValues("instanceId", instanceID, "elapsed", elapsed)
 
-	log.Info("Checking RDS deployment status using pre-parsed configuration", "databaseName", config.DatabaseName)
+	log.Info("Checking RDS deployment status")
 
 	// Check timeout
 	if elapsed > config.Timeouts.Create.Duration {

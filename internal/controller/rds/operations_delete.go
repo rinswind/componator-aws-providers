@@ -55,6 +55,12 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 			return r.successResult()
 		}
 
+		// Check if instance is already being deleted
+		if isInstanceAlreadyBeingDeletedError(err) {
+			log.Info("RDS instance is already being deleted, proceeding to monitor deletion")
+			return r.successResult()
+		}
+
 		return r.errorResult(ctx, "delete RDS instance call failed", err)
 	}
 

@@ -17,6 +17,8 @@ limitations under the License.
 package rds
 
 import (
+	"time"
+
 	"github.com/rinswind/deployment-operator/handler/base"
 )
 
@@ -36,9 +38,11 @@ type ComponentReconciler struct {
 // NewComponentReconciler creates a new RDS Component controller with the generic base
 func NewComponentReconciler() *ComponentReconciler {
 	factory := NewRdsOperationsFactory()
-	config := base.DefaultComponentHandlerConfig("rds", "rds-component")
 
-	return &ComponentReconciler{
-		ComponentReconciler: base.NewComponentReconciler(factory, config),
-	}
+	config := base.DefaultComponentHandlerConfig("rds", "rds-component")
+	config.ErrorRequeue = 15 * time.Second
+	config.DefaultRequeue = 30 * time.Second
+	config.StatusCheckRequeue = 30 * time.Second
+
+	return &ComponentReconciler{base.NewComponentReconciler(factory, config)}
 }
