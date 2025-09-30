@@ -19,7 +19,6 @@ package rds
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/rinswind/deployment-operator/handler/base"
@@ -74,20 +73,12 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 
 // CheckDeletion verifies the current deletion status using pre-parsed configuration
 // Implements ComponentOperations.CheckDeletion interface method.
-func (r *RdsOperations) CheckDeletion(ctx context.Context, elapsed time.Duration) (*base.OperationResult, error) {
-	config := r.config
+func (r *RdsOperations) CheckDeletion(ctx context.Context) (*base.OperationResult, error) {
 	instanceID := r.config.InstanceID
 
-	log := logf.FromContext(ctx).WithValues("instanceId", instanceID, "elapsed", elapsed)
+	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)
 
 	log.Info("Checking RDS deleted")
-
-	// Check timeout
-	if elapsed > config.Timeouts.Delete.Duration {
-		err := fmt.Errorf("RDS deletion timeout exceeded: %v", config.Timeouts.Delete.Duration)
-
-		return r.errorResult(ctx, "failed to describe RDS instance during deletion check", err)
-	}
 
 	// Query RDS instance existence
 	instance, err := r.getInstanceData(ctx, instanceID)

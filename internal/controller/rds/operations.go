@@ -117,7 +117,7 @@ func NewRdsOperationsFactory() *RdsOperationsFactory {
 
 // NewRdsOperationsConfig creates a ComponentHandlerConfig for RDS with appropriate settings
 func NewRdsOperationsConfig() base.ComponentHandlerConfig {
-	config := base.DefaultComponentHandlerConfig(HandlerName, ControllerName)
+	config := base.DefaultComponentHandlerConfig(HandlerName)
 
 	// RDS operations typically take longer than Helm operations
 	// Adjust timeouts to account for database creation/modification times

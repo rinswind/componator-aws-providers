@@ -84,19 +84,8 @@ func (h *HelmOperations) Delete(ctx context.Context) (*base.OperationResult, err
 
 // checkDeletion verifies if a Helm release and all its resources have been deleted using pre-parsed configuration
 // Returns OperationResult with Success indicating deletion completion status
-func (h *HelmOperations) CheckDeletion(ctx context.Context, elapsed time.Duration) (*base.OperationResult, error) {
+func (h *HelmOperations) CheckDeletion(ctx context.Context) (*base.OperationResult, error) {
 	log := logf.FromContext(ctx)
-
-	// Check deletion timeout first
-	deletionTimeout := h.config.Timeouts.Deletion.Duration
-	if elapsed >= deletionTimeout {
-		log.Error(nil, "deletion timed out",
-			"elapsed", elapsed,
-			"timeout", deletionTimeout,
-			"chart", h.config.Chart.Name)
-
-		return h.errorResult(fmt.Errorf("Deletion timed out after %v (timeout: %v)", elapsed.Truncate(time.Second), deletionTimeout)), nil
-	}
 
 	// Try to get the current release
 	rel, err := h.getHelmRelease(h.status.ReleaseName)

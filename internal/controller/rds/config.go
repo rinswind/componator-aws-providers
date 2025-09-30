@@ -24,7 +24,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -77,21 +76,6 @@ type RdsConfig struct {
 	DeletionProtection        *bool  `json:"deletionProtection,omitempty"`
 	SkipFinalSnapshot         *bool  `json:"skipFinalSnapshot,omitempty"`
 	FinalDBSnapshotIdentifier string `json:"finalDBSnapshotIdentifier,omitempty"`
-
-	// Timeouts for operations
-	Timeouts *RdsTimeouts `json:"timeouts,omitempty"`
-}
-
-// RdsTimeouts represents timeout configuration for RDS operations
-type RdsTimeouts struct {
-	// Create timeout - how long to wait for RDS instance creation
-	Create *Duration `json:"create,omitempty"`
-
-	// Update timeout - how long to wait for RDS instance modifications
-	Update *Duration `json:"update,omitempty"`
-
-	// Delete timeout - how long to wait for RDS instance deletion
-	Delete *Duration `json:"delete,omitempty"`
 }
 
 // RdsStatus contains handler-specific status data for RDS deployments.
@@ -105,27 +89,6 @@ type RdsStatus struct {
 	Endpoint         string `json:"endpoint,omitempty"`
 	Port             int32  `json:"port,omitempty"`
 	AvailabilityZone string `json:"availabilityZone,omitempty"`
-}
-
-// Duration wraps time.Duration with JSON marshaling support
-type Duration struct {
-	time.Duration
-}
-
-// UnmarshalJSON implements json.Unmarshaler interface for Duration
-func (d *Duration) UnmarshalJSON(data []byte) error {
-	var s string
-	if err := json.Unmarshal(data, &s); err != nil {
-		return err
-	}
-
-	dur, err := time.ParseDuration(s)
-	if err != nil {
-		return err
-	}
-
-	d.Duration = dur
-	return nil
 }
 
 // resolveRdsConfig unmarshals Component.Spec.Config into RdsConfig struct
@@ -222,20 +185,6 @@ func applyRdsConfigDefaults(config *RdsConfig) error {
 	if config.SkipFinalSnapshot == nil {
 		defaultSkipSnapshot := false // Take final snapshot by default
 		config.SkipFinalSnapshot = &defaultSkipSnapshot
-	}
-
-	// Timeout defaults
-	if config.Timeouts == nil {
-		config.Timeouts = &RdsTimeouts{}
-	}
-	if config.Timeouts.Create == nil {
-		config.Timeouts.Create = &Duration{Duration: 15 * time.Minute} // RDS creation can take 20-40 minutes
-	}
-	if config.Timeouts.Update == nil {
-		config.Timeouts.Update = &Duration{Duration: 25 * time.Minute} // Updates can take longer
-	}
-	if config.Timeouts.Delete == nil {
-		config.Timeouts.Delete = &Duration{Duration: 25 * time.Minute} // Deletion with final snapshot
 	}
 
 	return nil

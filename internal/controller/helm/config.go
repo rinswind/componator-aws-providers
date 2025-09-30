@@ -24,7 +24,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/go-playground/validator/v10"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -55,10 +54,6 @@ type HelmConfig struct {
 	// Values contains key-value pairs for chart values override
 	// +optional
 	Values map[string]any `json:"values,omitempty"`
-
-	// Timeouts contains timeout configuration for deployment and deletion operations
-	// +optional
-	Timeouts *HelmTimeouts `json:"timeouts,omitempty"`
 }
 
 // HelmRepository represents Helm chart repository configuration
@@ -87,19 +82,6 @@ type HelmChart struct {
 	Version string `json:"version" validate:"required,min=1"`
 }
 
-// HelmTimeouts represents timeout configuration for Helm operations
-type HelmTimeouts struct {
-	// Deployment timeout - how long to wait for Helm release to become ready
-	// Transitions to Failed when exceeded
-	// +optional
-	Deployment *Duration `json:"deployment,omitempty"`
-
-	// Deletion timeout - informational threshold for deletion visibility
-	// Updates status message only, never blocks deletion
-	// +optional
-	Deletion *Duration `json:"deletion,omitempty"`
-}
-
 // HelmStatus contains handler-specific status data for Helm deployments.
 // This data is persisted across reconciliation loops in Component.Status.HandlerStatus.
 // After initial deployment, operations use the persisted values rather than spec values
@@ -120,27 +102,6 @@ type HelmStatus struct {
 	ReleaseName string `json:"releaseName,omitempty"`
 }
 
-// Duration wraps time.Duration with JSON marshaling support
-type Duration struct {
-	time.Duration
-}
-
-// UnmarshalJSON implements json.Unmarshaler interface for Duration
-func (d *Duration) UnmarshalJSON(data []byte) error {
-	var s string
-	if err := json.Unmarshal(data, &s); err != nil {
-		return err
-	}
-
-	dur, err := time.ParseDuration(s)
-	if err != nil {
-		return err
-	}
-
-	d.Duration = dur
-	return nil
-}
-
 // resolveHelmConfig unmarshals Component.Spec.Config into HelmConfig struct
 // and resolves the target namespace (fills in from Component.Namespace if not specified)
 func resolveHelmConfig(ctx context.Context, rawConfig json.RawMessage) (*HelmConfig, error) {
@@ -153,20 +114,6 @@ func resolveHelmConfig(ctx context.Context, rawConfig json.RawMessage) (*HelmCon
 	validate := validator.New()
 	if err := validate.Struct(&config); err != nil {
 		return nil, fmt.Errorf("helm config validation failed: %w", err)
-	}
-
-	// Resolve timeouts
-	if config.Timeouts == nil {
-		config.Timeouts = &HelmTimeouts{}
-	}
-
-	// Set defaults if not specified
-	// TODO: make the defaults configurable
-	if config.Timeouts.Deployment == nil {
-		config.Timeouts.Deployment = &Duration{Duration: 5 * time.Minute}
-	}
-	if config.Timeouts.Deletion == nil {
-		config.Timeouts.Deletion = &Duration{Duration: 5 * time.Minute}
 	}
 
 	// Set sensible default for namespace management

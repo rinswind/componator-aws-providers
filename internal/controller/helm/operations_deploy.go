@@ -144,22 +144,7 @@ func (h *HelmOperations) upgrade(ctx context.Context, chart *chart.Chart) (*base
 
 // checkReleaseDeployed verifies if a Helm release and all its resources are ready using pre-parsed configuration
 // Returns OperationResult with Success indicating readiness status
-func (h *HelmOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (*base.OperationResult, error) {
-	log := logf.FromContext(ctx)
-
-	// Check deployment timeout first
-	deploymentTimeout := h.config.Timeouts.Deployment.Duration
-	if elapsed >= deploymentTimeout {
-		log.Error(nil, "deployment timed out",
-			"elapsed", elapsed,
-			"timeout", deploymentTimeout,
-			"chart", h.config.Chart.Name)
-
-		return h.errorResult(
-			fmt.Errorf("Deployment timed out after %v (timeout: %v)",
-				elapsed.Truncate(time.Second), deploymentTimeout)), nil
-	}
-
+func (h *HelmOperations) CheckDeployment(ctx context.Context) (*base.OperationResult, error) {
 	// Get the current release
 	rel, err := h.getHelmRelease(h.status.ReleaseName)
 	if err != nil {

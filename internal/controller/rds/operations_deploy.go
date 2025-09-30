@@ -19,7 +19,6 @@ package rds
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/rinswind/deployment-operator/handler/base"
@@ -52,21 +51,12 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, erro
 
 // CheckDeployment verifies the current deployment status using pre-parsed configuration
 // Implements ComponentOperations.CheckDeployment interface method.
-func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (*base.OperationResult, error) {
-	// Use pre-parsed configuration from factory (no repeated parsing)
-	config := r.config
-
+func (r *RdsOperations) CheckDeployment(ctx context.Context) (*base.OperationResult, error) {
 	instanceID := r.config.InstanceID
 
-	log := logf.FromContext(ctx).WithValues("instanceId", instanceID, "elapsed", elapsed)
+	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)
 
 	log.Info("Checking RDS deployment status")
-
-	// Check timeout
-	if elapsed > config.Timeouts.Create.Duration {
-		timeoutErr := fmt.Errorf("RDS instance creation timed out after %v", elapsed)
-		return r.errorResult(ctx, "deployment timeout exceeded", timeoutErr)
-	}
 
 	// Query RDS instance status
 	instance, err := r.getInstanceData(ctx, instanceID)
