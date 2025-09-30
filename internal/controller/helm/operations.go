@@ -79,14 +79,9 @@ type HelmOperations struct {
 }
 
 // getHelmRelease verifies if a Helm release exists and returns it
-func (h *HelmOperations) getHelmRelease(ctx context.Context) (*release.Release, error) {
-	if h.status.ReleaseName == "" {
-		return nil, fmt.Errorf("release name not set in status")
-	}
-
+func (h *HelmOperations) getHelmRelease(releaseName string) (*release.Release, error) {
 	statusAction := action.NewStatus(h.actionConfig)
 
-	releaseName := h.status.ReleaseName
 	rel, err := statusAction.Run(releaseName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get release status: %w", err)

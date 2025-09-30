@@ -23,6 +23,7 @@ import (
 
 	"github.com/rinswind/deployment-operator/handler/base"
 	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/kube"
 	"k8s.io/client-go/kubernetes"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -37,23 +38,7 @@ import (
 func (h *HelmOperations) Deploy(ctx context.Context) (*base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
-	// Use config for initial deployment - this is the only place we use config.ReleaseName
 	releaseName := h.config.ReleaseName
-	releaseNamespace := h.config.ReleaseNamespace
-
-	// Check if release already exists
-	getAction := action.NewGet(h.actionConfig)
-	getAction.Version = 0 // Get latest version
-	if rel, err := getAction.Run(releaseName); err == nil && rel != nil {
-		log.Info("Release already exists, skipping installation", "releaseName", releaseName, "version", rel.Version)
-
-		// Update status with existing release information
-		h.status.ReleaseVersion = rel.Version
-		h.status.ReleaseName = rel.Name
-		h.status.ChartVersion = rel.Chart.Metadata.Version
-
-		return h.successResult(), nil
-	}
 
 	// Set up repository configuration properly for ephemeral containers
 	if _, err := setupHelmRepository(h.config, h.settings); err != nil {
@@ -65,6 +50,26 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*base.OperationResult, err
 	if err != nil {
 		return nil, err
 	}
+
+	// Check if release already exists
+	getAction := action.NewGet(h.actionConfig)
+	getAction.Version = 0 // Get latest version
+	if rel, err := getAction.Run(releaseName); err == nil && rel != nil {
+		log.Info("Release already exists, upgrading", "releaseName", releaseName, "version", rel.Version)
+
+		return h.upgrade(ctx, chart)
+	}
+
+	log.Info("Release does not exist, installing new release", "releaseName", releaseName)
+	return h.install(ctx, chart)
+}
+
+func (h *HelmOperations) install(ctx context.Context, chart *chart.Chart) (*base.OperationResult, error) {
+	log := logf.FromContext(ctx)
+
+	// Use the spec release name for installs
+	releaseName := h.config.ReleaseName
+	releaseNamespace := h.config.ReleaseNamespace
 
 	// Create install action
 	installAction := action.NewInstall(h.actionConfig)
@@ -100,29 +105,12 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*base.OperationResult, err
 }
 
 // startHelmReleaseUpgrade handles upgrading an existing Helm release using pre-parsed configuration
-func (h *HelmOperations) Upgrade(ctx context.Context) (*base.OperationResult, error) {
+func (h *HelmOperations) upgrade(ctx context.Context, chart *chart.Chart) (*base.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
-	// Use effective release name from status for upgrades
+	// Use status release name for upgrades
 	releaseName := h.status.ReleaseName
 	releaseNamespace := h.config.ReleaseNamespace
-
-	// Verify release exists before attempting upgrade
-	getAction := action.NewGet(h.actionConfig)
-	if _, err := getAction.Run(releaseName); err != nil {
-		return nil, fmt.Errorf("release %s not found for upgrade: %w", releaseName, err)
-	}
-
-	// Set up repository configuration properly for ephemeral containers
-	if _, err := setupHelmRepository(h.config, h.settings); err != nil {
-		return nil, fmt.Errorf("failed to setup helm repository: %w", err)
-	}
-
-	// Prepare chart for upgrade
-	chart, err := loadHelmChart(h.config, h.settings)
-	if err != nil {
-		return nil, err
-	}
 
 	// Create upgrade action
 	upgradeAction := action.NewUpgrade(h.actionConfig)
@@ -173,7 +161,7 @@ func (h *HelmOperations) CheckDeployment(ctx context.Context, elapsed time.Durat
 	}
 
 	// Get the current release
-	rel, err := h.getHelmRelease(ctx)
+	rel, err := h.getHelmRelease(h.status.ReleaseName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check helm release readiness: %w", err) // I/O error
 	}

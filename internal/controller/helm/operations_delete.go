@@ -99,7 +99,7 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context, elapsed time.Duratio
 	}
 
 	// Try to get the current release
-	rel, err := h.getHelmRelease(ctx)
+	rel, err := h.getHelmRelease(h.status.ReleaseName)
 	if err != nil {
 		// If release is gone, deletion is complete
 		if errors.Is(err, driver.ErrReleaseNotFound) {

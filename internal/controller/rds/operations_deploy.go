@@ -50,14 +50,6 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, erro
 	}
 }
 
-// Upgrade handles RDS-specific upgrade operations using pre-parsed configuration
-// Implements ComponentOperations.Upgrade interface method.
-//
-// TODO: Should remove this
-func (r *RdsOperations) Upgrade(ctx context.Context) (*base.OperationResult, error) {
-	return r.Deploy(ctx) // Upgrade is same as deploy for RDS
-}
-
 // CheckDeployment verifies the current deployment status using pre-parsed configuration
 // Implements ComponentOperations.CheckDeployment interface method.
 func (r *RdsOperations) CheckDeployment(ctx context.Context, elapsed time.Duration) (*base.OperationResult, error) {
