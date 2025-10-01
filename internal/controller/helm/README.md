@@ -24,6 +24,7 @@ The Helm controller is organized into several focused modules:
 - **Deployment**: Manages Helm chart installations and updates through async operations
 - **Status**: Reports deployment status back to the Component resource with detailed conditions
 - **Cleanup**: Handles proper Helm release deletion and resource cleanup
+- **Enhanced Orchestration**: Supports timeout compliance, TerminationFailed state handling, and handler status coordination
 
 ## Configuration Schema
 
@@ -62,6 +63,8 @@ Component configuration for Helm deployments is passed through the `spec.config`
 
 - **values**: Nested JSON object for chart values override (supports any JSON structure: strings, numbers, booleans, objects, arrays)
 - **namespace**: Target namespace for chart deployment (defaults to Component namespace)
+
+**Note**: Timeout behavior is controlled by Component-level timeout fields (`spec.deploymentTimeout` and `spec.terminationTimeout`) rather than Helm-specific configuration.
 
 ### Configuration Examples
 
@@ -150,3 +153,23 @@ The controller implements the three core protocols required for Component handle
 3. **Deletion Protocol** - Finalizer-based deletion coordination with proper cleanup
 
 All Helm operations are designed to be non-blocking and idempotent, with comprehensive status reporting and error handling.
+
+### Enhanced Orchestration Features
+
+**Timeout Compliance:**
+
+- Respects Component-configured `deploymentTimeout` for chart installation operations
+- Respects Component-configured `terminationTimeout` for chart deletion operations
+- Monitors operation duration and fails appropriately when timeouts are exceeded
+
+**TerminationFailed State Handling:**
+
+- Handles permanent cleanup failures appropriately
+- Supports retry annotation mechanism for failed deletion operations
+- Transitions to TerminationFailed state when cleanup cannot be completed
+
+**Handler Status Coordination:**
+
+- Uses `status.handlerStatus` field to persist Helm release metadata across reconciliation cycles
+- Maintains deployment context for complex chart operations
+- Stores release status and version information for operational visibility

@@ -9,6 +9,7 @@ The controller architecture separates generic protocol logic from handler-specif
 - **Generic Base Controller**: Available from `github.com/rinswind/deployment-operator/componentkit/controller` - handles all protocol state machine logic, finalizer management, and status transitions
 - **ComponentOperations Interface**: Defines the contract for handler-specific deployment operations  
 - **Handler-Specific Implementations**: Each handler (Helm, RDS, etc.) implements the operations interface and uses the generic base
+- **Enhanced Orchestration**: Supports TerminationFailed state handling, timeout compliance, and handler status coordination
 
 This architecture achieves **code reuse**, **protocol compliance**, and **extensibility** while maintaining **backward compatibility**.
 
@@ -35,6 +36,8 @@ package handlername
 
 import (
     "context"
+    "encoding/json"
+    "fmt"
     "time"
     "github.com/rinswind/deployment-operator/componentkit/controller"
     v1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
@@ -45,19 +48,33 @@ const (
     ControllerName = "handler-name-component"
 )
 
-// HandlerOperations implements ComponentOperations for handler-specific deployments
-type HandlerOperations struct {
+// HandlerOperationsFactory implements ComponentOperationsFactory for handler-specific deployments
+type HandlerOperationsFactory struct {
     // Add handler-specific fields (clients, config, etc.)
 }
 
-// NewHandlerOperations creates a new operations instance
-func NewHandlerOperations() *HandlerOperations {
-    return &HandlerOperations{}
+// NewHandlerOperationsFactory creates a new operations factory instance
+func NewHandlerOperationsFactory() *HandlerOperationsFactory {
+    return &HandlerOperationsFactory{}
+}
+
+// NewOperations creates a ComponentOperations instance with pre-parsed configuration and status
+func (f *HandlerOperationsFactory) NewOperations(ctx context.Context, config json.RawMessage, currentStatus json.RawMessage) (controller.ComponentOperations, error) {
+    // Parse configuration and status here
+    // Return operations instance with parsed data
+    return &HandlerOperations{
+        // Initialize with parsed config and status
+    }, nil
+}
+
+// HandlerOperations implements ComponentOperations for handler-specific deployments
+type HandlerOperations struct {
+    // Add parsed configuration and status fields
 }
 
 // NewHandlerOperationsConfig creates configuration with handler-specific settings
-func NewHandlerOperationsConfig() base.ComponentHandlerConfig {
-    config := base.DefaultComponentHandlerConfig(HandlerName, ControllerName)
+func NewHandlerOperationsConfig() controller.ComponentHandlerConfig {
+    config := controller.DefaultComponentHandlerConfig(HandlerName)
     
     // Customize timeouts and requeue periods as needed
     config.DefaultRequeue = 15 * time.Second
@@ -68,34 +85,40 @@ func NewHandlerOperationsConfig() base.ComponentHandlerConfig {
 }
 
 // Deploy implements the deployment operation
-func (op *HandlerOperations) Deploy(ctx context.Context, component *v1alpha1.Component) (bool, error, error) {
+func (op *HandlerOperations) Deploy(ctx context.Context) (*controller.OperationResult, error) {
     // Implement deployment logic
-    // Return (success, ioError, businessError)
-    return false, nil, errors.New("not implemented")
+    // Return operation result with success status and updated handler status
+    return &controller.OperationResult{
+        Success: false,
+        OperationError: errors.New("not implemented"),
+    }, nil
 }
 
-// CheckDeploymentReady checks if deployment is complete and ready
-func (op *HandlerOperations) CheckDeploymentReady(ctx context.Context, component *v1alpha1.Component) (bool, error, error) {
+// CheckDeployment checks if deployment is complete and ready
+func (op *HandlerOperations) CheckDeployment(ctx context.Context) (*controller.OperationResult, error) {
     // Check readiness logic
-    return false, nil, errors.New("not implemented")  
-}
-
-// Upgrade implements upgrade operations
-func (op *HandlerOperations) Upgrade(ctx context.Context, component *v1alpha1.Component) (bool, error, error) {
-    // Upgrade logic
-    return false, nil, errors.New("not implemented")
+    return &controller.OperationResult{
+        Success: false,
+        OperationError: errors.New("not implemented"),
+    }, nil
 }
 
 // Delete implements deletion operations  
-func (op *HandlerOperations) Delete(ctx context.Context, component *v1alpha1.Component) (bool, error, error) {
+func (op *HandlerOperations) Delete(ctx context.Context) (*controller.OperationResult, error) {
     // Deletion logic
-    return false, nil, errors.New("not implemented")
+    return &controller.OperationResult{
+        Success: false,
+        OperationError: errors.New("not implemented"),
+    }, nil
 }
 
-// CheckDeletionComplete verifies deletion is complete
-func (op *HandlerOperations) CheckDeletionComplete(ctx context.Context, component *v1alpha1.Component) (bool, error, error) {
+// CheckDeletion verifies deletion is complete
+func (op *HandlerOperations) CheckDeletion(ctx context.Context) (*controller.OperationResult, error) {
     // Check deletion status
-    return false, nil, errors.New("not implemented")
+    return &controller.OperationResult{
+        Success: false,
+        OperationError: errors.New("not implemented"),
+    }, nil
 }
 ```
 
@@ -115,7 +138,7 @@ import (
 
 // ComponentReconciler reconciles Components using the generic controller base
 type ComponentReconciler struct {
-    *base.ComponentReconciler
+    *controller.ComponentReconciler
 }
 
 // NewComponentReconciler creates a controller with handler operations
@@ -124,7 +147,7 @@ func NewComponentReconciler() *ComponentReconciler {
     config := NewHandlerOperationsConfig()
     
     return &ComponentReconciler{
-        ComponentReconciler: base.NewComponentReconciler(operations, config),
+        ComponentReconciler: controller.NewComponentReconciler(operations, config),
     }
 }
 ```
@@ -158,36 +181,55 @@ func TestHandlerController(t *testing.T) {
 
 ## ComponentOperations Interface Reference
 
-The `base.ComponentOperations` interface defines the contract all handlers must implement:
+The `controller.ComponentOperations` interface defines the contract all handlers must implement:
 
 ```go
 type ComponentOperations interface {
-    // Deploy performs the initial deployment
-    Deploy(ctx context.Context, component *v1alpha1.Component) (success bool, ioError error, businessError error)
+    // Deploy initiates the initial deployment of resources
+    Deploy(ctx context.Context) (*OperationResult, error)
     
-    // CheckDeploymentReady verifies deployment completion
-    CheckDeploymentReady(ctx context.Context, component *v1alpha1.Component) (ready bool, ioError error, businessError error)
+    // CheckDeployment verifies deployment status and readiness
+    CheckDeployment(ctx context.Context) (*OperationResult, error)
     
-    // Upgrade handles component updates
-    Upgrade(ctx context.Context, component *v1alpha1.Component) (success bool, ioError error, businessError error)
+    // Delete initiates cleanup/deletion of resources
+    Delete(ctx context.Context) (*OperationResult, error)
     
-    // Delete performs cleanup operations
-    Delete(ctx context.Context, component *v1alpha1.Component) (success bool, ioError error, businessError error)
-    
-    // CheckDeletionComplete verifies cleanup completion
-    CheckDeletionComplete(ctx context.Context, component *v1alpha1.Component) (complete bool, ioError error, businessError error)
+    // CheckDeletion verifies deletion status and completion
+    CheckDeletion(ctx context.Context) (*OperationResult, error)
 }
 ```
 
 ### Error Handling Pattern
 
-Each operation method returns three values:
+Each operation method returns two values:
 
-- **`success/ready/complete bool`**: Operation success status  
-- **`ioError error`**: Transient I/O errors (network, API timeouts) that should trigger requeue
-- **`businessError error`**: Business logic errors that should be reported but not retried
+- **`*OperationResult`**: Contains operation status and handler-specific state data:
+  - `Success bool`: Operation success status (true when ready/complete for check operations)
+  - `OperationError error`: Business logic errors that should cause Failed state transitions
+  - `UpdatedStatus json.RawMessage`: Handler-specific status data for persistence across reconciliation cycles
+- **`error`**: I/O or communication errors that should trigger requeue behavior
 
-The generic base controller uses these return values to determine requeue behavior and status updates.
+The generic base controller uses these return values to determine requeue behavior, status updates, and handler status persistence.
+
+### Enhanced Orchestration Compliance
+
+**TerminationFailed State Handling:**
+
+- Handlers must handle permanent cleanup failures by returning appropriate business errors
+- Failed deletion operations may cause Components to enter TerminationFailed state
+- Handlers should implement retry logic when Components have retry annotations
+
+**Timeout Compliance:**
+
+- All handlers must respect Component-configured timeouts from `spec.deploymentTimeout` and `spec.terminationTimeout`
+- Deployment operations must monitor elapsed time and fail appropriately when timeouts are exceeded
+- Termination operations exceeding timeout should allow transition to TerminationFailed state
+
+**Handler Status Coordination:**
+
+- Handlers can persist state using the `status.handlerStatus` field for stateful operations
+- Use handlerStatus to maintain deployment context across reconciliation cycles
+- Store deployment metadata (instance IDs, timestamps, configuration hashes) as needed
 
 ## Protocol Compliance (Handled by Generic Base)
 
@@ -195,10 +237,12 @@ The generic base controller automatically handles:
 
 - **Resource Discovery**: Event filtering to only process matching handler Components
 - **Claiming Protocol**: Atomic finalizer-based claiming with `util.ClaimingProtocolValidator`
-- **Status Management**: Proper ComponentPhase transitions (Pending → Claimed → Deploying → Ready)
+- **Status Management**: Proper ComponentPhase transitions (Pending → Claimed → Deploying → Ready → Terminating → [deleted])
 - **Error Handling**: Distinction between I/O errors (requeue) and business errors (fail)
 - **Deletion Coordination**: Waiting for composition coordination before cleanup
 - **Finalizer Management**: Adding/removing handler-specific finalizers
+- **Timeout Orchestration**: Component-configured timeout monitoring and enforcement
+- **Enhanced States**: TerminationFailed state transitions and retry annotation handling
 
 ## Configuration Options
 
@@ -214,7 +258,7 @@ type ComponentHandlerConfig struct {
 }
 ```
 
-Use `base.DefaultComponentHandlerConfig()` and customize as needed for your handler's timing requirements.
+Use `controller.DefaultComponentHandlerConfig()` and customize as needed for your handler's timing requirements.
 
 ## Testing Patterns
 
@@ -225,6 +269,7 @@ Since protocol logic is handled by the generic base controller, handler tests sh
 - **Configuration Parsing**: Validate handler-specific configuration validation
 - **Operations Logic**: Test individual ComponentOperations interface methods with real implementations
 - **Integration**: Test complete handler with generic base using envtest
+- **Enhanced Features**: Test timeout compliance, TerminationFailed handling, and handler status coordination
 
 **Note**: Placeholder implementations (like RDS stubs) don't need tests until real operations are implemented.
 
@@ -234,15 +279,23 @@ Test the generic base controller with mock operations:
 
 ```go
 type mockOperations struct{}
-func (m *mockOperations) Deploy(ctx context.Context, component *v1alpha1.Component) (bool, error, error) {
-    return true, nil, nil
+func (m *mockOperations) Deploy(ctx context.Context) (*controller.OperationResult, error) {
+    return &controller.OperationResult{Success: true}, nil
 }
-// ... implement other interface methods
+func (m *mockOperations) CheckDeployment(ctx context.Context) (*controller.OperationResult, error) {
+    return &controller.OperationResult{Success: true}, nil
+}
+func (m *mockOperations) Delete(ctx context.Context) (*controller.OperationResult, error) {
+    return &controller.OperationResult{Success: true}, nil
+}
+func (m *mockOperations) CheckDeletion(ctx context.Context) (*controller.OperationResult, error) {
+    return &controller.OperationResult{Success: true}, nil
+}
 
 func TestControllerLogic(t *testing.T) {
     ops := &mockOperations{}
-    config := base.DefaultComponentHandlerConfig("test", "test-controller")
-    reconciler := base.NewComponentReconciler(ops, config)
+    config := controller.DefaultComponentReconcilerConfig("test")
+    reconciler := controller.NewComponentReconciler(ops, config)
     // Test with envtest...
 }
 ```
@@ -289,7 +342,7 @@ Handlers can extend the generic base through composition:
 
 ```go
 type ComponentReconciler struct {
-    *base.ComponentReconciler
+    *controller.ComponentReconciler
     // Add handler-specific fields
     customClient SomeClient
 }
@@ -306,18 +359,21 @@ Support multiple API versions by implementing version-specific operations:
 
 ```go
 type MultiVersionOperations struct {
+    version      string
     v1Operations ComponentOperations
     v2Operations ComponentOperations  
 }
 
-func (mv *MultiVersionOperations) Deploy(ctx context.Context, component *v1alpha1.Component) (bool, error, error) {
-    switch component.Spec.Version {
+func (mv *MultiVersionOperations) Deploy(ctx context.Context) (*controller.OperationResult, error) {
+    switch mv.version {
     case "v1":
-        return mv.v1Operations.Deploy(ctx, component)
+        return mv.v1Operations.Deploy(ctx)
     case "v2":  
-        return mv.v2Operations.Deploy(ctx, component)
+        return mv.v2Operations.Deploy(ctx)
     default:
-        return false, nil, fmt.Errorf("unsupported version: %s", component.Spec.Version)
+        return &controller.OperationResult{
+            OperationError: fmt.Errorf("unsupported version: %s", mv.version),
+        }, nil
     }
 }
 ```
@@ -327,21 +383,19 @@ func (mv *MultiVersionOperations) Deploy(ctx context.Context, component *v1alpha
 While the base controller handles standard phases, handlers can add custom status information:
 
 ```go
-func (op *HandlerOperations) Deploy(ctx context.Context, component *v1alpha1.Component) (bool, error, error) {
+func (op *HandlerOperations) Deploy(ctx context.Context) (*controller.OperationResult, error) {
     // Perform deployment...
     
-    // Add custom status information
-    if component.Status.Conditions == nil {
-        component.Status.Conditions = []v1alpha1.ComponentCondition{}
+    // Return success with updated status
+    updatedStatus := map[string]interface{}{
+        "deploymentTime": time.Now(),
+        "version": "1.0.0",
     }
     
-    component.Status.Conditions = append(component.Status.Conditions, v1alpha1.ComponentCondition{
-        Type: "CustomCondition",
-        Status: "True", 
-        Message: "Handler-specific status information",
-    })
-    
-    return true, nil, nil
+    return &controller.OperationResult{
+        Success: true,
+        UpdatedStatus: updatedStatus,
+    }, nil
 }
 ```
 

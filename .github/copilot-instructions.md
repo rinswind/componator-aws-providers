@@ -37,7 +37,6 @@ You are working on **Kubernetes Component Handler Controllers** that implement s
 
 ### Implementation Support:
 - `../deployment-operator/componentkit/util` - Handler utilities for protocol compliance, finalizer management, and status updates
-- `../deployment-operator/componentkit/simulator` - ComponentHandlerSimulator provides interface specification for component handler teams
 
 ## Documentation Hierarchy
 

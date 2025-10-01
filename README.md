@@ -9,7 +9,7 @@ This project contains multiple controllers that handle different component types
 - **Helm Handler** (`internal/controller/helm/`) - Deploy and manage Helm charts
 - **RDS Handler** (`internal/controller/rds/`) - Deploy and manage RDS instances via Terraform
 
-Each handler claims and processes Component resources based on their `spec.handler` field, implementing the actual deployment logic while following standardized protocols.
+Each handler claims and processes Component resources based on their `spec.handler` field, implementing the actual deployment logic while following standardized protocols and enhanced orchestration capabilities.
 
 ## Architecture
 
@@ -18,27 +18,21 @@ Each handler claims and processes Component resources based on their `spec.handl
 
 **Dependency Direction**: This project imports the base controller and utilities from deployment-operator, enabling external teams to access the complete handler toolkit from a single dependency.
 
+**Enhanced Orchestration**: All handlers support advanced orchestration features including TerminationFailed state handling, timeout compliance, and handler status coordination for production deployments.
+
 ## Multi-Handler Registration
 
 All handlers are registered in `cmd/main.go`:
 
 ```go
 // Register Helm handler
-if err := (&helm.ComponentReconciler{
-    Client: mgr.GetClient(),
-    Scheme: mgr.GetScheme(),
-    HandlerName: "helm",
-}).SetupWithManager(mgr); err != nil {
+if err := helm.NewComponentReconciler().SetupWithManager(mgr); err != nil {
     setupLog.Error(err, "unable to create controller", "controller", "Helm")
     os.Exit(1)
 }
 
 // Register RDS handler  
-if err := (&rds.ComponentReconciler{
-    Client: mgr.GetClient(),
-    Scheme: mgr.GetScheme(),
-    HandlerName: "rds",
-}).SetupWithManager(mgr); err != nil {
+if err := rds.NewComponentReconciler().SetupWithManager(mgr); err != nil {
     setupLog.Error(err, "unable to create controller", "controller", "RDS")
     os.Exit(1)
 }
