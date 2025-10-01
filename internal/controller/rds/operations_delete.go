@@ -21,13 +21,13 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/service/rds"
-	"github.com/rinswind/deployment-operator/handler/base"
+	"github.com/rinswind/deployment-operator/componentkit/controller"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // Delete handles all RDS-specific deletion operations using pre-parsed configuration
 // Implements ComponentOperations.Delete interface method.
-func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, error) {
+func (r *RdsOperations) Delete(ctx context.Context) (*controller.OperationResult, error) {
 	config := r.config
 	instanceID := r.config.InstanceID
 
@@ -73,7 +73,7 @@ func (r *RdsOperations) Delete(ctx context.Context) (*base.OperationResult, erro
 
 // CheckDeletion verifies the current deletion status using pre-parsed configuration
 // Implements ComponentOperations.CheckDeletion interface method.
-func (r *RdsOperations) CheckDeletion(ctx context.Context) (*base.OperationResult, error) {
+func (r *RdsOperations) CheckDeletion(ctx context.Context) (*controller.OperationResult, error) {
 	instanceID := r.config.InstanceID
 
 	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)

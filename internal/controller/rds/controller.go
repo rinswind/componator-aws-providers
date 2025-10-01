@@ -19,7 +19,7 @@ package rds
 import (
 	"time"
 
-	"github.com/rinswind/deployment-operator/handler/base"
+	"github.com/rinswind/deployment-operator/componentkit/controller"
 )
 
 //+kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
@@ -32,17 +32,17 @@ import (
 // This embeds the base controller directly, eliminating unnecessary delegation
 // while maintaining protocol compliance.
 type ComponentReconciler struct {
-	*base.ComponentReconciler
+	*controller.ComponentReconciler
 }
 
 // NewComponentReconciler creates a new RDS Component controller with the generic base
 func NewComponentReconciler() *ComponentReconciler {
 	factory := NewRdsOperationsFactory()
 
-	config := base.DefaultComponentReconcilerConfig("rds")
+	config := controller.DefaultComponentReconcilerConfig("rds")
 	config.ErrorRequeue = 15 * time.Second
 	config.DefaultRequeue = 30 * time.Second
 	config.StatusCheckRequeue = 30 * time.Second
 
-	return &ComponentReconciler{base.NewComponentReconciler(factory, config)}
+	return &ComponentReconciler{controller.NewComponentReconciler(factory, config)}
 }

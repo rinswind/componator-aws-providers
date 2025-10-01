@@ -36,13 +36,13 @@ You are working on **Kubernetes Component Handler Controllers** that implement s
 - `../deployment-operator/docs/architecture/README.md` - System overview and relationships
 
 ### Implementation Support:
-- `../deployment-operator/handler/util` - Handler utilities for protocol compliance, finalizer management, and status updates
-- `../deployment-operator/handler/simulator` - ComponentHandlerSimulator provides interface specification for component handler teams
+- `../deployment-operator/componentkit/util` - Handler utilities for protocol compliance, finalizer management, and status updates
+- `../deployment-operator/componentkit/simulator` - ComponentHandlerSimulator provides interface specification for component handler teams
 
 ## Documentation Hierarchy
 
 - **Architecture docs** (`../deployment-operator/docs/architecture/`): Protocol specifications and system design
-- **Handler utilities** (`../deployment-operator/handler/util`): Implementation tools for protocol compliance  
+- **Handler utilities** (`../deployment-operator/componentkit/util`): Implementation tools for protocol compliance  
 - **Handler documentation** (`internal/controller/README.md`): Complete implementation guide with examples and patterns
 - **Individual handler docs** (`internal/controller/*/README.md`): Handler-specific implementation details
 
@@ -53,7 +53,7 @@ You are working on **Kubernetes Component Handler Controllers** that implement s
 - All handler implementations must follow the three core protocols exactly
 - Resource claiming, status updates, and finalizer patterns are strictly defined
 - State transitions and coordination patterns are protocol-specified
-- Use `../deployment-operator/handler/util` package for standardized protocol compliance
+- Use `../deployment-operator/componentkit/util` package for standardized protocol compliance
 
 ### Implementation Requirements
 

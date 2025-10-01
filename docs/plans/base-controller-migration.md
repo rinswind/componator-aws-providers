@@ -2,7 +2,7 @@
 
 ## Migration Objective
 
-Move the generic base controller from `deployment-handlers/internal/controller/base/` to `deployment-operator/handler/base/` to create proper architectural boundaries and enable external teams to access the complete handler toolkit from a single dependency.
+Move the generic base controller from `deployment-handlers/internal/controller/base/` to `deployment-operator/componentkit/controller/` to create proper architectural boundaries and enable external teams to access the complete handler toolkit from a single dependency.
 
 ## Success Criteria
 
@@ -19,7 +19,7 @@ Move the generic base controller from `deployment-handlers/internal/controller/b
 **Primary Task**: Relocate base controller files to deployment-operator.
 
 **Target Structure Creation**: ✅
-- ✅ Established `deployment-operator/handler/base/` directory
+- ✅ Established `deployment-operator/componentkit/controller/` directory
 - ✅ Positioned base controller alongside existing util and simulator packages
 - ✅ Created logical handler toolkit hierarchy
 
@@ -73,7 +73,7 @@ Move the generic base controller from `deployment-handlers/internal/controller/b
 
 **Final State:**
 
-- **deployment-operator** contains complete handler toolkit: `handler/base/`, `handler/util/`, `handler/simulator/`
+- **deployment-operator** contains complete handler toolkit: `componentkit/controller/`, `componentkit/util/`, `componentkit/simulator/`
 - **deployment-handlers** successfully depends on deployment-operator for all protocol infrastructure
 - **RBAC annotations** properly distributed to individual handler controllers
 - **Import paths** updated and validated across all projects and documentation
@@ -134,7 +134,7 @@ Move the generic base controller from `deployment-handlers/internal/controller/b
 **Architecture Documentation Updates**: ✅
 
 - ✅ Updated handler utility documentation to reference base controller availability
-- ✅ Created base controller documentation in deployment-operator (`handler/base/README.md`)
+- ✅ Created base controller documentation in deployment-operator (`componentkit/controller/README.md`)
 - ✅ Updated external team guidance with new dependency pattern
 - ✅ Documented complete handler toolkit availability from single dependency
 

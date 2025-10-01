@@ -17,7 +17,7 @@ limitations under the License.
 package helm
 
 import (
-	"github.com/rinswind/deployment-operator/handler/base"
+	"github.com/rinswind/deployment-operator/componentkit/controller"
 )
 
 //+kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
@@ -31,15 +31,15 @@ import (
 // while maintaining protocol compliance and using the factory pattern for
 // efficient configuration parsing.
 type ComponentReconciler struct {
-	*base.ComponentReconciler
+	*controller.ComponentReconciler
 }
 
 // NewComponentReconciler creates a new Helm Component controller with the generic base using factory pattern
 func NewComponentReconciler() *ComponentReconciler {
 	operationsFactory := &HelmOperationsFactory{}
-	config := base.DefaultComponentReconcilerConfig("helm")
+	config := controller.DefaultComponentReconcilerConfig("helm")
 
 	return &ComponentReconciler{
-		ComponentReconciler: base.NewComponentReconciler(operationsFactory, config),
+		ComponentReconciler: controller.NewComponentReconciler(operationsFactory, config),
 	}
 }

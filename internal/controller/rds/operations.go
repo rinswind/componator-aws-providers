@@ -29,7 +29,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/rds/types"
-	"github.com/rinswind/deployment-operator/handler/base"
+	"github.com/rinswind/deployment-operator/componentkit/controller"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -50,7 +50,7 @@ type RdsOperationsFactory struct{}
 //
 // The returned RdsOperations instance maintains the parsed configuration and status and can be used
 // throughout the reconciliation loop without re-parsing the same configuration multiple times.
-func (f *RdsOperationsFactory) NewOperations(ctx context.Context, config json.RawMessage, currentStatus json.RawMessage) (base.ComponentOperations, error) {
+func (f *RdsOperationsFactory) NewOperations(ctx context.Context, config json.RawMessage, currentStatus json.RawMessage) (controller.ComponentOperations, error) {
 	log := logf.FromContext(ctx)
 
 	// Parse configuration once for this reconciliation loop
@@ -116,8 +116,8 @@ func NewRdsOperationsFactory() *RdsOperationsFactory {
 }
 
 // NewRdsOperationsConfig creates a ComponentHandlerConfig for RDS with appropriate settings
-func NewRdsOperationsConfig() base.ComponentReconcilerConfig {
-	config := base.DefaultComponentReconcilerConfig(HandlerName)
+func NewRdsOperationsConfig() controller.ComponentReconcilerConfig {
+	config := controller.DefaultComponentReconcilerConfig(HandlerName)
 
 	// RDS operations typically take longer than Helm operations
 	// Adjust timeouts to account for database creation/modification times
@@ -131,25 +131,25 @@ func NewRdsOperationsConfig() base.ComponentReconcilerConfig {
 // Helper methods for RDS operations
 
 // successResult creates an OperationResult for successful operations
-func (r *RdsOperations) successResult() (*base.OperationResult, error) {
+func (r *RdsOperations) successResult() (*controller.OperationResult, error) {
 	updatedStatus, _ := json.Marshal(r.status)
-	return &base.OperationResult{
+	return &controller.OperationResult{
 		UpdatedStatus: updatedStatus,
 		Success:       true,
 	}, nil
 }
 
 // pendingResult creates an OperationResult for operations still in progress
-func (r *RdsOperations) pendingResult() (*base.OperationResult, error) {
+func (r *RdsOperations) pendingResult() (*controller.OperationResult, error) {
 	updatedStatus, _ := json.Marshal(r.status)
-	return &base.OperationResult{
+	return &controller.OperationResult{
 		UpdatedStatus: updatedStatus,
 		Success:       false,
 	}, nil
 }
 
 // errorResult creates a standardized error response for RDS operations
-func (r *RdsOperations) errorResult(ctx context.Context, message string, err error) (*base.OperationResult, error) {
+func (r *RdsOperations) errorResult(ctx context.Context, message string, err error) (*controller.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	updatedStatus, _ := json.Marshal(r.status)
@@ -159,14 +159,14 @@ func (r *RdsOperations) errorResult(ctx context.Context, message string, err err
 
 	// Check if this is a transient error that should be retried
 	if isTransientError(err) {
-		return &base.OperationResult{
+		return &controller.OperationResult{
 			UpdatedStatus: updatedStatus,
 			Success:       false,
 		}, fullError // Return error to trigger retry
 	}
 
 	// Permanent error - don't retry
-	return &base.OperationResult{
+	return &controller.OperationResult{
 		UpdatedStatus:  updatedStatus,
 		Success:        false,
 		OperationError: fullError,

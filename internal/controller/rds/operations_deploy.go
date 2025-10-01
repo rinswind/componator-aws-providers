@@ -21,13 +21,13 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/service/rds"
-	"github.com/rinswind/deployment-operator/handler/base"
+	"github.com/rinswind/deployment-operator/componentkit/controller"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // Deploy handles all RDS-specific deployment operations using pre-parsed configuration
 // Implements ComponentOperations.Deploy interface method.
-func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, error) {
+func (r *RdsOperations) Deploy(ctx context.Context) (*controller.OperationResult, error) {
 	instanceID := r.config.InstanceID
 
 	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)
@@ -51,7 +51,7 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*base.OperationResult, erro
 
 // CheckDeployment verifies the current deployment status using pre-parsed configuration
 // Implements ComponentOperations.CheckDeployment interface method.
-func (r *RdsOperations) CheckDeployment(ctx context.Context) (*base.OperationResult, error) {
+func (r *RdsOperations) CheckDeployment(ctx context.Context) (*controller.OperationResult, error) {
 	instanceID := r.config.InstanceID
 
 	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)
@@ -101,7 +101,7 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context) (*base.OperationRes
 }
 
 // createInstance handles RDS instance creation using pre-parsed configuration
-func (r *RdsOperations) createInstance(ctx context.Context) (*base.OperationResult, error) {
+func (r *RdsOperations) createInstance(ctx context.Context) (*controller.OperationResult, error) {
 	config := r.config
 	instanceID := config.InstanceID
 
@@ -168,7 +168,7 @@ func (r *RdsOperations) createInstance(ctx context.Context) (*base.OperationResu
 }
 
 // modifyInstance handles RDS instance modification using pre-parsed configuration
-func (r *RdsOperations) modifyInstance(ctx context.Context) (*base.OperationResult, error) {
+func (r *RdsOperations) modifyInstance(ctx context.Context) (*controller.OperationResult, error) {
 	config := r.config
 	instanceID := r.config.InstanceID
 

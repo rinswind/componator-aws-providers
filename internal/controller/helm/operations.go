@@ -22,7 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/rinswind/deployment-operator/handler/base"
+	"github.com/rinswind/deployment-operator/componentkit/controller"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/kube"
@@ -34,7 +34,7 @@ import (
 type HelmOperationsFactory struct{}
 
 func (f *HelmOperationsFactory) NewOperations(
-	ctx context.Context, rawConfig json.RawMessage, currentStatus json.RawMessage) (base.ComponentOperations, error) {
+	ctx context.Context, rawConfig json.RawMessage, currentStatus json.RawMessage) (controller.ComponentOperations, error) {
 
 	config, err := resolveHelmConfig(ctx, rawConfig)
 	if err != nil {
@@ -91,18 +91,18 @@ func (h *HelmOperations) getHelmRelease(releaseName string) (*release.Release, e
 }
 
 // successResult creates an OperationResult for successful operations
-func (h *HelmOperations) successResult() *base.OperationResult {
+func (h *HelmOperations) successResult() *controller.OperationResult {
 	updatedStatus, _ := json.Marshal(h.status)
-	return &base.OperationResult{
+	return &controller.OperationResult{
 		UpdatedStatus: updatedStatus,
 		Success:       true,
 	}
 }
 
 // errorResult creates an OperationResult for failed operations with error details
-func (h *HelmOperations) errorResult(err error) *base.OperationResult {
+func (h *HelmOperations) errorResult(err error) *controller.OperationResult {
 	updatedStatus, _ := json.Marshal(h.status)
-	return &base.OperationResult{
+	return &controller.OperationResult{
 		UpdatedStatus:  updatedStatus,
 		Success:        false,
 		OperationError: err,
@@ -110,9 +110,9 @@ func (h *HelmOperations) errorResult(err error) *base.OperationResult {
 }
 
 // pendingResult creates an OperationResult for operations still in progress
-func (h *HelmOperations) pendingResult() *base.OperationResult {
+func (h *HelmOperations) pendingResult() *controller.OperationResult {
 	updatedStatus, _ := json.Marshal(h.status)
-	return &base.OperationResult{
+	return &controller.OperationResult{
 		UpdatedStatus: updatedStatus,
 		Success:       false,
 	}

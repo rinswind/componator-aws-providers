@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rinswind/deployment-operator/handler/base"
+	"github.com/rinswind/deployment-operator/componentkit/controller"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/kube"
 	"helm.sh/helm/v3/pkg/storage/driver"
@@ -34,7 +34,7 @@ import (
 )
 
 // Delete starts asynchronous helm release deletion using pre-parsed configuration
-func (h *HelmOperations) Delete(ctx context.Context) (*base.OperationResult, error) {
+func (h *HelmOperations) Delete(ctx context.Context) (*controller.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Use effective release name from status for deletion
@@ -84,7 +84,7 @@ func (h *HelmOperations) Delete(ctx context.Context) (*base.OperationResult, err
 
 // checkDeletion verifies if a Helm release and all its resources have been deleted using pre-parsed configuration
 // Returns OperationResult with Success indicating deletion completion status
-func (h *HelmOperations) CheckDeletion(ctx context.Context) (*base.OperationResult, error) {
+func (h *HelmOperations) CheckDeletion(ctx context.Context) (*controller.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Try to get the current release

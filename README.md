@@ -13,7 +13,7 @@ Each handler claims and processes Component resources based on their `spec.handl
 
 ## Architecture
 
-- **deployment-operator**: Provides Composition Controller, CRD definitions, and complete handler toolkit (`handler/base/`, `handler/util/`, `handler/simulator/`)
+- **deployment-operator**: Provides Composition Controller, CRD definitions, and complete handler toolkit (`componentkit/controller/`, `componentkit/util/`, `componentkit/simulator/`)
 - **deployment-handlers**: Component Handler Controllers that depend on deployment-operator for protocol infrastructure
 
 **Dependency Direction**: This project imports the base controller and utilities from deployment-operator, enabling external teams to access the complete handler toolkit from a single dependency.

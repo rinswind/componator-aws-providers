@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rinswind/deployment-operator/handler/base"
+	"github.com/rinswind/deployment-operator/componentkit/controller"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/kube"
@@ -35,7 +35,7 @@ import (
 // For initial deployments, uses config.ReleaseName from the Component spec.
 // After successful deployment, persists the actual release name to status so that
 // all subsequent operations use the deployed name for consistency.
-func (h *HelmOperations) Deploy(ctx context.Context) (*base.OperationResult, error) {
+func (h *HelmOperations) Deploy(ctx context.Context) (*controller.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	releaseName := h.config.ReleaseName
@@ -64,7 +64,7 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*base.OperationResult, err
 	return h.install(ctx, chart)
 }
 
-func (h *HelmOperations) install(ctx context.Context, chart *chart.Chart) (*base.OperationResult, error) {
+func (h *HelmOperations) install(ctx context.Context, chart *chart.Chart) (*controller.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Use the spec release name for installs
@@ -105,7 +105,7 @@ func (h *HelmOperations) install(ctx context.Context, chart *chart.Chart) (*base
 }
 
 // startHelmReleaseUpgrade handles upgrading an existing Helm release using pre-parsed configuration
-func (h *HelmOperations) upgrade(ctx context.Context, chart *chart.Chart) (*base.OperationResult, error) {
+func (h *HelmOperations) upgrade(ctx context.Context, chart *chart.Chart) (*controller.OperationResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Use status release name for upgrades
@@ -144,7 +144,7 @@ func (h *HelmOperations) upgrade(ctx context.Context, chart *chart.Chart) (*base
 
 // checkReleaseDeployed verifies if a Helm release and all its resources are ready using pre-parsed configuration
 // Returns OperationResult with Success indicating readiness status
-func (h *HelmOperations) CheckDeployment(ctx context.Context) (*base.OperationResult, error) {
+func (h *HelmOperations) CheckDeployment(ctx context.Context) (*controller.OperationResult, error) {
 	// Get the current release
 	rel, err := h.getHelmRelease(h.status.ReleaseName)
 	if err != nil {
