@@ -33,7 +33,7 @@ import (
 // HelmOperationsFactory implements the ComponentOperationsFactory interface for Helm deployments.
 type HelmOperationsFactory struct{}
 
-func (f *HelmOperationsFactory) CreateOperations(
+func (f *HelmOperationsFactory) NewOperations(
 	ctx context.Context, rawConfig json.RawMessage, currentStatus json.RawMessage) (base.ComponentOperations, error) {
 
 	config, err := resolveHelmConfig(ctx, rawConfig)

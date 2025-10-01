@@ -39,7 +39,7 @@ type ComponentReconciler struct {
 func NewComponentReconciler() *ComponentReconciler {
 	factory := NewRdsOperationsFactory()
 
-	config := base.DefaultComponentHandlerConfig("rds")
+	config := base.DefaultComponentReconcilerConfig("rds")
 	config.ErrorRequeue = 15 * time.Second
 	config.DefaultRequeue = 30 * time.Second
 	config.StatusCheckRequeue = 30 * time.Second

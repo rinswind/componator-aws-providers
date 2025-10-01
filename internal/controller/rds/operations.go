@@ -45,12 +45,12 @@ const (
 // eliminating repeated configuration parsing during reconciliation loops.
 type RdsOperationsFactory struct{}
 
-// CreateOperations creates a new stateful RdsOperations instance with pre-parsed configuration and status.
+// NewOperations creates a new stateful RdsOperations instance with pre-parsed configuration and status.
 // This method is called once per reconciliation loop to eliminate repeated configuration parsing.
 //
 // The returned RdsOperations instance maintains the parsed configuration and status and can be used
 // throughout the reconciliation loop without re-parsing the same configuration multiple times.
-func (f *RdsOperationsFactory) CreateOperations(ctx context.Context, config json.RawMessage, currentStatus json.RawMessage) (base.ComponentOperations, error) {
+func (f *RdsOperationsFactory) NewOperations(ctx context.Context, config json.RawMessage, currentStatus json.RawMessage) (base.ComponentOperations, error) {
 	log := logf.FromContext(ctx)
 
 	// Parse configuration once for this reconciliation loop
@@ -116,8 +116,8 @@ func NewRdsOperationsFactory() *RdsOperationsFactory {
 }
 
 // NewRdsOperationsConfig creates a ComponentHandlerConfig for RDS with appropriate settings
-func NewRdsOperationsConfig() base.ComponentHandlerConfig {
-	config := base.DefaultComponentHandlerConfig(HandlerName)
+func NewRdsOperationsConfig() base.ComponentReconcilerConfig {
+	config := base.DefaultComponentReconcilerConfig(HandlerName)
 
 	// RDS operations typically take longer than Helm operations
 	// Adjust timeouts to account for database creation/modification times

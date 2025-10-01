@@ -37,7 +37,7 @@ type ComponentReconciler struct {
 // NewComponentReconciler creates a new Helm Component controller with the generic base using factory pattern
 func NewComponentReconciler() *ComponentReconciler {
 	operationsFactory := &HelmOperationsFactory{}
-	config := base.DefaultComponentHandlerConfig("helm")
+	config := base.DefaultComponentReconcilerConfig("helm")
 
 	return &ComponentReconciler{
 		ComponentReconciler: base.NewComponentReconciler(operationsFactory, config),
