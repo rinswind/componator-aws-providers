@@ -37,7 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	rdscontroller "github.com/rinswind/deployment-handlers/internal/controller/rds"
+	rdscontroller "github.com/rinswind/deployment-operator-handlers/internal/controller/rds"
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 

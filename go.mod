@@ -1,4 +1,4 @@
-module github.com/rinswind/deployment-handlers
+module github.com/rinswind/deployment-operator-handlers
 
 go 1.24.5
 

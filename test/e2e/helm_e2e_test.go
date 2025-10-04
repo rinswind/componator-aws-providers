@@ -36,7 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	helmcontroller "github.com/rinswind/deployment-handlers/internal/controller/helm"
+	helmcontroller "github.com/rinswind/deployment-operator-handlers/internal/controller/helm"
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 )
 

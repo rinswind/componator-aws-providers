@@ -34,8 +34,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/rinswind/deployment-handlers/internal/controller/helm"
-	"github.com/rinswind/deployment-handlers/internal/controller/rds"
+	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm"
+	"github.com/rinswind/deployment-operator-handlers/internal/controller/rds"
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
