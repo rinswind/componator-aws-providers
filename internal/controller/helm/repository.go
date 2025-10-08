@@ -37,17 +37,24 @@ func loadHelmChart(config *HelmConfig, settings *cli.EnvSettings) (*chart.Chart,
 
 // setupHelmRepository configures a Helm repository properly for ephemeral containers
 // This creates the necessary repository configuration files that Helm expects
-func setupHelmRepository(config *HelmConfig, settings *cli.EnvSettings) (*repo.ChartRepository, error) {
+// Returns a cleanup function that should be called with defer
+func setupHelmRepository(config *HelmConfig, settings *cli.EnvSettings) (*repo.ChartRepository, func(), error) {
 	// Create temporary directories for Helm configuration
 	tempConfigDir, err := os.MkdirTemp("", "helm-config-")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temporary config directory: %w", err)
+		return nil, nil, fmt.Errorf("failed to create temporary config directory: %w", err)
 	}
 
 	tempCacheDir, err := os.MkdirTemp("", "helm-cache-")
 	if err != nil {
 		os.RemoveAll(tempConfigDir)
-		return nil, fmt.Errorf("failed to create temporary cache directory: %w", err)
+		return nil, nil, fmt.Errorf("failed to create temporary cache directory: %w", err)
+	}
+
+	// Cleanup function to remove temporary directories
+	cleanup := func() {
+		os.RemoveAll(tempConfigDir)
+		os.RemoveAll(tempCacheDir)
 	}
 
 	// Configure Helm settings to use our temporary directories
@@ -66,7 +73,8 @@ func setupHelmRepository(config *HelmConfig, settings *cli.EnvSettings) (*repo.C
 	// Create chart repository instance for index download
 	chartRepo, err := repo.NewChartRepository(repoEntry, getter.All(settings))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create chart repository: %w", err)
+		cleanup()
+		return nil, nil, fmt.Errorf("failed to create chart repository: %w", err)
 	}
 
 	// Set the cache path
@@ -75,7 +83,8 @@ func setupHelmRepository(config *HelmConfig, settings *cli.EnvSettings) (*repo.C
 	// Download the repository index - this validates the repo and caches the index
 	_, err = chartRepo.DownloadIndexFile()
 	if err != nil {
-		return nil, fmt.Errorf("failed to download repository index: %w", err)
+		cleanup()
+		return nil, nil, fmt.Errorf("failed to download repository index: %w", err)
 	}
 
 	// Add repository to the configuration file
@@ -83,12 +92,11 @@ func setupHelmRepository(config *HelmConfig, settings *cli.EnvSettings) (*repo.C
 
 	// Write the repository configuration file
 	if err := repoFile.WriteFile(settings.RepositoryConfig, 0644); err != nil {
-		return nil, fmt.Errorf("failed to write repository configuration: %w", err)
+		cleanup()
+		return nil, nil, fmt.Errorf("failed to write repository configuration: %w", err)
 	}
 
-	// Note: We don't clean up tempConfigDir and tempCacheDir here because
-	// Helm will need them for the duration of the chart operations
-	// The calling code should handle cleanup if needed, or rely on OS cleanup
-
-	return chartRepo, nil
+	// Return the repository and cleanup function
+	// Caller must defer cleanup() to ensure temporary directories are removed
+	return chartRepo, cleanup, nil
 }

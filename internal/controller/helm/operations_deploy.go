@@ -28,9 +28,11 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*controller.OperationResul
 	releaseName := h.config.ReleaseName
 
 	// Set up repository configuration properly for ephemeral containers
-	if _, err := setupHelmRepository(h.config, h.settings); err != nil {
+	_, cleanup, err := setupHelmRepository(h.config, h.settings)
+	if err != nil {
 		return nil, fmt.Errorf("failed to setup helm repository: %w", err)
 	}
+	defer cleanup()
 
 	// Prepare chart for installation
 	chart, err := loadHelmChart(h.config, h.settings)

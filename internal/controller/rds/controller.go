@@ -9,9 +9,9 @@ import (
 	"github.com/rinswind/deployment-operator/componentkit/controller"
 )
 
-//+kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components/finalizers,verbs=update
+//+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components/finalizers,verbs=update
 
 // ComponentReconciler reconciles a Component object for rds handler using the generic
 // controller base with RDS-specific operations.
