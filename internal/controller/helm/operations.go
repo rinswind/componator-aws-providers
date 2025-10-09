@@ -9,9 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
+	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/source/http"
 	"github.com/rinswind/deployment-operator/componentkit/controller"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/cli"
@@ -22,23 +22,24 @@ import (
 
 // HelmOperationsFactory implements the ComponentOperationsFactory interface for Helm deployments.
 type HelmOperationsFactory struct {
-	// indexRefreshInterval specifies how often repository indices are refreshed.
-	// Hardcoded to 5 minutes for now, may become configurable later.
-	indexRefreshInterval time.Duration
+	httpChartSource *http.ChartSource // Singleton for HTTP chart operations with caching
 }
 
-// NewHelmOperationsFactory creates a new HelmOperationsFactory with one-time infrastructure setup.
-// This ensures the Helm cache directory exists before any operations run.
+// NewHelmOperationsFactory creates a new HelmOperationsFactory with HTTPChartSource singleton.
+// Configuration is controlled via environment variables:
+//   - HELM_INDEX_CACHE_SIZE: Max number of indexes to cache (default: 10, 0 = disabled)
+//   - HELM_INDEX_CACHE_TTL: Time-to-live for cached indexes (default: "1h")
 func NewHelmOperationsFactory() (*HelmOperationsFactory, error) {
-	// One-time setup: ensure Helm cache directory exists
-	// This avoids repeated directory creation checks during Deploy operations
-	repoCachePath := filepath.Join("/helm", helmCacheDir)
-	if err := os.MkdirAll(repoCachePath, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create helm cache directory: %w", err)
+	cacheSize := getEnvOrDefaultInt("HELM_INDEX_CACHE_SIZE", 10)
+	cacheTTL := getEnvOrDefaultDuration("HELM_INDEX_CACHE_TTL", 1*time.Hour)
+
+	chartSource, err := http.NewChartSource("./helm", cacheSize, cacheTTL, 5*time.Minute)
+	if err != nil {
+		return nil, err
 	}
 
 	return &HelmOperationsFactory{
-		indexRefreshInterval: 5 * time.Minute, // Hardcoded default
+		httpChartSource: chartSource,
 	}, nil
 }
 
@@ -69,11 +70,11 @@ func (f *HelmOperationsFactory) NewOperations(
 	}
 
 	return &HelmOperations{
-		settings:             settings,
-		actionConfig:         actionConfig,
-		config:               config,
-		status:               status,
-		indexRefreshInterval: f.indexRefreshInterval,
+		settings:     settings,
+		actionConfig: actionConfig,
+		config:       config,
+		status:       status,
+		chartSource:  f.httpChartSource,
 	}, nil
 }
 
@@ -84,9 +85,9 @@ type HelmOperations struct {
 	config *HelmConfig
 	status *HelmStatus
 
-	settings             *cli.EnvSettings
-	actionConfig         *action.Configuration
-	indexRefreshInterval time.Duration
+	settings     *cli.EnvSettings
+	actionConfig *action.Configuration
+	chartSource  *http.ChartSource // Reference to factory's singleton
 }
 
 // getHelmRelease verifies if a Helm release exists and returns it
@@ -153,4 +154,24 @@ func (h *HelmOperations) gatherHelmReleaseResources(ctx context.Context, rel *re
 		"resourceCount", len(resourceList))
 
 	return resourceList, nil
+}
+
+// Environment variable helpers for configuration
+
+func getEnvOrDefaultInt(key string, defaultValue int) int {
+	if val := os.Getenv(key); val != "" {
+		if parsed, err := fmt.Sscanf(val, "%d", &defaultValue); err == nil && parsed == 1 {
+			return defaultValue
+		}
+	}
+	return defaultValue
+}
+
+func getEnvOrDefaultDuration(key string, defaultValue time.Duration) time.Duration {
+	if val := os.Getenv(key); val != "" {
+		if parsed, err := time.ParseDuration(val); err == nil {
+			return parsed
+		}
+	}
+	return defaultValue
 }

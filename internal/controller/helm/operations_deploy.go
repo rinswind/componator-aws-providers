@@ -27,17 +27,16 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*controller.OperationResul
 
 	releaseName := h.config.ReleaseName
 
-	// Set up repository configuration properly for ephemeral containers
-	_, cleanup, err := setupHelmRepository(h.config, h.settings, h.indexRefreshInterval)
+	// Get chart from HTTP repository with caching
+	chart, err := h.chartSource.GetChart(
+		h.config.Repository.Name,
+		h.config.Repository.URL,
+		h.config.Chart.Name,
+		h.config.Chart.Version,
+		h.settings,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to setup helm repository: %w", err)
-	}
-	defer cleanup()
-
-	// Prepare chart for installation
-	chart, err := loadHelmChart(h.config, h.settings)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get chart: %w", err)
 	}
 
 	// Check if release already exists
