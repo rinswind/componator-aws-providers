@@ -9,7 +9,7 @@ require (
 	github.com/go-playground/validator/v10 v10.27.0
 	github.com/onsi/ginkgo/v2 v2.25.3
 	github.com/onsi/gomega v1.38.2
-	github.com/rinswind/deployment-operator v0.0.0-00010101000000-000000000000
+	github.com/rinswind/deployment-operator v0.0.9
 	helm.sh/helm/v3 v3.19.0
 	k8s.io/apiextensions-apiserver v0.34.0
 	k8s.io/apimachinery v0.34.0
@@ -73,6 +73,7 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
+	github.com/gofrs/flock v0.12.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/cel-go v0.26.0 // indirect
@@ -180,4 +181,4 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/rinswind/deployment-operator => ../deployment-operator
+//replace github.com/rinswind/deployment-operator => ../deployment-operator
