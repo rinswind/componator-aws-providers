@@ -8,8 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"time"
 
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/source/http"
 	"github.com/rinswind/deployment-operator/componentkit/controller"
@@ -25,22 +23,12 @@ type HelmOperationsFactory struct {
 	httpChartSource *http.ChartSource // Singleton for HTTP chart operations with caching
 }
 
-// NewHelmOperationsFactory creates a new HelmOperationsFactory with HTTPChartSource singleton.
-// Configuration is controlled via environment variables:
-//   - HELM_INDEX_CACHE_SIZE: Max number of indexes to cache (default: 10, 0 = disabled)
-//   - HELM_INDEX_CACHE_TTL: Time-to-live for cached indexes (default: "1h")
-func NewHelmOperationsFactory() (*HelmOperationsFactory, error) {
-	cacheSize := getEnvOrDefaultInt("HELM_INDEX_CACHE_SIZE", 10)
-	cacheTTL := getEnvOrDefaultDuration("HELM_INDEX_CACHE_TTL", 1*time.Hour)
-
-	chartSource, err := http.NewChartSource("./helm", cacheSize, cacheTTL, 5*time.Minute)
-	if err != nil {
-		return nil, err
-	}
-
+// NewHelmOperationsFactory creates a new HelmOperationsFactory with the provided chart source.
+// The chart source is constructed and configured by the controller setup code.
+func NewHelmOperationsFactory(chartSource *http.ChartSource) *HelmOperationsFactory {
 	return &HelmOperationsFactory{
 		httpChartSource: chartSource,
-	}, nil
+	}
 }
 
 func (f *HelmOperationsFactory) NewOperations(
@@ -154,24 +142,4 @@ func (h *HelmOperations) gatherHelmReleaseResources(ctx context.Context, rel *re
 		"resourceCount", len(resourceList))
 
 	return resourceList, nil
-}
-
-// Environment variable helpers for configuration
-
-func getEnvOrDefaultInt(key string, defaultValue int) int {
-	if val := os.Getenv(key); val != "" {
-		if parsed, err := fmt.Sscanf(val, "%d", &defaultValue); err == nil && parsed == 1 {
-			return defaultValue
-		}
-	}
-	return defaultValue
-}
-
-func getEnvOrDefaultDuration(key string, defaultValue time.Duration) time.Duration {
-	if val := os.Getenv(key); val != "" {
-		if parsed, err := time.ParseDuration(val); err == nil {
-			return parsed
-		}
-	}
-	return defaultValue
 }

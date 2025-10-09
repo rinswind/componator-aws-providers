@@ -4,7 +4,18 @@
 package helm
 
 import (
+	"time"
+
+	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/source/http"
 	"github.com/rinswind/deployment-operator/componentkit/controller"
+)
+
+const (
+	// Configuration values for Helm chart source
+	helmBasePath         = "/helm"
+	indexCacheSize       = 10
+	indexCacheTTL        = 1 * time.Hour
+	indexRefreshInterval = 5 * time.Minute
 )
 
 //+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
@@ -23,12 +34,21 @@ type ComponentReconciler struct {
 }
 
 // NewComponentReconciler creates a new Helm Component controller with the generic base using factory pattern.
-// Returns error if factory initialization fails (e.g., unable to create required directories).
+// Returns error if initialization fails (e.g., unable to create required directories).
 func NewComponentReconciler() (*ComponentReconciler, error) {
-	operationsFactory, err := NewHelmOperationsFactory()
+	// Create HTTP chart source with caching
+	chartSource, err := http.NewChartSource(
+		helmBasePath,
+		indexCacheSize,
+		indexCacheTTL,
+		indexRefreshInterval,
+	)
 	if err != nil {
 		return nil, err
 	}
+
+	// Create operations factory with chart source dependency
+	operationsFactory := NewHelmOperationsFactory(chartSource)
 
 	config := controller.DefaultComponentReconcilerConfig("helm")
 
