@@ -13,10 +13,10 @@ controllerManager:
     resources:
       limits:
         cpu: 500m
-        memory: 128Mi
+        memory: 512Mi
       requests:
         cpu: 10m
-        memory: 64Mi
+        memory: 256Mi
     livenessProbe:
       initialDelaySeconds: 15
       periodSeconds: 20
@@ -75,3 +75,9 @@ certmanager:
 # [NETWORK POLICIES]: To enable NetworkPolicies set true
 networkPolicy:
   enable: false
+
+# [HELM CACHE]: Persistent storage for Helm repository cache
+helmCache:
+  enabled: true
+  size: 1Gi
+  # storageClass: ""  # Leave empty to use default storage class
