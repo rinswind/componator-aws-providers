@@ -5,7 +5,13 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - deployments.deployment-orchestrator.io
+  - '*'
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - deployment-orchestrator.io
   resources:
   - components
   verbs:
@@ -17,13 +23,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - deployments.deployment-orchestrator.io
+  - deployment-orchestrator.io
   resources:
   - components/finalizers
   verbs:
   - update
 - apiGroups:
-  - deployments.deployment-orchestrator.io
+  - deployment-orchestrator.io
   resources:
   - components/status
   verbs:
