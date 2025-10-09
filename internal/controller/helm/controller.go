@@ -22,12 +22,17 @@ type ComponentReconciler struct {
 	*controller.ComponentReconciler
 }
 
-// NewComponentReconciler creates a new Helm Component controller with the generic base using factory pattern
-func NewComponentReconciler() *ComponentReconciler {
-	operationsFactory := &HelmOperationsFactory{}
+// NewComponentReconciler creates a new Helm Component controller with the generic base using factory pattern.
+// Returns error if factory initialization fails (e.g., unable to create required directories).
+func NewComponentReconciler() (*ComponentReconciler, error) {
+	operationsFactory, err := NewHelmOperationsFactory()
+	if err != nil {
+		return nil, err
+	}
+
 	config := controller.DefaultComponentReconcilerConfig("helm")
 
 	return &ComponentReconciler{
 		ComponentReconciler: controller.NewComponentReconciler(operationsFactory, config),
-	}
+	}, nil
 }

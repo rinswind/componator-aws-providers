@@ -8,6 +8,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/rinswind/deployment-operator/componentkit/controller"
 	"helm.sh/helm/v3/pkg/action"
@@ -18,7 +21,26 @@ import (
 )
 
 // HelmOperationsFactory implements the ComponentOperationsFactory interface for Helm deployments.
-type HelmOperationsFactory struct{}
+type HelmOperationsFactory struct {
+	// indexRefreshInterval specifies how often repository indices are refreshed.
+	// Hardcoded to 5 minutes for now, may become configurable later.
+	indexRefreshInterval time.Duration
+}
+
+// NewHelmOperationsFactory creates a new HelmOperationsFactory with one-time infrastructure setup.
+// This ensures the Helm cache directory exists before any operations run.
+func NewHelmOperationsFactory() (*HelmOperationsFactory, error) {
+	// One-time setup: ensure Helm cache directory exists
+	// This avoids repeated directory creation checks during Deploy operations
+	repoCachePath := filepath.Join("/helm", helmCacheDir)
+	if err := os.MkdirAll(repoCachePath, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create helm cache directory: %w", err)
+	}
+
+	return &HelmOperationsFactory{
+		indexRefreshInterval: 5 * time.Minute, // Hardcoded default
+	}, nil
+}
 
 func (f *HelmOperationsFactory) NewOperations(
 	ctx context.Context, rawConfig json.RawMessage, currentStatus json.RawMessage) (controller.ComponentOperations, error) {
@@ -47,10 +69,11 @@ func (f *HelmOperationsFactory) NewOperations(
 	}
 
 	return &HelmOperations{
-		settings:     settings,
-		actionConfig: actionConfig,
-		config:       config,
-		status:       status,
+		settings:             settings,
+		actionConfig:         actionConfig,
+		config:               config,
+		status:               status,
+		indexRefreshInterval: f.indexRefreshInterval,
 	}, nil
 }
 
@@ -61,8 +84,9 @@ type HelmOperations struct {
 	config *HelmConfig
 	status *HelmStatus
 
-	settings     *cli.EnvSettings
-	actionConfig *action.Configuration
+	settings             *cli.EnvSettings
+	actionConfig         *action.Configuration
+	indexRefreshInterval time.Duration
 }
 
 // getHelmRelease verifies if a Helm release exists and returns it
