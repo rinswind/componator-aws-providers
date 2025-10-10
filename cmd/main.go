@@ -6,6 +6,9 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+
+	// "net/http"
+	// "net/http/pprof"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -69,6 +72,23 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	// Start pprof server for memory profiling on port 6060
+	// go func() {
+	// 	mux := http.NewServeMux()
+	// 	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	// 	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	// 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	// 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	// 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	// 	mux.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+	// 	mux.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+	// 	mux.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+	// 	setupLog.Info("Starting pprof server", "address", ":6060")
+	// 	if err := http.ListenAndServe(":6060", mux); err != nil {
+	// 		setupLog.Error(err, "pprof server failed")
+	// 	}
+	// }()
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
