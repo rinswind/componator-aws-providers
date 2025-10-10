@@ -52,7 +52,5 @@ func NewComponentReconciler() (*ComponentReconciler, error) {
 
 	config := controller.DefaultComponentReconcilerConfig("helm")
 
-	return &ComponentReconciler{
-		ComponentReconciler: controller.NewComponentReconciler(operationsFactory, config),
-	}, nil
+	return &ComponentReconciler{controller.NewComponentReconciler(operationsFactory, config)}, nil
 }
