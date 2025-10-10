@@ -84,15 +84,18 @@ spec:
             port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
-        # TODO(user): Configure the resources accordingly based on the project requirements.
+        # Resource limits tuned for Helm operations:
+        # - Each chart load can consume 50-100Mi
+        # - Helm action configs create K8s clients per reconciliation
+        # - Repository indices cached in memory
         # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
         resources:
           limits:
             cpu: 500m
-            memory: 128Mi
+            memory: 512Mi
           requests:
             cpu: 10m
-            memory: 64Mi
+            memory: 256Mi
         volumeMounts: []
       volumes: []
       serviceAccountName: controller-manager
