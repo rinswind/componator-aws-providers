@@ -29,3 +29,6 @@ go.work
 # Produced by test calls to "go build cmd/main.go"
 main
 main.exe
+
+*.prof
+
