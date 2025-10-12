@@ -27,14 +27,9 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*controller.OperationResul
 
 	releaseName := h.config.ReleaseName
 
-	// Get chart from HTTP repository with caching
-	chart, err := h.chartSource.GetChart(
-		h.config.Repository.Name,
-		h.config.Repository.URL,
-		h.config.Chart.Name,
-		h.config.Chart.Version,
-		h.settings,
-	)
+	// Get chart from configured source
+	// Phase 1: Only HTTP source is supported (OCI in Phase 2)
+	chart, err := h.getChart(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get chart: %w", err)
 	}
@@ -64,7 +59,7 @@ func (h *HelmOperations) install(ctx context.Context, chart *chart.Chart) (*cont
 	installAction.ReleaseName = releaseName
 	installAction.Namespace = releaseNamespace
 	installAction.CreateNamespace = *h.config.ManageNamespace
-	installAction.Version = h.config.Chart.Version
+	installAction.Version = h.getChartVersion()
 	installAction.Wait = false               // Async deployment - don't block reconcile loop
 	installAction.Timeout = 30 * time.Second // Quick timeout for install operation itself
 
@@ -102,7 +97,7 @@ func (h *HelmOperations) upgrade(ctx context.Context, chart *chart.Chart) (*cont
 
 	// Create upgrade action
 	upgradeAction := action.NewUpgrade(h.actionConfig)
-	upgradeAction.Version = h.config.Chart.Version
+	upgradeAction.Version = h.getChartVersion()
 	upgradeAction.Wait = false               // Async upgrade - don't block reconcile loop
 	upgradeAction.Timeout = 30 * time.Second // Quick timeout for upgrade operation itself
 

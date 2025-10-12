@@ -32,15 +32,32 @@ type HelmConfig struct {
 	// +optional
 	ManageNamespace *bool `json:"manageNamespace,omitempty"`
 
-	// Repository specifies the Helm chart repository configuration
-	Repository HelmRepository `json:"repository"`
-
-	// Chart specifies the chart name and version to deploy
-	Chart HelmChart `json:"chart"`
+	// Source specifies the chart source configuration (HTTP repository or OCI registry)
+	// This is a polymorphic field that can be either HTTPSource or OCISource
+	// The source type is determined by the "type" field in the configuration
+	Source SourceConfig `json:"-"` // Handled with custom unmarshaling
 
 	// Values contains key-value pairs for chart values override
 	// +optional
 	Values map[string]any `json:"values,omitempty"`
+}
+
+// GetHTTPSource returns the HTTPSource if the source type is HTTP, nil otherwise.
+// Temporary helper method until Phase 3 interface simplification.
+func (c *HelmConfig) GetHTTPSource() *HTTPSource {
+	if httpSource, ok := c.Source.(*HTTPSource); ok {
+		return httpSource
+	}
+	return nil
+}
+
+// GetOCISource returns the OCISource if the source type is OCI, nil otherwise.
+// Temporary helper method until Phase 3 interface simplification.
+func (c *HelmConfig) GetOCISource() *OCISource {
+	if ociSource, ok := c.Source.(*OCISource); ok {
+		return ociSource
+	}
+	return nil
 }
 
 // HelmRepository represents Helm chart repository configuration
@@ -90,12 +107,36 @@ type HelmStatus struct {
 }
 
 // resolveHelmConfig unmarshals Component.Spec.Config into HelmConfig struct
-// and resolves the target namespace (fills in from Component.Namespace if not specified)
+// and resolves the source configuration using two-stage parsing.
 func resolveHelmConfig(ctx context.Context, rawConfig json.RawMessage) (*HelmConfig, error) {
+	log := logf.FromContext(ctx)
+
+	// Parse the raw config into a temporary structure to extract source
+	var rawConfigMap map[string]json.RawMessage
+	if err := json.Unmarshal(rawConfig, &rawConfigMap); err != nil {
+		return nil, fmt.Errorf("failed to parse helm config: %w", err)
+	}
+
+	// Ensure source field exists (required in new schema)
+	rawSource, hasSource := rawConfigMap["source"]
+	if !hasSource {
+		return nil, fmt.Errorf("helm config validation failed: source field is required (must specify 'http' or 'oci' source)")
+	}
+
+	// Parse source configuration (two-stage parsing with type detection)
+	source, err := resolveSourceConfig(rawSource)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse source configuration: %w", err)
+	}
+
+	// Parse remaining config fields
 	var config HelmConfig
 	if err := json.Unmarshal(rawConfig, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse helm config: %w", err)
 	}
+
+	// Inject resolved source
+	config.Source = source
 
 	// Validate configuration using validator framework
 	validate := validator.New()
@@ -110,12 +151,8 @@ func resolveHelmConfig(ctx context.Context, rawConfig json.RawMessage) (*HelmCon
 		config.ManageNamespace = &defaultManageNamespace
 	}
 
-	log := logf.FromContext(ctx)
-
 	log.V(1).Info("Resolved helm config",
-		"repository", config.Repository.URL,
-		"chart", config.Chart.Name,
-		"version", config.Chart.Version,
+		"sourceType", source.GetType(),
 		"releaseName", config.ReleaseName,
 		"releaseNamespace", config.ReleaseNamespace,
 		"valuesCount", len(config.Values))

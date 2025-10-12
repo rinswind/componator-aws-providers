@@ -9,30 +9,39 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/source"
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/source/http"
+	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/source/oci"
 	"github.com/rinswind/deployment-operator/componentkit/controller"
 	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/kube"
 	"helm.sh/helm/v3/pkg/release"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // HelmOperationsFactory implements the ComponentOperationsFactory interface for Helm deployments.
 type HelmOperationsFactory struct {
-	httpChartSource *http.ChartSource // Singleton for HTTP chart operations with caching
+	httpChartSource *http.CachingRepository // Singleton for HTTP chart operations with caching
+	k8sClient       client.Client           // Kubernetes client for OCI credential resolution
 }
 
-// NewHelmOperationsFactory creates a new HelmOperationsFactory with the provided chart source.
-// The chart source is constructed and configured by the controller setup code.
-func NewHelmOperationsFactory(chartSource *http.ChartSource) *HelmOperationsFactory {
+// NewHelmOperationsFactory creates a new HelmOperationsFactory with the provided dependencies.
+// The HTTP chart source is a singleton shared across all reconciliations.
+// The k8sClient is used for OCI credential resolution from the namespace specified in the secret reference.
+func NewHelmOperationsFactory(httpChartSource *http.CachingRepository, k8sClient client.Client) *HelmOperationsFactory {
 	return &HelmOperationsFactory{
-		httpChartSource: chartSource,
+		httpChartSource: httpChartSource,
+		k8sClient:       k8sClient,
 	}
 }
 
 func (f *HelmOperationsFactory) NewOperations(
 	ctx context.Context, rawConfig json.RawMessage, currentStatus json.RawMessage) (controller.ComponentOperations, error) {
+
+	log := logf.FromContext(ctx)
 
 	config, err := resolveHelmConfig(ctx, rawConfig)
 	if err != nil {
@@ -47,7 +56,6 @@ func (f *HelmOperationsFactory) NewOperations(
 	settings := cli.New()
 	actionConfig := &action.Configuration{}
 
-	log := logf.FromContext(ctx)
 	logFunc := func(format string, v ...any) {
 		log.Info(fmt.Sprintf(format, v...))
 	}
@@ -57,12 +65,54 @@ func (f *HelmOperationsFactory) NewOperations(
 		return nil, fmt.Errorf("failed to initialize helm action configuration: %w", err)
 	}
 
+	// Create appropriate chart source based on configuration type
+	var chartSource source.ChartSource
+
+	switch src := config.Source.(type) {
+	case *HTTPSource:
+		// HTTP source: wrap singleton with per-chart configuration
+		chartSource = http.NewChartSource(
+			f.httpChartSource,
+			src.Repository.Name,
+			src.Repository.URL,
+			src.Chart.Name,
+			src.Chart.Version,
+		)
+		log.V(1).Info("Using HTTP chart source",
+			"repository", src.Repository.URL,
+			"chart", src.Chart.Name,
+			"version", src.Chart.Version)
+
+	case *OCISource:
+		// OCI source: create new instance with authentication
+		var secretRef *oci.SecretRef
+		if src.Authentication != nil {
+			secretRef = &oci.SecretRef{
+				Name:      src.Authentication.SecretRef.Name,
+				Namespace: src.Authentication.SecretRef.Namespace,
+			}
+		}
+
+		chartSource = oci.NewChartSource(
+			src.Chart,
+			secretRef,
+			f.k8sClient,
+			actionConfig,
+		)
+		log.V(1).Info("Using OCI chart source",
+			"chart", src.Chart,
+			"hasAuth", src.Authentication != nil)
+
+	default:
+		return nil, fmt.Errorf("unsupported chart source type: %T", src)
+	}
+
 	return &HelmOperations{
 		settings:     settings,
 		actionConfig: actionConfig,
 		config:       config,
 		status:       status,
-		chartSource:  f.httpChartSource,
+		chartSource:  chartSource,
 	}, nil
 }
 
@@ -75,7 +125,7 @@ type HelmOperations struct {
 
 	settings     *cli.EnvSettings
 	actionConfig *action.Configuration
-	chartSource  *http.ChartSource // Reference to factory's singleton
+	chartSource  source.ChartSource // Polymorphic chart source (HTTP or OCI)
 }
 
 // getHelmRelease verifies if a Helm release exists and returns it
@@ -142,4 +192,23 @@ func (h *HelmOperations) gatherHelmReleaseResources(ctx context.Context, rel *re
 		"resourceCount", len(resourceList))
 
 	return resourceList, nil
+}
+
+// getChart retrieves the chart from the configured source.
+// The source is already configured with all addressing parameters at construction time,
+// so we just call GetChart with context and settings.
+func (h *HelmOperations) getChart(ctx context.Context) (*chart.Chart, error) {
+	return h.chartSource.GetChart(ctx, h.settings)
+} // getChartVersion returns the chart version from the configured source.
+// Temporary helper until Phase 3 interface simplification.
+func (h *HelmOperations) getChartVersion() string {
+	if httpSource := h.config.GetHTTPSource(); httpSource != nil {
+		return httpSource.Chart.Version
+	}
+	if ociSource := h.config.GetOCISource(); ociSource != nil {
+		// OCI references embed the version, extract it
+		// For now, return empty (will be implemented in Phase 2)
+		return ""
+	}
+	return ""
 }

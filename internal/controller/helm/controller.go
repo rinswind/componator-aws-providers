@@ -8,6 +8,7 @@ import (
 
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/source/http"
 	"github.com/rinswind/deployment-operator/componentkit/controller"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -35,9 +36,10 @@ type ComponentReconciler struct {
 
 // NewComponentReconciler creates a new Helm Component controller with the generic base using factory pattern.
 // Returns error if initialization fails (e.g., unable to create required directories).
-func NewComponentReconciler() (*ComponentReconciler, error) {
-	// Create HTTP chart source with caching
-	chartSource, err := http.NewChartSource(
+// Note: k8sClient parameter added for OCI registry credential resolution.
+func NewComponentReconciler(k8sClient client.Client) (*ComponentReconciler, error) {
+	// Create HTTP caching repository singleton
+	httpCharRepo, err := http.NewCachingRepository(
 		helmBasePath,
 		indexCacheSize,
 		indexCacheTTL,
@@ -47,8 +49,8 @@ func NewComponentReconciler() (*ComponentReconciler, error) {
 		return nil, err
 	}
 
-	// Create operations factory with chart source dependency
-	operationsFactory := NewHelmOperationsFactory(chartSource)
+	// Create operations factory with chart source dependency and k8s client for OCI auth
+	operationsFactory := NewHelmOperationsFactory(httpCharRepo, k8sClient)
 
 	config := controller.DefaultComponentReconcilerConfig("helm")
 

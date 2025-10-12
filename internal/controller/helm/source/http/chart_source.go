@@ -27,12 +27,12 @@ const (
 	helmCacheDir         = "repository"
 )
 
-// ChartSource provides complete HTTP repository abstraction with caching.
+// CachingRepository provides complete HTTP repository abstraction with caching.
 // It encapsulates all repository operations including index caching, repository
 // configuration, and chart downloading.
 //
 // This is designed as a singleton shared across all reconciliation loops.
-type ChartSource struct {
+type CachingRepository struct {
 	indexCache      *IndexCache
 	basePath        string
 	repoConfigPath  string
@@ -40,7 +40,7 @@ type ChartSource struct {
 	refreshInterval time.Duration
 }
 
-// NewChartSource creates a new HTTP ChartSource with the specified configuration.
+// NewCachingRepository creates a new HTTP CachingRepository with the specified configuration.
 //
 // Parameters:
 //   - basePath: Base directory for Helm operations (repositories.yaml and cache)
@@ -49,8 +49,8 @@ type ChartSource struct {
 //   - refreshInterval: How often to check for stale repository indexes on disk
 //
 // The basePath directory will be created if it doesn't exist.
-func NewChartSource(basePath string, cacheSize int, cacheTTL, refreshInterval time.Duration) (*ChartSource, error) {
-	log := logf.Log.WithName("http-chart-source")
+func NewCachingRepository(basePath string, cacheSize int, cacheTTL, refreshInterval time.Duration) (*CachingRepository, error) {
+	log := logf.Log.WithName("http-caching-repository")
 
 	// Resolve to absolute path
 	absPath, err := filepath.Abs(basePath)
@@ -64,7 +64,7 @@ func NewChartSource(basePath string, cacheSize int, cacheTTL, refreshInterval ti
 		return nil, fmt.Errorf("failed to create helm cache directory: %w", err)
 	}
 
-	s := &ChartSource{
+	s := &CachingRepository{
 		indexCache:      NewIndexCache(cacheSize, cacheTTL),
 		basePath:        absPath,
 		repoConfigPath:  filepath.Join(absPath, helmRepositoriesFile),
@@ -95,7 +95,7 @@ func NewChartSource(basePath string, cacheSize int, cacheTTL, refreshInterval ti
 //   - settings: Helm CLI settings (used for chart locating)
 //
 // Returns the loaded chart ready for installation/upgrade.
-func (s *ChartSource) GetChart(repoName, repoURL, chartName, version string, settings *cli.EnvSettings) (*chart.Chart, error) {
+func (s *CachingRepository) GetChart(repoName, repoURL, chartName, version string, settings *cli.EnvSettings) (*chart.Chart, error) {
 	log := logf.Log.WithName("http-chart-source")
 
 	// Step 1: Ensure repository is configured in repositories.yaml
@@ -131,7 +131,7 @@ func (s *ChartSource) GetChart(repoName, repoURL, chartName, version string, set
 // Multiple controller pods writing to the same repositories.yaml WILL corrupt it
 // without proper locking. We use github.com/gofrs/flock with 30s timeout following
 // the exact pattern from Helm CLI.
-func (s *ChartSource) ensureRepository(repoName, repoURL string) error {
+func (s *CachingRepository) ensureRepository(repoName, repoURL string) error {
 	log := logf.Log.WithName("http-chart-source")
 
 	// Acquire file lock for process synchronization (critical for horizontally scaled controllers)
@@ -186,7 +186,7 @@ func (s *ChartSource) ensureRepository(repoName, repoURL string) error {
 
 // loadOrDownloadIndex loads a repository index from disk or downloads it if stale.
 // This implements a disk-based cache layer below the in-memory cache.
-func (s *ChartSource) loadOrDownloadIndex(repoName, repoURL string) (*repo.IndexFile, error) {
+func (s *CachingRepository) loadOrDownloadIndex(repoName, repoURL string) (*repo.IndexFile, error) {
 	log := logf.Log.WithName("http-chart-source")
 
 	indexPath := filepath.Join(s.repoCachePath, fmt.Sprintf("%s-index.yaml", repoName))
@@ -236,7 +236,7 @@ func (s *ChartSource) loadOrDownloadIndex(repoName, repoURL string) (*repo.Index
 
 // loadChartFromIndex locates and loads a chart using the repository index.
 // This searches the index for the chart version, downloads it, and loads it.
-func (s *ChartSource) loadChartFromIndex(index *repo.IndexFile, chartName, version string, settings *cli.EnvSettings) (*chart.Chart, error) {
+func (s *CachingRepository) loadChartFromIndex(index *repo.IndexFile, chartName, version string, settings *cli.EnvSettings) (*chart.Chart, error) {
 	log := logf.Log.WithName("http-chart-source")
 
 	// Configure Helm settings to use our repository paths

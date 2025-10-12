@@ -163,7 +163,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	helmController, err := helm.NewComponentReconciler()
+	// Initialize Helm controller with k8s client for OCI credential resolution
+	// The client is needed during factory initialization to create OCI chart sources
+	helmController, err := helm.NewComponentReconciler(mgr.GetClient())
 	if err != nil {
 		setupLog.Error(err, "unable to initialize helm controller")
 		os.Exit(1)
