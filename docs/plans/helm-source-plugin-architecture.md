@@ -50,8 +50,7 @@ Refactor helm chart sources (HTTP and OCI) into self-contained, independently te
   - `GetChart(ctx, settings) (*chart.Chart, error)` - Fetch chart from source
   - `GetVersion() string` - Return configured chart version
 
-- `Registry`: Source instance registry (simple lookup table)
-  - `Register(sourceType string, source ChartSource)` - Register a source instance
+- `Registry`: Source instance registry (type alias for map[string]ChartSource)
   - `Get(sourceType string) (ChartSource, error)` - Retrieve registered source instance
 
 **Modified Types:**
@@ -87,11 +86,8 @@ Refactor helm chart sources (HTTP and OCI) into self-contained, independently te
 **Critical flow:**
 
 ```text
-Registry.Register(sourceType, source):
-  store source instance in map[sourceType]
-
 Registry.Get(sourceType):
-  source = lookup(sourceType)
+  source = map[sourceType]
   if source not found:
     return error "unknown source type"
   return source
@@ -99,8 +95,8 @@ Registry.Get(sourceType):
 
 **Design decisions:**
 
-- Decision: Store source instances, not factory functions - Sources are long-lived singletons created once in NewComponentReconciler
-- Decision: Registry is simple lookup table - With only 2-3 known source types, complex factory patterns are unnecessary
+- Decision: Registry is plain map[string]ChartSource - Simple type alias, no mutex needed since registration happens once before concurrent access
+- Decision: Direct map assignment for registration - `registry["http"] = httpSource` is clearer than method calls
 - Decision: Sources created explicitly in NewComponentReconciler - Clear dependency management, no hidden initialization
 
 ### Component: HTTP Source Package
@@ -219,8 +215,8 @@ NewComponentReconciler:
   ociSource = sources.NewOCISource(k8sClient)
   
   registry = sources.NewRegistry()
-  registry.Register("http", httpSource)
-  registry.Register("oci", ociSource)
+  registry["http"] = httpSource
+  registry["oci"] = ociSource
   
   factory = NewHelmOperationsFactory(registry)
 ```
@@ -269,51 +265,64 @@ NewOperations:
 
 ## Implementation Phases
 
-### Phase 1: Create Source Infrastructure
+### Phase 1: Create Source Infrastructure ✅ COMPLETE
 
-- Create `sources/` package with `ChartSource` interface and `Registry`
-- Implement `DetectSourceType` function for config type detection
-- Registry stores source instances (not factory functions)
+- ✅ Create `sources/` package with `ChartSource` interface and `Registry`
+- ✅ Implement `DetectSourceType` function for config type detection
+- ✅ Registry stores source instances (simplified to plain map[string]ChartSource)
 - **Deliverable:** Interface and registry compile and pass basic registration/lookup tests
 
-### Phase 2: Migrate HTTP Source
+**Completed:** sources/chart_source.go, sources/registry.go, sources/detect.go, sources/sources_test.go
 
-- Create `sources/http/` package with HTTP source implementation
-- Move HTTP configuration types from `source_config.go`
-- Implement `ChartSource` interface wrapping existing `http.CachingRepository`
-- Constructor `NewSource(httpRepo)` stores repo reference, no config yet
-- `ParseAndValidate` parses and stores config from Component spec
-- Update tests to use new package structure
+### Phase 2: Migrate HTTP Source ✅ COMPLETE
+
+- ✅ Create `sources/http/` package with HTTP source implementation
+- ✅ Move HTTP configuration types from `source_config.go`
+- ✅ Implement `ChartSource` interface wrapping existing `http.CachingRepository`
+- ✅ Constructor `NewSource(httpRepo)` stores repo reference, no config yet
+- ✅ `ParseAndValidate` parses and stores config from Component spec
+- ✅ Update tests to use new package structure
 - **Deliverable:** HTTP source works as singleton with per-reconciliation config
 
-### Phase 3: Migrate OCI Source
+**Completed:** sources/http/source.go, sources/http/source_test.go
 
-- Create `sources/oci/` package with OCI source implementation
-- Move OCI configuration types from `source_config.go`
-- Implement `ChartSource` interface using existing OCI chart pulling logic
-- Constructor `NewSource(k8sClient)` stores client reference
-- `ParseAndValidate` parses and stores config from Component spec
-- Update tests to use new package structure
+### Phase 3: Migrate OCI Source ✅ COMPLETE
+
+- ✅ Create `sources/oci/` package with OCI source implementation
+- ✅ Move OCI configuration types from `source_config.go`
+- ✅ Implement `ChartSource` interface using existing OCI chart pulling logic
+- ✅ Constructor `NewSource(k8sClient)` stores client reference
+- ✅ `ParseAndValidate` parses and stores config from Component spec
+- ✅ Update tests to use new package structure
 - **Deliverable:** OCI source works as singleton with per-reconciliation config
 
-### Phase 4: Update Helm Controller
+**Completed:** sources/oci/source.go, sources/oci/source_test.go
 
-- Update `NewComponentReconciler` to create source instances and populate registry
-- Modify `HelmOperationsFactory` to accept and use source registry
-- Update `NewOperations` to detect source type and retrieve from registry
-- Simplify `HelmConfig` to remove polymorphic `Source` field
-- Remove type-switching logic from `operations.go`
-- Update all references to use new `ChartSource` interface
+### Phase 4: Update Helm Controller ✅ COMPLETE
+
+- ✅ Update `NewComponentReconciler` to create source instances and populate registry
+- ✅ Modify `HelmOperationsFactory` to accept and use source registry
+- ✅ Update `NewOperations` to detect source type and retrieve from registry
+- ✅ Simplify `HelmConfig` to remove polymorphic `Source` field
+- ✅ Remove type-switching logic from `operations.go`
+- ✅ Update all references to use new `ChartSource` interface
+- ✅ Simplify `getChartVersion()` to use source interface
 - **Deliverable:** Controller creates sources once, retrieves and configures per reconciliation
 
-### Phase 5: Cleanup and Documentation
+**Completed:** controller.go, operations.go, config.go
 
-- Remove old `source_config.go` after migration
-- Remove `SourceConfig` interface and helper methods (`GetHTTPSource`, `GetOCISource`)
-- Update package documentation and examples
-- Verify all integration tests pass
-- Document source architecture and how to add new source types
+### Phase 5: Cleanup and Documentation ✅ COMPLETE
+
+- ✅ Remove old `source_config.go` after migration
+- ✅ Remove `source_config_test.go` after migration
+- ✅ Remove `SourceConfig` interface and helper methods (`GetHTTPSource`, `GetOCISource`)
+- ✅ Remove unused `HelmRepository` and `HelmChart` types from config.go
+- ✅ Update package documentation and examples (sources/doc.go)
+- ✅ Verify all tests pass (no test files left in main helm package)
+- ✅ Document source architecture and how to add new source types
 - **Deliverable:** Clean architecture with comprehensive documentation
+
+**Completed:** Removed obsolete files, created sources/doc.go with comprehensive documentation
 
 ## Key Design Decisions
 

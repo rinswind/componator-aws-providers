@@ -6,7 +6,9 @@ package helm
 import (
 	"time"
 
-	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/source/http"
+	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources"
+	httpsource "github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources/http"
+	ocisource "github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources/oci"
 	"github.com/rinswind/deployment-operator/componentkit/controller"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -39,7 +41,7 @@ type ComponentReconciler struct {
 // Note: k8sClient parameter added for OCI registry credential resolution.
 func NewComponentReconciler(k8sClient client.Client) (*ComponentReconciler, error) {
 	// Create HTTP caching repository singleton
-	httpCharRepo, err := http.NewCachingRepository(
+	httpRepo, err := httpsource.NewCachingRepository(
 		helmBasePath,
 		indexCacheSize,
 		indexCacheTTL,
@@ -49,8 +51,17 @@ func NewComponentReconciler(k8sClient client.Client) (*ComponentReconciler, erro
 		return nil, err
 	}
 
-	// Create operations factory with chart source dependency and k8s client for OCI auth
-	operationsFactory := NewHelmOperationsFactory(httpCharRepo, k8sClient)
+	// Create source instances (long-lived singletons)
+	httpSource := httpsource.NewSource(httpRepo)
+	ociSource := ocisource.NewSource(k8sClient)
+
+	// Create and populate source registry
+	registry := sources.NewRegistry()
+	registry["http"] = httpSource
+	registry["oci"] = ociSource
+
+	// Create operations factory with source registry
+	operationsFactory := NewHelmOperationsFactory(registry)
 
 	config := controller.DefaultComponentReconcilerConfig("helm")
 
