@@ -26,7 +26,7 @@ import (
 
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm"
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/rds"
-	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
+	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/core/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 

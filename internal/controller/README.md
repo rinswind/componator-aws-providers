@@ -40,7 +40,7 @@ import (
     "fmt"
     "time"
     "github.com/rinswind/deployment-operator/componentkit/controller"
-    v1alpha1 "github.com/rinswind/deployment-operator/api/v1alpha1"
+    v1alpha1 "github.com/rinswind/deployment-operator/api/core/v1alpha1"
 )
 
 const (
