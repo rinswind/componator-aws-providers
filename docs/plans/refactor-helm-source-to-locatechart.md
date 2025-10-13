@@ -218,17 +218,18 @@ Deploy(ctx):
 
 **Deliverable:** ✅ HTTP source uses ChartDownloader and returns chart path string; tests validate path return and caching behavior. Committed in b7ed719.
 
-### Phase 2: Fix OCI Source (PRIMARY GOAL)
+### Phase 2: Fix OCI Source (PRIMARY GOAL) ✅ COMPLETE
 
 **Goals:**
-- **Fix broken OCI implementation** by replacing Pull action with ChartDownloader
-- Implement OCI `LocateChart()` using `downloader.ChartDownloader` directly
-- Configure ChartDownloader with RegistryClient for authentication
-- Pass RegistryClient through ChartDownloader options for OCI protocol
-- Return explicit path from DownloadToCache (no reconstruction)
-- Update tests for OCI source with authentication scenarios
+- ✅ **Fix broken OCI implementation** by replacing Pull action with ChartDownloader
+- ✅ Implement OCI `LocateChart()` using `downloader.ChartDownloader` directly
+- ✅ Configure ChartDownloader with RegistryClient for authentication
+- ✅ Pass RegistryClient through ChartDownloader options for OCI protocol
+- ✅ Return explicit path from DownloadTo (no reconstruction)
+- ✅ Update tests for OCI source with authentication scenarios
+- ✅ Share repository cache path between HTTP and OCI sources
 
-**Deliverable:** **OCI source works with authentication**; uses ChartDownloader (symmetric with HTTP); tests validate authenticated OCI registry access and path return.
+**Deliverable:** ✅ **OCI source works with authentication**; uses ChartDownloader (symmetric with HTTP); tests validate authenticated OCI registry access and path return. Committed in 18b828e.
 
 ### Phase 3: Update Deploy Action
 
