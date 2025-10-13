@@ -11,14 +11,15 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"helm.sh/helm/v3/pkg/cli"
 )
 
-func TestSource_Type(t *testing.T) {
-	source := NewSource(nil, "/tmp/test-cache")
-	assert.Equal(t, "oci", source.Type())
+func TestFactory_Type(t *testing.T) {
+	factory := NewFactory(nil, "/tmp/test-cache")
+	assert.Equal(t, "oci", factory.Type())
 }
 
-func TestSource_ParseAndValidate(t *testing.T) {
+func TestFactory_CreateSource(t *testing.T) {
 	tests := []struct {
 		name        string
 		rawConfig   string
@@ -159,54 +160,44 @@ func TestSource_ParseAndValidate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			source := NewSource(nil, "/tmp/test-cache")
+			factory := NewFactory(nil, "/tmp/test-cache")
 			ctx := context.Background()
+			settings := cli.New()
 
-			err := source.ParseAndValidate(ctx, json.RawMessage(tt.rawConfig))
+			source, err := factory.CreateSource(ctx, json.RawMessage(tt.rawConfig), settings)
 
 			if tt.expectError {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errorMsg)
 			} else {
 				require.NoError(t, err)
-				assert.Equal(t, tt.wantChart, source.config.Chart)
+				assert.NotNil(t, source)
+				// Cast to OCISource to verify internal config
+				ociSource, ok := source.(OCISource)
+				require.True(t, ok, "source should be OCISource type")
+				assert.Equal(t, tt.wantChart, ociSource.config.Chart)
 			}
 		})
 	}
 }
 
-func TestSource_GetVersion(t *testing.T) {
-	t.Run("returns empty before ParseAndValidate", func(t *testing.T) {
-		source := NewSource(nil, "/tmp/test-cache")
-		assert.Equal(t, "", source.GetVersion())
-	})
-
-	t.Run("returns version after ParseAndValidate", func(t *testing.T) {
-		source := NewSource(nil, "/tmp/test-cache")
-		ctx := context.Background()
-
-		rawConfig := `{
-			"releaseName": "my-release",
-			"releaseNamespace": "default",
-			"source": {
-				"type": "oci",
-				"chart": "oci://ghcr.io/example/mychart:1.2.3"
-			}
-		}`
-
-		err := source.ParseAndValidate(ctx, json.RawMessage(rawConfig))
-		require.NoError(t, err)
-		assert.Equal(t, "1.2.3", source.GetVersion())
-	})
-}
-
-func TestSource_LocateChart_RequiresParseAndValidate(t *testing.T) {
-	source := NewSource(nil, "/tmp/test-cache")
+func TestOCISource_GetVersion(t *testing.T) {
+	factory := NewFactory(nil, "/tmp/test-cache")
 	ctx := context.Background()
+	settings := cli.New()
 
-	_, err := source.LocateChart(ctx, nil)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "ParseAndValidate must be called before LocateChart")
+	rawConfig := `{
+		"releaseName": "my-release",
+		"releaseNamespace": "default",
+		"source": {
+			"type": "oci",
+			"chart": "oci://ghcr.io/example/mychart:1.2.3"
+		}
+	}`
+
+	source, err := factory.CreateSource(ctx, json.RawMessage(rawConfig), settings)
+	require.NoError(t, err)
+	assert.Equal(t, "1.2.3", source.GetVersion())
 }
 
 func TestParseOCIReference(t *testing.T) {

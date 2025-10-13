@@ -20,56 +20,46 @@ import (
 
 // HelmOperationsFactory implements the ComponentOperationsFactory interface for Helm deployments.
 type HelmOperationsFactory struct {
-	sourceRegistry sources.Registry // Registry of chart source instances
+	chartSourceFactory sources.ChartSourceFactory
 }
 
-// NewHelmOperationsFactory creates a new HelmOperationsFactory with the source registry.
-// The registry contains pre-created source instances (HTTP, OCI) that are configured per reconciliation.
-func NewHelmOperationsFactory(sourceRegistry sources.Registry) *HelmOperationsFactory {
+// NewHelmOperationsFactory creates a new HelmOperationsFactory with the factory registry.
+// The registry contains stateless factory instances that create sources per reconciliation.
+func NewHelmOperationsFactory(sourceFactory sources.ChartSourceFactory) *HelmOperationsFactory {
 	return &HelmOperationsFactory{
-		sourceRegistry: sourceRegistry,
+		chartSourceFactory: sourceFactory,
 	}
 }
 
 func (f *HelmOperationsFactory) NewOperations(
-	ctx context.Context, rawConfig json.RawMessage, currentStatus json.RawMessage) (controller.ComponentOperations, error) {
+	ctx context.Context, rawConfig json.RawMessage, rawStatus json.RawMessage) (controller.ComponentOperations, error) {
 
 	log := logf.FromContext(ctx)
 
-	// Step 1: Detect source type from config
-	sourceType, err := sources.DetectSourceType(rawConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to detect source type: %w", err)
-	}
+	// Step 0: Initialize settings (needed for both factory and actionConfig)
+	settings := cli.New()
 
-	// Step 2: Retrieve source from registry
-	chartSource, err := f.sourceRegistry.Get(sourceType)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get chart source: %w", err)
-	}
-
-	// Step 3: Parse and validate source-specific configuration
-	if err := chartSource.ParseAndValidate(ctx, rawConfig); err != nil {
-		return nil, fmt.Errorf("failed to parse source configuration: %w", err)
-	}
-
-	log.V(1).Info("Configured chart source",
-		"type", sourceType,
-		"version", chartSource.GetVersion())
-
-	// Step 4: Parse source-agnostic helm configuration
+	// Step 1: Parse the helm config. Leaves the source part untouched
 	config, err := resolveHelmConfig(ctx, rawConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse helm configuration: %w", err)
 	}
 
-	status, err := resolveHelmStatus(ctx, currentStatus)
+	// Step 2: Parse the source part of the config
+	chartSource, err := f.chartSourceFactory.CreateSource(ctx, rawConfig, settings)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create chart source: %w", err)
+	}
+
+	log.V(1).Info("Created chart source", "version", chartSource.GetVersion())
+
+	// Step 3: Parse the helm status
+	status, err := resolveHelmStatus(ctx, rawStatus)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse helm status: %w", err)
 	}
 
-	// Step 5: Initialize Helm action configuration
-	settings := cli.New()
+	// Step 4: Initialize Helm action configuration
 	actionConfig := &action.Configuration{}
 
 	logFunc := func(format string, v ...any) {
@@ -81,7 +71,6 @@ func (f *HelmOperationsFactory) NewOperations(
 	}
 
 	return &HelmOperations{
-		settings:     settings,
 		actionConfig: actionConfig,
 		config:       config,
 		status:       status,
@@ -96,9 +85,8 @@ type HelmOperations struct {
 	config *HelmConfig
 	status *HelmStatus
 
-	settings     *cli.EnvSettings
 	actionConfig *action.Configuration
-	chartSource  sources.ChartSource // Polymorphic chart source (HTTP or OCI)
+	chartSource  sources.ChartSource // Polymorphic chart source (HTTP or OCI) with settings baked in
 }
 
 // getHelmRelease verifies if a Helm release exists and returns it

@@ -28,8 +28,8 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*controller.OperationResul
 
 	releaseName := h.config.ReleaseName
 
-	// Locate chart from configured source
-	chartPath, err := h.chartSource.LocateChart(ctx, h.settings)
+	// Locate chart from configured source (settings are baked into chartSource)
+	chartPath, err := h.chartSource.LocateChart(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate chart: %w", err)
 	}

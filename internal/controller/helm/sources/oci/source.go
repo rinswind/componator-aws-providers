@@ -2,17 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package oci implements OCI registry chart source for the plugin architecture.
-// This source handles OCI chart retrieval with optional authentication and implements
-// per-reconciliation configuration via ParseAndValidate.
+// This source is created per-reconciliation by the Factory with immutable configuration.
 package oci
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 
-	"github.com/go-playground/validator/v10"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/downloader"
 	"helm.sh/helm/v3/pkg/getter"
@@ -23,83 +20,14 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// Source implements the ChartSource interface for OCI registries.
-// This is a long-lived singleton that stores the Kubernetes client for credential resolution.
-// Configuration is provided per reconciliation via ParseAndValidate.
-type Source struct {
-	k8sClient       client.Client // Kubernetes client for secret resolution
-	repositoryCache string        // Path to Helm repository cache directory
-	config          *Config       // Current configuration from last ParseAndValidate call
-}
-
-// NewSource creates a new OCI chart source with Kubernetes client for secret resolution
-// and repository cache path.
-//
-// Parameters:
-//   - k8sClient: Kubernetes client for resolving registry credentials from secrets
-//   - repositoryCache: Path to Helm repository cache directory (e.g., "/helm/repository")
-func NewSource(k8sClient client.Client, repositoryCache string) *Source {
-	return &Source{
-		k8sClient:       k8sClient,
-		repositoryCache: repositoryCache,
-	}
-}
-
-// Type returns the source type identifier for registry lookup.
-func (s *Source) Type() string {
-	return "oci"
-}
-
-// ParseAndValidate parses and validates OCI source configuration from raw JSON.
-// This extracts the "source" section and validates the OCI-specific fields.
-//
-// Expected JSON structure:
-//
-//	{
-//	  "releaseName": "...",
-//	  "releaseNamespace": "...",
-//	  "source": {
-//	    "type": "oci",
-//	    "chart": "oci://registry.example.com/path/chart:version",
-//	    "authentication": {
-//	      "method": "registry",
-//	      "secretRef": {"name": "...", "namespace": "..."}
-//	    }
-//	  }
-//	}
-func (s *Source) ParseAndValidate(ctx context.Context, rawConfig json.RawMessage) error {
-	// Parse the raw config to extract the source section
-	var configMap map[string]json.RawMessage
-	if err := json.Unmarshal(rawConfig, &configMap); err != nil {
-		return fmt.Errorf("failed to parse config: %w", err)
-	}
-
-	// Extract source section
-	rawSource, hasSource := configMap["source"]
-	if !hasSource {
-		return fmt.Errorf("source field is required")
-	}
-
-	// Parse source configuration
-	var config Config
-	if err := json.Unmarshal(rawSource, &config); err != nil {
-		return fmt.Errorf("failed to parse OCI source configuration: %w", err)
-	}
-
-	// Validate configuration with custom OCI reference validator
-	validate := validator.New()
-	if err := validate.RegisterValidation("oci_reference", validateOCIReference); err != nil {
-		return fmt.Errorf("failed to register OCI validator: %w", err)
-	}
-
-	if err := validate.Struct(&config); err != nil {
-		return fmt.Errorf("OCI source validation failed: %w", err)
-	}
-
-	// Store validated configuration
-	s.config = &config
-
-	return nil
+// OCISource implements the ChartSource interface for OCI registries.
+// This is a per-reconciliation instance created by Factory with immutable configuration.
+// All configuration is baked in at creation time, making it thread-safe.
+type OCISource struct {
+	k8sClient       client.Client    // Kubernetes client for secret resolution (thread-safe)
+	repositoryCache string           // Path to Helm repository cache directory
+	config          Config           // Immutable configuration (no pointer, value type)
+	settings        *cli.EnvSettings // Immutable settings (no mutation after creation)
 }
 
 // LocateChart retrieves a chart from an OCI registry and returns the path to the
@@ -109,10 +37,7 @@ func (s *Source) ParseAndValidate(ctx context.Context, rawConfig json.RawMessage
 //   - Optional authentication via Kubernetes secrets
 //   - Chart downloading using ChartDownloader with RegistryClient
 //   - Returns path to cached chart archive
-func (s *Source) LocateChart(ctx context.Context, settings *cli.EnvSettings) (string, error) {
-	if s.config == nil {
-		return "", fmt.Errorf("ParseAndValidate must be called before LocateChart")
-	}
+func (s OCISource) LocateChart(ctx context.Context) (string, error) {
 
 	log := logf.FromContext(ctx)
 	log.Info("Fetching chart from OCI registry", "ref", s.config.Chart)
@@ -127,7 +52,7 @@ func (s *Source) LocateChart(ctx context.Context, settings *cli.EnvSettings) (st
 
 	// Create registry client for authentication
 	registryClient, err := registry.NewClient(
-		registry.ClientOptDebug(settings.Debug),
+		registry.ClientOptDebug(s.settings.Debug),
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to create registry client: %w", err)
@@ -160,7 +85,7 @@ func (s *Source) LocateChart(ctx context.Context, settings *cli.EnvSettings) (st
 	dl := &downloader.ChartDownloader{
 		Out:            os.Stdout,
 		RegistryClient: registryClient,
-		Getters:        getter.All(settings),
+		Getters:        getter.All(s.settings),
 		Options:        []getter.Option{getter.WithRegistryClient(registryClient)},
 	}
 
@@ -175,13 +100,9 @@ func (s *Source) LocateChart(ctx context.Context, settings *cli.EnvSettings) (st
 	return downloadedPath, nil
 }
 
-// GetVersion returns the configured chart version from the last ParseAndValidate call.
+// GetVersion returns the configured chart version.
 // For OCI sources, this extracts the version from the OCI reference.
-func (s *Source) GetVersion() string {
-	if s.config == nil {
-		return ""
-	}
-
+func (s OCISource) GetVersion() string {
 	// Extract version from OCI reference
 	_, _, version, err := parseOCIReference(s.config.Chart)
 	if err != nil {
@@ -193,7 +114,7 @@ func (s *Source) GetVersion() string {
 // resolveCredentials resolves registry credentials from the Kubernetes secret specified in config.
 // Fails fast if secret is not found - no fallback behavior.
 // Returns: username, password, token (token takes precedence if present)
-func (s *Source) resolveCredentials(ctx context.Context) (username, password, token string, err error) {
+func (s OCISource) resolveCredentials(ctx context.Context) (username, password, token string, err error) {
 	log := logf.FromContext(ctx)
 
 	secretRef := s.config.Authentication.SecretRef
@@ -217,7 +138,7 @@ func (s *Source) resolveCredentials(ctx context.Context) (username, password, to
 // Secret format:
 //   - username/password: keys "username" and "password"
 //   - token: key "token"
-func (s *Source) getSecretCredentials(ctx context.Context, name, namespace string) (username, password, token string, err error) {
+func (s OCISource) getSecretCredentials(ctx context.Context, name, namespace string) (username, password, token string, err error) {
 	var secret corev1.Secret
 
 	secretKey := types.NamespacedName{

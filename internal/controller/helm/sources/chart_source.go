@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package sources provides a plugin architecture for Helm chart sources.
-// This package defines the ChartSource interface that all source types implement,
-// along with a Registry for source instance management.
+// This package defines the ChartSourceFactory and ChartSource interfaces that all source types implement,
+// along with a Registry for factory instance management.
 //
-// Design: Sources are long-lived singletons created once in the controller.
-// Each source receives fresh configuration per reconciliation via ParseAndValidate.
+// Design: Factory pattern for thread-safety
+//   - ChartSourceFactory: Stateless singletons stored in registry
+//   - ChartSource: Immutable per-reconciliation instances created by factories
+//
+// This eliminates race conditions by avoiding shared mutable state between reconciliations.
 package sources
 
 import (
@@ -16,51 +19,64 @@ import (
 	"helm.sh/helm/v3/pkg/cli"
 )
 
-// ChartSource provides a plugin interface for retrieving Helm charts from different sources.
-// Implementations include HTTP (traditional Helm repositories) and OCI (registry support).
+// ChartSourceFactory creates ChartSource instances with validated configuration.
+// Factories are stateless singletons that parse and validate configuration,
+// then create immutable ChartSource instances for per-reconciliation use.
 //
 // Lifecycle:
-//   - Created once: Source instances are singletons initialized in NewComponentReconciler
-//   - Configured per reconciliation: ParseAndValidate called with fresh config from Component spec
-//   - Used for chart retrieval: GetChart called with validated configuration
+//   - Created once: Factory instances are singletons initialized in NewComponentReconciler
+//   - Thread-safe: No mutable state, safe for concurrent use
+//   - Creates sources: Called per reconciliation to create configured ChartSource instances
 //
-// This design eliminates type-switching and enables easy addition of new source types
-// (git, S3, local) without modifying core controller logic.
-type ChartSource interface {
+// This design enables thread-safe concurrent reconciliation by eliminating shared mutable state.
+type ChartSourceFactory interface {
 	// Type returns the source type identifier ("http" or "oci").
-	// This is used for source registration and lookup in the registry.
+	// This is used for factory registration and lookup in the registry.
 	Type() string
 
-	// ParseAndValidate parses and validates source-specific configuration from raw JSON.
+	// CreateSource parses, validates configuration, and creates an immutable ChartSource instance.
 	// This is called per reconciliation with fresh config from Component.Spec.Config.
 	//
-	// The source should:
-	//   - Unmarshal rawConfig into its configuration struct
+	// The factory should:
+	//   - Extract the "source" section from rawConfig
+	//   - Unmarshal into its configuration struct
 	//   - Validate all required fields
-	//   - Store the validated config internally for subsequent GetChart calls
-	//   - Return error if validation fails
+	//   - Create a ChartSource instance with immutable configuration
+	//   - Return error if parsing or validation fails
 	//
 	// Parameters:
 	//   - ctx: Context for cancellation and timeouts
 	//   - rawConfig: Raw JSON from Component.Spec.Config (the entire config, not just source section)
+	//   - settings: Helm CLI settings for chart operations
 	//
-	// Returns error if parsing or validation fails.
-	ParseAndValidate(ctx context.Context, rawConfig json.RawMessage) error
+	// Returns a configured ChartSource instance, or error if creation fails.
+	CreateSource(ctx context.Context, rawConfig json.RawMessage, settings *cli.EnvSettings) (ChartSource, error)
+}
 
+// ChartSource provides a plugin interface for retrieving Helm charts from different sources.
+// Implementations include HTTP (traditional Helm repositories) and OCI (registry support).
+//
+// Lifecycle:
+//   - Created per reconciliation: Factory creates instance with immutable configuration
+//   - Thread-safe: Immutable after creation, safe for use within single reconciliation
+//   - Used for chart retrieval: LocateChart called with configuration baked in
+//
+// This design eliminates type-switching and enables easy addition of new source types
+// (git, S3, local) without modifying core controller logic.
+type ChartSource interface {
 	// LocateChart retrieves a Helm chart and returns the path to the cached chart file.
-	// Must be called after ParseAndValidate has successfully configured the source.
+	// The source was created with validated configuration, no additional setup needed.
 	//
 	// Parameters:
 	//   - ctx: Context for cancellation and timeouts
-	//   - settings: Helm CLI settings for chart operations
 	//
 	// Returns the path to the downloaded chart file (typically a .tgz in Helm cache),
 	// or error if retrieval fails.
-	LocateChart(ctx context.Context, settings *cli.EnvSettings) (string, error)
+	LocateChart(ctx context.Context) (string, error)
 
-	// GetVersion returns the configured chart version from the last ParseAndValidate call.
+	// GetVersion returns the configured chart version.
 	// This is used for status reporting and change detection.
 	//
-	// Returns empty string if ParseAndValidate has not been called or version is not available.
+	// Returns the chart version, or empty string if not available.
 	GetVersion() string
 }
