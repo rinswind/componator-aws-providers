@@ -10,6 +10,18 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
+// ociSourceValidator is a package-level validator instance that is reused across all reconciliations.
+// validator.Validator is thread-safe and designed for concurrent use, making this safe to share.
+// Custom validators are registered in init() to ensure they're available before any validation occurs.
+var ociSourceValidator = validator.New()
+
+func init() {
+	// Register custom OCI reference validator once at package initialization
+	if err := ociSourceValidator.RegisterValidation("oci_reference", validateOCIReference); err != nil {
+		panic(fmt.Sprintf("failed to register OCI validator: %v", err))
+	}
+}
+
 // Config represents OCI registry configuration parsed from Component spec.
 // This matches the existing JSON schema for backward compatibility.
 type Config struct {

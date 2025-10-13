@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/go-playground/validator/v10"
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/downloader"
@@ -69,13 +68,8 @@ func (f *Factory) CreateSource(ctx context.Context, rawConfig json.RawMessage, s
 		return nil, fmt.Errorf("failed to parse OCI source configuration: %w", err)
 	}
 
-	// Validate configuration with custom OCI reference validator
-	validate := validator.New()
-	if err := validate.RegisterValidation("oci_reference", validateOCIReference); err != nil {
-		return nil, fmt.Errorf("failed to register OCI validator: %w", err)
-	}
-
-	if err := validate.Struct(&config); err != nil {
+	// Validate configuration using shared validator instance (with custom OCI reference validator)
+	if err := ociSourceValidator.Struct(&config); err != nil {
 		return nil, fmt.Errorf("OCI source validation failed: %w", err)
 	}
 

@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/go-playground/validator/v10"
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources"
 	"helm.sh/helm/v3/pkg/cli"
 )
@@ -51,9 +50,8 @@ func (f *Factory) CreateSource(ctx context.Context, rawConfig json.RawMessage, s
 		return nil, fmt.Errorf("failed to parse HTTP source configuration: %w", err)
 	}
 
-	// Validate configuration
-	validate := validator.New()
-	if err := validate.Struct(&config); err != nil {
+	// Validate configuration using shared validator instance
+	if err := httpSourceValidator.Struct(&config); err != nil {
 		return nil, fmt.Errorf("HTTP source validation failed: %w", err)
 	}
 

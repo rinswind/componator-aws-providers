@@ -3,6 +3,12 @@
 
 package http
 
+import "github.com/go-playground/validator/v10"
+
+// httpSourceValidator is a package-level validator instance that is reused across all reconciliations.
+// validator.Validator is thread-safe and designed for concurrent use, making this safe to share.
+var httpSourceValidator = validator.New()
+
 // Config represents HTTP repository configuration parsed from Component spec.
 // This matches the existing JSON schema for backward compatibility.
 type Config struct {

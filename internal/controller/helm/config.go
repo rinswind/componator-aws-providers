@@ -16,6 +16,10 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+// helmConfigValidator is a package-level validator instance that is reused across all reconciliations.
+// validator.Validator is thread-safe and designed for concurrent use, making this safe to share.
+var helmConfigValidator = validator.New()
+
 // HelmConfig represents the configuration structure for Helm components
 // that gets unmarshaled from Component.Spec.Config.
 //
@@ -71,9 +75,8 @@ func resolveHelmConfig(ctx context.Context, rawConfig json.RawMessage) (*HelmCon
 		return nil, fmt.Errorf("failed to parse helm config: %w", err)
 	}
 
-	// Validate configuration using validator framework
-	validate := validator.New()
-	if err := validate.Struct(&config); err != nil {
+	// Validate configuration using shared validator instance
+	if err := helmConfigValidator.Struct(&config); err != nil {
 		return nil, fmt.Errorf("helm config validation failed: %w", err)
 	}
 
