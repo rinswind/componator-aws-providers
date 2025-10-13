@@ -44,6 +44,17 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*controller.OperationResul
 
 	log.V(1).Info("Chart loaded", "name", chart.Metadata.Name, "version", chart.Metadata.Version)
 
+	// Validate chart dependencies are pre-packaged
+	if len(chart.Metadata.Dependencies) > 0 {
+		log.V(1).Info("Validating chart dependencies", "count", len(chart.Metadata.Dependencies))
+
+		if err := action.CheckDependencies(chart, chart.Metadata.Dependencies); err != nil {
+			return nil, fmt.Errorf("chart has unfulfilled dependencies - charts must be pre-packaged with all dependencies included: %w", err)
+		}
+
+		log.V(1).Info("Chart dependencies validated successfully")
+	}
+
 	// Check if release already exists
 	getAction := action.NewGet(h.actionConfig)
 	getAction.Version = 0 // Get latest version

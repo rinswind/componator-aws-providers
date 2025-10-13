@@ -123,10 +123,7 @@ func (s *Source) LocateChart(ctx context.Context, settings *cli.EnvSettings) (st
 		return "", fmt.Errorf("invalid OCI reference: %w", err)
 	}
 
-	log.V(1).Info("Parsed OCI reference",
-		"registry", registryHost,
-		"chartPath", chartPath,
-		"version", version)
+	log.V(1).Info("Parsed OCI reference", "registry", registryHost, "chartPath", chartPath, "version", version)
 
 	// Create registry client for authentication
 	registryClient, err := registry.NewClient(
