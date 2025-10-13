@@ -13,8 +13,9 @@ import (
 	"os"
 
 	"github.com/go-playground/validator/v10"
-	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/cli"
+	"helm.sh/helm/v3/pkg/downloader"
+	"helm.sh/helm/v3/pkg/getter"
 	"helm.sh/helm/v3/pkg/registry"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -26,15 +27,21 @@ import (
 // This is a long-lived singleton that stores the Kubernetes client for credential resolution.
 // Configuration is provided per reconciliation via ParseAndValidate.
 type Source struct {
-	k8sClient client.Client // Kubernetes client for secret resolution
-	config    *Config       // Current configuration from last ParseAndValidate call
+	k8sClient       client.Client // Kubernetes client for secret resolution
+	repositoryCache string        // Path to Helm repository cache directory
+	config          *Config       // Current configuration from last ParseAndValidate call
 }
 
-// NewSource creates a new OCI chart source with Kubernetes client for secret resolution.
-// The source is stateless until ParseAndValidate is called with configuration.
-func NewSource(k8sClient client.Client) *Source {
+// NewSource creates a new OCI chart source with Kubernetes client for secret resolution
+// and repository cache path.
+//
+// Parameters:
+//   - k8sClient: Kubernetes client for resolving registry credentials from secrets
+//   - repositoryCache: Path to Helm repository cache directory (e.g., "/helm/repository")
+func NewSource(k8sClient client.Client, repositoryCache string) *Source {
 	return &Source{
-		k8sClient: k8sClient,
+		k8sClient:       k8sClient,
+		repositoryCache: repositoryCache,
 	}
 }
 
@@ -96,15 +103,12 @@ func (s *Source) ParseAndValidate(ctx context.Context, rawConfig json.RawMessage
 }
 
 // LocateChart retrieves a chart from an OCI registry and returns the path to the
-// downloaded chart file.
+// cached chart file.
 //
 // This handles:
 //   - Optional authentication via Kubernetes secrets
-//   - Chart pulling using Helm's action.Pull
-//   - Returns path to downloaded chart archive
-//
-// Note: This currently uses action.Pull which is a temporary implementation.
-// Phase 2 will refactor to use ChartDownloader directly for proper authentication.
+//   - Chart downloading using ChartDownloader with RegistryClient
+//   - Returns path to cached chart archive
 func (s *Source) LocateChart(ctx context.Context, settings *cli.EnvSettings) (string, error) {
 	if s.config == nil {
 		return "", fmt.Errorf("ParseAndValidate must be called before LocateChart")
@@ -155,26 +159,21 @@ func (s *Source) LocateChart(ctx context.Context, settings *cli.EnvSettings) (st
 		log.Info("Successfully authenticated to registry", "registry", registryHost)
 	}
 
-	// Set up temporary directory for chart download
-	tempDir, err := os.MkdirTemp("", "helm-oci-chart-*")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp directory: %w", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Use Helm's Pull action to download the chart
-	pullAction := action.NewPull()
-	pullAction.Settings = settings
-	pullAction.DestDir = tempDir
-
-	log.Info("Pulling chart from registry", "ref", s.config.Chart, "dest", tempDir)
-
-	downloadedPath, err := pullAction.Run(s.config.Chart)
-	if err != nil {
-		return "", fmt.Errorf("failed to pull chart from OCI registry: %w", err)
+	// Use ChartDownloader to download chart to cache with authenticated registry client
+	dl := &downloader.ChartDownloader{
+		Out:            os.Stdout,
+		RegistryClient: registryClient,
+		Getters:        getter.All(settings),
+		Options:        []getter.Option{getter.WithRegistryClient(registryClient)},
 	}
 
-	log.Info("Chart downloaded to path", "path", downloadedPath)
+	// Download to cache - version is empty string for OCI (embedded in ref)
+	downloadedPath, _, err := dl.DownloadTo(s.config.Chart, "", s.repositoryCache)
+	if err != nil {
+		return "", fmt.Errorf("failed to download chart from OCI registry: %w", err)
+	}
+
+	log.Info("Chart downloaded to cache", "path", downloadedPath)
 
 	return downloadedPath, nil
 }

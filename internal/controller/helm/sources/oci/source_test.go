@@ -14,7 +14,7 @@ import (
 )
 
 func TestSource_Type(t *testing.T) {
-	source := NewSource(nil)
+	source := NewSource(nil, "/tmp/test-cache")
 	assert.Equal(t, "oci", source.Type())
 }
 
@@ -159,7 +159,7 @@ func TestSource_ParseAndValidate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			source := NewSource(nil)
+			source := NewSource(nil, "/tmp/test-cache")
 			ctx := context.Background()
 
 			err := source.ParseAndValidate(ctx, json.RawMessage(tt.rawConfig))
@@ -177,12 +177,12 @@ func TestSource_ParseAndValidate(t *testing.T) {
 
 func TestSource_GetVersion(t *testing.T) {
 	t.Run("returns empty before ParseAndValidate", func(t *testing.T) {
-		source := NewSource(nil)
+		source := NewSource(nil, "/tmp/test-cache")
 		assert.Equal(t, "", source.GetVersion())
 	})
 
 	t.Run("returns version after ParseAndValidate", func(t *testing.T) {
-		source := NewSource(nil)
+		source := NewSource(nil, "/tmp/test-cache")
 		ctx := context.Background()
 
 		rawConfig := `{
@@ -201,7 +201,7 @@ func TestSource_GetVersion(t *testing.T) {
 }
 
 func TestSource_LocateChart_RequiresParseAndValidate(t *testing.T) {
-	source := NewSource(nil)
+	source := NewSource(nil, "/tmp/test-cache")
 	ctx := context.Background()
 
 	_, err := source.LocateChart(ctx, nil)

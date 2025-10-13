@@ -52,8 +52,10 @@ func NewComponentReconciler(k8sClient client.Client) (*ComponentReconciler, erro
 	}
 
 	// Create source instances (long-lived singletons)
+	// Both HTTP and OCI sources share the same repository cache directory
+	repositoryCache := helmBasePath + "/repository"
 	httpSource := httpsource.NewSource(httpRepo)
-	ociSource := ocisource.NewSource(k8sClient)
+	ociSource := ocisource.NewSource(k8sClient, repositoryCache)
 
 	// Create and populate source registry
 	registry := sources.NewRegistry()
