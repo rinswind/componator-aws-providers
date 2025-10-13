@@ -4,14 +4,13 @@
 package http
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/gofrs/flock"
+	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources/filelock"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/downloader"
 	"helm.sh/helm/v3/pkg/getter"
@@ -105,7 +104,7 @@ func (s *CachingRepository) LocateChart(repoName, repoURL, chartName, version st
 	// Step 2: Check in-memory cache for repository index
 	if index, found := s.indexCache.Get(repoName); found {
 		log.V(1).Info("Using cached index", "repo", repoName)
-		return s.loadChartFromIndex(index, chartName, version, settings)
+		return s.loadChartFromIndex(repoName, index, chartName, version, settings)
 	}
 
 	log.V(1).Info("Index cache miss", "repo", repoName)
@@ -120,7 +119,7 @@ func (s *CachingRepository) LocateChart(repoName, repoURL, chartName, version st
 	s.indexCache.Set(repoName, repoURL, index)
 
 	// Step 5: Load chart from the index
-	return s.loadChartFromIndex(index, chartName, version, settings)
+	return s.loadChartFromIndex(repoName, index, chartName, version, settings)
 }
 
 // ensureRepository ensures a Helm repository is properly configured in repositories.yaml.
@@ -128,102 +127,103 @@ func (s *CachingRepository) LocateChart(repoName, repoURL, chartName, version st
 //
 // File locking: MANDATORY for horizontally scaled controllers sharing PVC.
 // Multiple controller pods writing to the same repositories.yaml WILL corrupt it
-// without proper locking. We use github.com/gofrs/flock with 30s timeout following
+// without proper locking. We use filelock with 30s timeout following
 // the exact pattern from Helm CLI.
 func (s *CachingRepository) ensureRepository(repoName, repoURL string) error {
 	log := logf.Log.WithName("http-chart-source")
 
 	// Acquire file lock for process synchronization (critical for horizontally scaled controllers)
 	lockPath := filepath.Join(filepath.Dir(s.repoConfigPath), helmRepositoriesLock)
-	fileLock := flock.New(lockPath)
-	lockCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 
-	locked, err := fileLock.TryLockContext(lockCtx, time.Second)
-	if err == nil && locked {
-		defer fileLock.Unlock()
-	}
-	if err != nil {
-		return fmt.Errorf("failed to acquire file lock: %w", err)
-	}
-
-	// Ensure parent directory exists before attempting to load the file
-	if err := os.MkdirAll(filepath.Dir(s.repoConfigPath), 0755); err != nil {
-		return fmt.Errorf("failed to create repository config directory: %w", err)
-	}
-
-	// Load existing repository configuration
-	f, err := repo.LoadFile(s.repoConfigPath)
-	if err != nil {
-		// LoadFile wraps errors, so we need to unwrap to check for os.IsNotExist
-		if !errors.Is(err, os.ErrNotExist) {
-			// File exists but couldn't be loaded (corrupted, permissions, etc.)
-			return fmt.Errorf("load repository file: %w", err)
+	return filelock.WithLock(lockPath, 30*time.Second, func() error {
+		// Ensure parent directory exists before attempting to load the file
+		if err := os.MkdirAll(filepath.Dir(s.repoConfigPath), 0755); err != nil {
+			return fmt.Errorf("failed to create repository config directory: %w", err)
 		}
 
-		// File doesn't exist yet, create new
-		f = repo.NewFile()
-	}
+		// Load existing repository configuration
+		f, err := repo.LoadFile(s.repoConfigPath)
+		if err != nil {
+			// LoadFile wraps errors, so we need to unwrap to check for os.IsNotExist
+			if !errors.Is(err, os.ErrNotExist) {
+				// File exists but couldn't be loaded (corrupted, permissions, etc.)
+				return fmt.Errorf("load repository file: %w", err)
+			}
 
-	// Create repository entry
-	entry := &repo.Entry{
-		Name: repoName,
-		URL:  repoURL,
-	}
-
-	// Update repository list (idempotent operation)
-	f.Update(entry)
-
-	// Write back (protected by file lock)
-	if err := f.WriteFile(s.repoConfigPath, 0644); err != nil {
-		return fmt.Errorf("write repository file: %w", err)
-	}
-
-	log.V(1).Info("Repository configuration updated", "repo", repoName, "url", repoURL)
-	return nil
-}
-
-// loadOrDownloadIndex loads a repository index from disk or downloads it if stale.
-// This implements a disk-based cache layer below the in-memory cache.
-func (s *CachingRepository) loadOrDownloadIndex(repoName, repoURL string) (*repo.IndexFile, error) {
-	log := logf.Log.WithName("http-chart-source")
-
-	indexPath := filepath.Join(s.repoCachePath, fmt.Sprintf("%s-index.yaml", repoName))
-
-	// Check if index exists and is fresh
-	needsDownload := true
-	if stat, err := os.Stat(indexPath); err == nil {
-		age := time.Since(stat.ModTime())
-		if age < s.refreshInterval {
-			needsDownload = false
-			log.V(1).Info("Using cached index file", "repo", repoName, "age", age)
-		} else {
-			log.V(1).Info("Index file is stale", "repo", repoName, "age", age, "threshold", s.refreshInterval)
+			// File doesn't exist yet, create new
+			f = repo.NewFile()
 		}
-	} else {
-		log.V(1).Info("Index file not found, will download", "repo", repoName)
-	}
 
-	// Download if needed
-	if needsDownload {
+		// Create repository entry
 		entry := &repo.Entry{
 			Name: repoName,
 			URL:  repoURL,
 		}
 
-		r, err := repo.NewChartRepository(entry, getter.All(cli.New()))
-		if err != nil {
-			return nil, fmt.Errorf("create chart repository: %w", err)
-		}
-		r.CachePath = s.repoCachePath
+		// Update repository list (idempotent operation)
+		f.Update(entry)
 
-		log.Info("Downloading repository index", "repo", repoName, "url", repoURL)
-		if _, err := r.DownloadIndexFile(); err != nil {
-			return nil, fmt.Errorf("download repository index: %w", err)
+		// Write back (protected by file lock)
+		if err := f.WriteFile(s.repoConfigPath, 0644); err != nil {
+			return fmt.Errorf("write repository file: %w", err)
 		}
+
+		log.V(1).Info("Repository configuration updated", "repo", repoName, "url", repoURL)
+		return nil
+	})
+}
+
+// loadOrDownloadIndex loads a repository index from disk or downloads it if stale.
+// This implements a disk-based cache layer below the in-memory cache.
+// Uses file locking to prevent concurrent downloads of the same index.
+func (s *CachingRepository) loadOrDownloadIndex(repoName, repoURL string) (*repo.IndexFile, error) {
+	log := logf.Log.WithName("http-chart-source")
+
+	indexPath := filepath.Join(s.repoCachePath, fmt.Sprintf("%s-index.yaml", repoName))
+	lockPath := filepath.Join(s.repoCachePath, fmt.Sprintf("%s-index.lock", repoName))
+
+	// Protect index download with file lock
+	err := filelock.WithLock(lockPath, 30*time.Second, func() error {
+		// Check if index exists and is fresh (inside lock to avoid race)
+		needsDownload := true
+		if stat, err := os.Stat(indexPath); err == nil {
+			age := time.Since(stat.ModTime())
+			if age < s.refreshInterval {
+				needsDownload = false
+				log.V(1).Info("Using cached index file", "repo", repoName, "age", age)
+			} else {
+				log.V(1).Info("Index file is stale", "repo", repoName, "age", age, "threshold", s.refreshInterval)
+			}
+		} else {
+			log.V(1).Info("Index file not found, will download", "repo", repoName)
+		}
+
+		// Download if needed
+		if needsDownload {
+			entry := &repo.Entry{
+				Name: repoName,
+				URL:  repoURL,
+			}
+
+			r, err := repo.NewChartRepository(entry, getter.All(cli.New()))
+			if err != nil {
+				return fmt.Errorf("create chart repository: %w", err)
+			}
+			r.CachePath = s.repoCachePath
+
+			log.Info("Downloading repository index", "repo", repoName, "url", repoURL)
+			if _, err := r.DownloadIndexFile(); err != nil {
+				return fmt.Errorf("download repository index: %w", err)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	// Load the index file
+	// Load the index file (outside lock - read-only operation)
 	index, err := repo.LoadIndexFile(indexPath)
 	if err != nil {
 		return nil, fmt.Errorf("load index file: %w", err)
@@ -235,8 +235,8 @@ func (s *CachingRepository) loadOrDownloadIndex(repoName, repoURL string) (*repo
 
 // loadChartFromIndex locates and downloads a chart using the repository index.
 // This searches the index for the chart version and downloads it to Helm cache
-// using ChartDownloader.
-func (s *CachingRepository) loadChartFromIndex(index *repo.IndexFile, chartName, version string, settings *cli.EnvSettings) (string, error) {
+// using ChartDownloader. Uses file locking to prevent concurrent downloads of the same chart.
+func (s *CachingRepository) loadChartFromIndex(repoName string, index *repo.IndexFile, chartName, version string, settings *cli.EnvSettings) (string, error) {
 	log := logf.Log.WithName("http-chart-source")
 
 	// Configure Helm settings to use our repository paths
@@ -267,20 +267,33 @@ func (s *CachingRepository) loadChartFromIndex(index *repo.IndexFile, chartName,
 	}
 	chartURL := chartVersion.URLs[0]
 
-	// Use ChartDownloader to download chart to cache
-	dl := &downloader.ChartDownloader{
-		Out:              os.Stdout,
-		RepositoryConfig: s.repoConfigPath,
-		RepositoryCache:  s.repoCachePath,
-		Getters:          getter.All(settings),
-	}
+	// Create lock file path based on chart identity
+	lockPath := filepath.Join(s.repoCachePath,
+		fmt.Sprintf("%s-%s-%s.lock", repoName, chartName, version))
 
-	chartPath, _, err := dl.DownloadTo(chartURL, version, s.repoCachePath)
+	// Protect chart download with file lock
+	var chartPath string
+	err := filelock.WithLock(lockPath, 30*time.Second, func() error {
+		// Use ChartDownloader to download chart to cache
+		dl := &downloader.ChartDownloader{
+			Out:              os.Stdout,
+			RepositoryConfig: s.repoConfigPath,
+			RepositoryCache:  s.repoCachePath,
+			Getters:          getter.All(settings),
+		}
+
+		var err error
+		chartPath, _, err = dl.DownloadTo(chartURL, version, s.repoCachePath)
+		if err != nil {
+			return fmt.Errorf("failed to download chart: %w", err)
+		}
+
+		log.V(1).Info("Downloaded chart", "chart", chartName, "version", version, "path", chartPath)
+		return nil
+	})
 	if err != nil {
-		return "", fmt.Errorf("failed to download chart: %w", err)
+		return "", err
 	}
-
-	log.V(1).Info("Downloaded chart", "chart", chartName, "version", version, "path", chartPath)
 
 	return chartPath, nil
 }

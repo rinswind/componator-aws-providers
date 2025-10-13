@@ -10,8 +10,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources"
+	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources/filelock"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/downloader"
 	"helm.sh/helm/v3/pkg/getter"
@@ -143,21 +147,35 @@ func (s OCISource) LocateChart(ctx context.Context) (string, error) {
 		log.Info("Successfully authenticated to registry", "registry", registryHost)
 	}
 
-	// Use ChartDownloader to download chart to cache with authenticated registry client
-	dl := &downloader.ChartDownloader{
-		Out:            os.Stdout,
-		RegistryClient: registryClient,
-		Getters:        getter.All(s.settings),
-		Options:        []getter.Option{getter.WithRegistryClient(registryClient)},
-	}
+	// Create lock file path based on OCI reference
+	// Replace / with - to make it filesystem-safe
+	safePath := strings.ReplaceAll(chartPath, "/", "-")
+	lockPath := filepath.Join(s.repositoryCache, fmt.Sprintf("%s-%s-%s.lock", registryHost, safePath, version))
 
-	// Download to cache - version is empty string for OCI (embedded in ref)
-	downloadedPath, _, err := dl.DownloadTo(s.config.Chart, "", s.repositoryCache)
+	// Protect chart download with file lock
+	var downloadedPath string
+	err = filelock.WithLock(lockPath, 30*time.Second, func() error {
+		// Use ChartDownloader to download chart to cache with authenticated registry client
+		dl := &downloader.ChartDownloader{
+			Out:            os.Stdout,
+			RegistryClient: registryClient,
+			Getters:        getter.All(s.settings),
+			Options:        []getter.Option{getter.WithRegistryClient(registryClient)},
+		}
+
+		// Download to cache - version is empty string for OCI (embedded in ref)
+		var err error
+		downloadedPath, _, err = dl.DownloadTo(s.config.Chart, "", s.repositoryCache)
+		if err != nil {
+			return fmt.Errorf("failed to download chart from OCI registry: %w", err)
+		}
+
+		log.Info("Chart downloaded to cache", "path", downloadedPath)
+		return nil
+	})
 	if err != nil {
-		return "", fmt.Errorf("failed to download chart from OCI registry: %w", err)
+		return "", err
 	}
-
-	log.Info("Chart downloaded to cache", "path", downloadedPath)
 
 	return downloadedPath, nil
 }
