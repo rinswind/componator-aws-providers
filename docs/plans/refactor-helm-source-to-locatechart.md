@@ -216,11 +216,17 @@ Deploy(ctx):
 - ✅ Update Deploy action to handle chart loading
 - ✅ Remove helper methods and update all tests
 
-**Deliverable:** ✅ HTTP source uses ChartDownloader and returns chart path string; tests validate path return and caching behavior. Committed in b7ed719.
+**Deliverable:** ✅ HTTP source uses ChartDownloader and returns chart path string; tests validate path return and caching behavior.
+
+**Git commits:**
+
+- `b7ed719` - refactor: change ChartSource to return paths instead of loaded charts
+- `ff9b6b7` - docs: mark Phase 1 complete in implementation plan
 
 ### Phase 2: Fix OCI Source (PRIMARY GOAL) ✅ COMPLETE
 
 **Goals:**
+
 - ✅ **Fix broken OCI implementation** by replacing Pull action with ChartDownloader
 - ✅ Implement OCI `LocateChart()` using `downloader.ChartDownloader` directly
 - ✅ Configure ChartDownloader with RegistryClient for authentication
@@ -229,25 +235,62 @@ Deploy(ctx):
 - ✅ Update tests for OCI source with authentication scenarios
 - ✅ Share repository cache path between HTTP and OCI sources
 
-**Deliverable:** ✅ **OCI source works with authentication**; uses ChartDownloader (symmetric with HTTP); tests validate authenticated OCI registry access and path return. Committed in 18b828e.
+**Deliverable:** ✅ **OCI source works with authentication**; uses ChartDownloader (symmetric with HTTP); tests validate authenticated OCI registry access and path return.
+
+**Git commits:**
+
+- `18b828e` - feat: fix OCI source using ChartDownloader for proper authentication
+- `1e38b5b` - docs: mark Phase 2 complete in implementation plan
 
 ### Phase 3: Update Deploy Action ✅ COMPLETE
 
 **Goals:**
+
 - ✅ Replace `getChart()` helper with inline `LocateChart()` + `loader.Load()` (completed in Phase 1)
 - ✅ Add `action.CheckDependencies()` validation before install/upgrade
 - ✅ Implement fail-fast error handling for missing dependencies
 - ✅ Remove unused `getChart()` and `getChartVersion()` helpers (completed in Phase 1)
 
-**Deliverable:** ✅ Deploy action orchestrates full flow; dependency validation works; clear error messages. Committed in e45b6bb.
+**Deliverable:** ✅ Deploy action orchestrates full flow; dependency validation works; clear error messages.
 
-### Phase 4: Integration Testing and Validation
+**Git commits:**
+
+- `25f14e4` - feat: add dependency validation to enforce pre-packaged charts
+- `b2c5f65` - docs: mark Phase 3 complete in implementation plan
+
+**Current Implementation:**
+
+```go
+// From operations_deploy.go
+// Validate chart dependencies are pre-packaged
+if len(chart.Metadata.Dependencies) > 0 {
+    log.V(1).Info("Validating chart dependencies", "count", len(chart.Metadata.Dependencies))
+    
+    if err := action.CheckDependencies(chart, chart.Metadata.Dependencies); err != nil {
+        return nil, fmt.Errorf("chart has unfulfilled dependencies - charts must be pre-packaged with all dependencies included: %w", err)
+    }
+    
+    log.V(1).Info("Chart dependencies validated successfully")
+}
+```
+
+### Phase 4: Integration Testing and Validation ⚠️ IN PROGRESS
 
 **Goals:**
+
 - Test complete flow with real charts
 - Validate pre-packaged dependencies work
 - Validate missing dependencies fail with clear guidance
 - Verify IndexFile caching performance benefit
+
+**Current Status:**
+
+- ✅ Unit tests pass for all source implementations
+- ✅ HTTP source with ChartDownloader validated
+- ✅ OCI source with authentication validated
+- ✅ Dependency validation logic implemented
+- ⚠️ Integration tests with real charts (pending)
+- ⚠️ Documentation updates (pending)
 
 **Deliverable:** Integration tests pass; documentation updated; refactoring complete.
 
@@ -274,6 +317,65 @@ Deploy(ctx):
    - This is what Install/Upgrade use internally anyway
 
 **Conclusion:** The refactoring isn't optional architectural cleanup - it's the **only clean solution** that fixes OCI authentication while creating symmetric, maintainable source implementations.
+
+## Implementation Status: MOSTLY COMPLETE
+
+### Summary
+
+✅ **Primary Goal Achieved**: OCI source authentication is **fixed** and working  
+✅ **Phases 1-3 Complete**: All core refactoring and implementation work finished  
+⚠️ **Phase 4 In Progress**: Integration testing and documentation updates pending
+
+### Key Accomplishments
+
+**Phase 1 (b7ed719):**
+
+- ChartSource interface refactored to return paths instead of loaded charts
+- HTTP source uses ChartDownloader directly via `loadChartFromIndex()`
+- Deploy action handles chart loading with `loader.Load(chartPath)`
+- Clean separation: sources locate, deploy orchestrates
+
+**Phase 2 (18b828e):**
+
+- **OCI source fixed** - authentication now works correctly
+- Uses ChartDownloader with RegistryClient for authentication
+- Returns explicit path from `DownloadTo()` - no unsafe reconstruction
+- Symmetric with HTTP source implementation
+
+**Phase 3 (25f14e4):**
+
+- Dependency validation with `action.CheckDependencies()` implemented
+- Fail-fast error messages guide users to pre-package dependencies
+- Clean orchestration: locate → load → validate → install/upgrade
+
+### Current Architecture
+
+Both HTTP and OCI sources now follow the same clean pattern:
+
+```go
+// HTTP Source (via CachingRepository)
+LocateChart() → ChartDownloader.DownloadTo() → return path
+
+// OCI Source
+LocateChart() → ChartDownloader.DownloadTo(with RegistryClient) → return path
+
+// Deploy Action
+chartPath = source.LocateChart()
+chart = loader.Load(chartPath)
+action.CheckDependencies(chart)
+install/upgrade(chart)
+```
+
+### Verification
+
+All unit tests pass:
+
+```bash
+go test ./internal/controller/helm/sources/... -v
+# PASS: composite, http, oci sources
+```
+
+Integration with factory pattern (from helm-source-factory-pattern.md) complete - sources are now thread-safe with immutable configuration.
 
 ## Open Questions
 

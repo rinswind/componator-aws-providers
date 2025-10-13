@@ -269,47 +269,72 @@ NewOperations:
 
 - ✅ Create `sources/` package with `ChartSource` interface and `Registry`
 - ✅ Implement `DetectSourceType` function for config type detection
-- ✅ Registry stores source instances (simplified to plain map[string]ChartSource)
+- ✅ Registry stores source instances (evolved into composite pattern)
 - **Deliverable:** Interface and registry compile and pass basic registration/lookup tests
 
-**Completed:** sources/chart_source.go, sources/registry.go, sources/detect.go, sources/sources_test.go
+**Completed:**
+
+- `sources/chart_source.go` - ChartSourceFactory and ChartSource interfaces with comprehensive package documentation
+- `sources/composite/source.go` - Composite Registry pattern implementation
+- `sources/composite/source_test.go` - Registry and type detection tests
+
+**Evolution Note:** The implementation evolved beyond the original plan. Instead of a simple map-based registry, the final design implements the **Composite Pattern** where Registry itself implements ChartSourceFactory and delegates to registered factories. Additionally, the **Factory Pattern** (from helm-source-factory-pattern.md) was integrated to eliminate race conditions.
 
 ### Phase 2: Migrate HTTP Source ✅ COMPLETE
 
 - ✅ Create `sources/http/` package with HTTP source implementation
 - ✅ Move HTTP configuration types from `source_config.go`
 - ✅ Implement `ChartSource` interface wrapping existing `http.CachingRepository`
-- ✅ Constructor `NewSource(httpRepo)` stores repo reference, no config yet
-- ✅ `ParseAndValidate` parses and stores config from Component spec
-- ✅ Update tests to use new package structure
-- **Deliverable:** HTTP source works as singleton with per-reconciliation config
+- ✅ Constructor `NewFactory(httpRepo)` creates factory, not source instance
+- ✅ Factory pattern: `CreateSource` validates config and creates immutable source
+- ✅ Update tests to use factory pattern
+- **Deliverable:** HTTP source works through factory pattern with immutable per-reconciliation instances
 
-**Completed:** sources/http/source.go, sources/http/source_test.go
+**Completed:**
+
+- `sources/http/source.go` - Factory and HTTPSource implementation
+- `sources/http/config.go` - HTTP-specific configuration types
+- `sources/http/source_test.go` - Factory and source tests
+
+**Evolution Note:** Instead of singleton sources with ParseAndValidate, the implementation uses the Factory Pattern. HTTP sources are created per-reconciliation with immutable configuration for thread-safety.
 
 ### Phase 3: Migrate OCI Source ✅ COMPLETE
 
 - ✅ Create `sources/oci/` package with OCI source implementation
 - ✅ Move OCI configuration types from `source_config.go`
 - ✅ Implement `ChartSource` interface using existing OCI chart pulling logic
-- ✅ Constructor `NewSource(k8sClient)` stores client reference
-- ✅ `ParseAndValidate` parses and stores config from Component spec
-- ✅ Update tests to use new package structure
-- **Deliverable:** OCI source works as singleton with per-reconciliation config
+- ✅ Constructor `NewFactory(k8sClient)` creates factory, not source instance
+- ✅ Factory pattern: `CreateSource` validates config and creates immutable source
+- ✅ Update tests to use factory pattern
+- **Deliverable:** OCI source works through factory pattern with immutable per-reconciliation instances
 
-**Completed:** sources/oci/source.go, sources/oci/source_test.go
+**Completed:**
+
+- `sources/oci/source.go` - Factory and OCISource implementation
+- `sources/oci/config.go` - OCI-specific configuration types with validation
+- `sources/oci/source_test.go` - Factory and source tests
+
+**Evolution Note:** Instead of singleton sources with ParseAndValidate, the implementation uses the Factory Pattern. OCI sources are created per-reconciliation with immutable configuration and credential resolution for thread-safety.
 
 ### Phase 4: Update Helm Controller ✅ COMPLETE
 
-- ✅ Update `NewComponentReconciler` to create source instances and populate registry
-- ✅ Modify `HelmOperationsFactory` to accept and use source registry
-- ✅ Update `NewOperations` to detect source type and retrieve from registry
+- ✅ Update `NewComponentReconciler` to create factory instances and populate registry
+- ✅ Modify `HelmOperationsFactory` to accept and use composite factory registry
+- ✅ Update `NewOperations` to use factory pattern (initialize settings, call CreateSource)
 - ✅ Simplify `HelmConfig` to remove polymorphic `Source` field
 - ✅ Remove type-switching logic from `operations.go`
 - ✅ Update all references to use new `ChartSource` interface
-- ✅ Simplify `getChartVersion()` to use source interface
-- **Deliverable:** Controller creates sources once, retrieves and configures per reconciliation
+- ✅ Simplify chart version retrieval to use source interface
+- **Deliverable:** Controller creates factories once, creates sources per reconciliation with immutable config
 
-**Completed:** controller.go, operations.go, config.go
+**Completed:**
+
+- `controller.go` - Factory initialization and registry setup
+- `operations.go` - Factory-based source creation per reconciliation
+- `operations_deploy.go` - Polymorphic chartSource.LocateChart() usage
+- `config.go` - Simplified HelmConfig without Source field
+
+**Evolution Note:** The controller now creates **stateless factory singletons** (not source singletons) and uses them to create **immutable per-reconciliation source instances**. This eliminates all type-switching and shared mutable state.
 
 ### Phase 5: Cleanup and Documentation ✅ COMPLETE
 
@@ -317,12 +342,17 @@ NewOperations:
 - ✅ Remove `source_config_test.go` after migration
 - ✅ Remove `SourceConfig` interface and helper methods (`GetHTTPSource`, `GetOCISource`)
 - ✅ Remove unused `HelmRepository` and `HelmChart` types from config.go
-- ✅ Update package documentation and examples (sources/doc.go)
-- ✅ Verify all tests pass (no test files left in main helm package)
-- ✅ Document source architecture and how to add new source types
-- **Deliverable:** Clean architecture with comprehensive documentation
+- ✅ Update package documentation in `sources/chart_source.go`
+- ✅ Verify all tests pass with `-race` flag
+- ✅ Document source architecture and factory pattern
+- **Deliverable:** Clean architecture with comprehensive documentation and verified thread-safety
 
-**Completed:** Removed obsolete files, created sources/doc.go with comprehensive documentation
+**Completed:**
+
+- Removed all obsolete configuration files and types
+- Package documentation in `sources/chart_source.go` explains factory pattern and architecture
+- All tests pass with race detection enabled
+- No shared mutable state between reconciliations
 
 ## Key Design Decisions
 
@@ -346,3 +376,50 @@ Source instances will be created once in `NewComponentReconciler` and registered
 ### No Version Compatibility
 
 Sources will not include version compatibility markers. All sources are compiled with the controller as part of the same binary. There will be no external plugin loading, making versioning unnecessary overhead.
+
+## Implementation Status: COMPLETE
+
+All phases have been successfully implemented with significant architectural improvements beyond the original plan:
+
+### Key Accomplishments
+
+✅ **Plugin Architecture** - HTTP and OCI sources fully modularized and self-contained  
+✅ **Factory Pattern Integration** - Thread-safe concurrent reconciliation through immutable per-reconciliation sources  
+✅ **Composite Pattern Registry** - Elegant source type detection and delegation  
+✅ **Type Switching Elimination** - Polymorphic ChartSource interface eliminates all type-switch forks  
+✅ **Race Condition Elimination** - All tests pass with `-race` flag, no shared mutable state  
+✅ **Clean Architecture** - Clear separation of concerns, easy to add new source types  
+
+### Architectural Evolution
+
+The implementation evolved beyond the original plan in two significant ways:
+
+1. **Factory Pattern Addition**: After completing the plugin architecture, we identified race conditions in the original singleton-with-ParseAndValidate design. This led to the factory pattern refactoring (documented in `helm-source-factory-pattern.md`) which creates immutable per-reconciliation source instances instead of reconfiguring shared singletons.
+
+2. **Composite Pattern Registry**: Instead of a simple map-based registry with separate type detection, we implemented the Composite Pattern where the Registry itself implements ChartSourceFactory and encapsulates the detect→lookup→delegate flow.
+
+### Current Architecture
+
+```text
+Composite Registry (ChartSourceFactory)
+├── HTTP Factory (ChartSourceFactory) → creates HTTPSource instances
+└── OCI Factory (ChartSourceFactory) → creates OCISource instances
+
+Per Reconciliation:
+  Registry.CreateSource(rawConfig, settings)
+    ↓ detect source type
+    ↓ delegate to concrete factory
+    → HTTPSource{immutable config} or OCISource{immutable config}
+```
+
+### Adding New Source Types
+
+To add a new source type (e.g., git, S3):
+
+1. Create package `sources/newsource/`
+2. Implement `ChartSourceFactory` interface (Type, CreateSource)
+3. Implement `ChartSource` interface (LocateChart, GetVersion)
+4. Register factory in `controller.go` NewComponentReconciler
+5. Add tests validating factory pattern and protocol compliance
+
+No changes needed to core controller logic - the plugin architecture with composite registry handles all source types polymorphically.

@@ -347,37 +347,61 @@ HelmOperations.Deploy:
 
 ## Implementation Phases
 
-### Phase 1: Configuration Schema and Parsing
+### Phase 1: Configuration Schema and Parsing ✅ COMPLETE
 
 **Goals:**
-- Define OCI and HTTP source types
-- Implement two-stage parsing with type detection
-- Ensure backward compatibility with legacy configs
-- Add validation for OCI references
+- ✅ Define OCI and HTTP source types
+- ✅ Implement two-stage parsing with type detection
+- ✅ Simplified to flat config (no breaking change)
+- ✅ Add validation for OCI references
 
-**Deliverable:** Configuration parsing handles both HTTP and OCI sources. Legacy configurations continue working. Unit tests pass for all parsing scenarios.
+**Deliverable:** Configuration parsing handles both HTTP and OCI sources. Backward compatibility maintained. Unit tests pass for all parsing scenarios.
 
-### Phase 2: OCI Source Implementation
+**Git commits:**
+- `d30d3f3` - feat: add OCI registry support for Helm charts (initial implementation with breaking change)
+- `270a3b2` - refactor: implement helm source plugin architecture (simplified to flat config, no breaking change)
+
+**Implementation Evolution:** The original plan proposed nested `source` config, but final implementation maintained flat structure for backward compatibility while internally using plugin architecture.
+
+### Phase 2: OCI Source Implementation ✅ COMPLETE
 
 **Goals:**
-- Implement OCIChartSource with Helm SDK registry client
-- Add credential resolution with namespace scoping
-- Handle OCI chart pulling and loading
-- Integrate with factory pattern
+- ✅ Implement OCISource with Helm SDK registry client
+- ✅ Add credential resolution with namespace scoping
+- ✅ Handle OCI chart pulling and loading
+- ✅ Integrate with factory pattern
 
 **Deliverable:** OCI source can authenticate and pull charts from registries. Unit tests validate credential resolution and chart operations.
 
-### Phase 3: Source Type Routing
+**Git commits:**
+- `d30d3f3` - feat: add OCI registry support for Helm charts
+- `18b828e` - feat: fix OCI source using ChartDownloader for proper authentication
+
+**Key Files:**
+- `sources/oci/source.go` - OCISource implementation with LocateChart
+- `sources/oci/config.go` - OCI configuration types and validation
+- `sources/oci/source_test.go` - OCI source tests
+
+### Phase 3: Source Type Routing ✅ COMPLETE
 
 **Goals:**
-- Modify factory to route based on source type
-- Update HelmOperations to use polymorphic source
-- Maintain HTTP source functionality
-- Add logging for source selection
+- ✅ Modify factory to route based on source type
+- ✅ Update HelmOperations to use polymorphic source
+- ✅ Maintain HTTP source functionality
+- ✅ Add logging for source selection
 
 **Deliverable:** Factory correctly routes to HTTP or OCI source. Existing HTTP deployments work unchanged. Logging shows source selection.
 
-### Phase 4: Integration and Testing
+**Git commits:**
+- `270a3b2` - refactor: implement helm source plugin architecture
+- `38e8078` - refactor: implement composite pattern for helm chart source factories
+
+**Key Architecture:**
+- Composite Registry pattern for source type detection and delegation
+- Factory pattern creates immutable per-reconciliation sources
+- Type detection from config structure (internal, not exposed to users)
+
+### Phase 4: Integration and Testing ⚠️ IN PROGRESS
 
 **Goals:**
 - Integration tests with real OCI registries
@@ -385,28 +409,105 @@ HelmOperations.Deploy:
 - Protocol compliance validation
 - Error handling and recovery scenarios
 
+**Current Status:**
+- ✅ Unit tests pass for all source implementations
+- ✅ HTTP and OCI sources validated separately
+- ✅ Factory pattern and routing tested
+- ⚠️ End-to-end integration tests with real OCI registries (pending)
+- ⚠️ Protocol compliance validation with OCI sources (pending)
+
 **Deliverable:** Integration tests pass with GitHub Container Registry. Components deploy successfully with OCI sources. All protocols remain compliant.
 
-## Open Questions
+## Open Questions (Resolved)
 
 **Q: Which OCI registries should be tested?**
-Decision needed: GitHub Container Registry (primary), Docker Hub (secondary), or others?
+✅ **Resolved**: GitHub Container Registry as primary target. Implementation uses Helm SDK's standard OCI support, compatible with all OCI-compliant registries.
 
 **Q: Should we support custom CA certificates for private registries?**
-Current scope: Use system CA bundle. Custom CA support can be added later if needed.
+✅ **Resolved**: Use system CA bundle. Custom CA support deferred - can be added later if needed.
 
 **Q: How should we handle OCI artifact digests vs. tags?**
-Current scope: Support tags (versions) only. Digest support can be added in future if required.
+✅ **Resolved**: Support tags (versions) only via OCI reference format `oci://registry/path:version`. Digest support can be added in future if required.
 
 **Q: Should credential caching be implemented for performance?**
-Current scope: Authenticate per-chart-pull. Credential caching can be optimized later based on performance metrics.
+✅ **Resolved**: Authenticate per-chart-pull. Factory pattern creates immutable sources per-reconciliation, eliminating shared state concerns. Performance optimization can be added later based on metrics.
+
+## Implementation Status: MOSTLY COMPLETE
+
+### Summary
+
+✅ **Primary Goal Achieved**: OCI registry support fully implemented and working  
+✅ **Phases 1-3 Complete**: Configuration parsing, OCI implementation, source routing all done  
+⚠️ **Phase 4 In Progress**: Integration testing with real OCI registries pending
+
+### Key Accomplishments
+
+**Phase 1 (d30d3f3, 270a3b2):**
+- OCI and HTTP source types defined
+- Flat configuration maintained (no breaking change)
+- Type detection from config structure
+- OCI reference validation
+
+**Phase 2 (d30d3f3, 18b828e):**
+- OCISource implementation with ChartDownloader
+- Credential resolution from Kubernetes secrets
+- Authentication to OCI registries
+- Chart pulling and loading
+
+**Phase 3 (270a3b2, 38e8078):**
+- Composite Registry pattern for type detection
+- Factory pattern for source creation
+- Source type routing transparent to users
+- HTTP source functionality maintained
+
+### Architecture Evolution
+
+The implementation evolved significantly from the original plan:
+
+1. **API Simplification**: Rejected breaking change with nested `source` config. Maintained flat structure for better UX.
+
+2. **Interface Evolution**: Started with `GetChart(ctx, settings) (*chart.Chart, error)`, evolved to `LocateChart(ctx) (string, error)` for cleaner architecture (see refactor-helm-source-to-locatechart.md).
+
+3. **Factory Pattern Integration**: Combined OCI support with factory pattern from helm-source-factory-pattern.md for thread-safe concurrent reconciliation.
+
+4. **Plugin Architecture**: Implemented full plugin architecture from helm-source-plugin-architecture.md with registry pattern and interface-based polymorphism.
+
+### Current State
+
+```text
+User Configuration (flat, backward compatible):
+  repository + chart → HTTP source
+  chart (OCI format) → OCI source
+
+Internal Architecture:
+  Composite Registry
+  ├── HTTP Factory → HTTPSource (per-reconciliation)
+  └── OCI Factory → OCISource (per-reconciliation)
+
+Chart Operations:
+  LocateChart() → string path → loader.Load() → *chart.Chart
+```
+
+### Verification
+
+All unit tests pass:
+```bash
+go test ./internal/controller/helm/sources/... -v
+# PASS: composite, http, oci sources
+```
+
+Integration with dependency validation and factory pattern complete.
 
 ## Migration Notes
 
-**Breaking Change:** This feature introduces a breaking change to HelmConfig schema. Existing configurations must be updated:
+**Breaking Change Decision Reversed:** The original plan proposed a breaking change with polymorphic `source` field. However, during implementation (commit 270a3b2), this was **simplified to maintain backward compatibility**.
 
-**Before (old format):**
+**Final Implementation - No Breaking Change:**
+
+The configuration schema remains **flat** without the nested `source` wrapper. The source type is detected internally from the presence of specific fields:
+
 ```yaml
+# HTTP Source (detected by presence of repository field)
 config:
   releaseName: my-app
   releaseNamespace: default
@@ -418,19 +519,17 @@ config:
     version: "12.1.2"
 ```
 
-**After (new format):**
 ```yaml
+# OCI Source (would be detected by OCI reference format)
 config:
   releaseName: my-app
   releaseNamespace: default
-  source:
-    type: http
-    repository:
-      url: https://charts.bitnami.com/bitnami
-      name: bitnami
-    chart:
-      name: postgresql
-      version: "12.1.2"
+  chart: oci://registry.example.com/charts/app:1.0.0
+  authentication:
+    method: registry
+    secretRef:
+      name: registry-credentials
+      namespace: default
 ```
 
-All sample configurations in `config/samples/` must be updated as part of Phase 3.
+**Design Evolution:** The factory pattern and plugin architecture were maintained for internal implementation, but the external API was simplified to avoid breaking changes for users.
