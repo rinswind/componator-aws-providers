@@ -231,15 +231,15 @@ Deploy(ctx):
 
 **Deliverable:** ✅ **OCI source works with authentication**; uses ChartDownloader (symmetric with HTTP); tests validate authenticated OCI registry access and path return. Committed in 18b828e.
 
-### Phase 3: Update Deploy Action
+### Phase 3: Update Deploy Action ✅ COMPLETE
 
 **Goals:**
-- Replace `getChart()` helper with inline `LocateChart()` + `loader.Load()`
-- Add `action.CheckDependencies()` validation before install/upgrade
-- Implement fail-fast error handling for missing dependencies
-- Remove unused `getChart()` and `getChartVersion()` helpers
+- ✅ Replace `getChart()` helper with inline `LocateChart()` + `loader.Load()` (completed in Phase 1)
+- ✅ Add `action.CheckDependencies()` validation before install/upgrade
+- ✅ Implement fail-fast error handling for missing dependencies
+- ✅ Remove unused `getChart()` and `getChartVersion()` helpers (completed in Phase 1)
 
-**Deliverable:** Deploy action orchestrates full flow; dependency validation works; clear error messages.
+**Deliverable:** ✅ Deploy action orchestrates full flow; dependency validation works; clear error messages. Committed in e45b6bb.
 
 ### Phase 4: Integration Testing and Validation
 
