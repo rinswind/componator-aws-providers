@@ -12,7 +12,6 @@ import (
 	"fmt"
 
 	"github.com/go-playground/validator/v10"
-	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/cli"
 )
 
@@ -82,18 +81,18 @@ func (s *Source) ParseAndValidate(ctx context.Context, rawConfig json.RawMessage
 	return nil
 }
 
-// GetChart retrieves a Helm chart from the HTTP repository using the configuration
-// from the last ParseAndValidate call.
+// LocateChart retrieves a Helm chart from the HTTP repository and returns the path
+// to the cached chart file.
 //
 // This delegates to the singleton CachingRepository which handles:
 //   - Repository index caching (in-memory and on-disk)
-//   - Chart downloading and loading
-func (s *Source) GetChart(ctx context.Context, settings *cli.EnvSettings) (*chart.Chart, error) {
+//   - Chart downloading to Helm cache
+func (s *Source) LocateChart(ctx context.Context, settings *cli.EnvSettings) (string, error) {
 	if s.config == nil {
-		return nil, fmt.Errorf("ParseAndValidate must be called before GetChart")
+		return "", fmt.Errorf("ParseAndValidate must be called before LocateChart")
 	}
 
-	return s.httpRepo.GetChart(
+	return s.httpRepo.LocateChart(
 		s.config.Repository.Name,
 		s.config.Repository.URL,
 		s.config.Chart.Name,

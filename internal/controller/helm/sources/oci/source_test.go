@@ -200,13 +200,13 @@ func TestSource_GetVersion(t *testing.T) {
 	})
 }
 
-func TestSource_GetChart_RequiresParseAndValidate(t *testing.T) {
+func TestSource_LocateChart_RequiresParseAndValidate(t *testing.T) {
 	source := NewSource(nil)
 	ctx := context.Background()
 
-	_, err := source.GetChart(ctx, nil)
+	_, err := source.LocateChart(ctx, nil)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "ParseAndValidate must be called before GetChart")
+	assert.Contains(t, err.Error(), "ParseAndValidate must be called before LocateChart")
 }
 
 func TestParseOCIReference(t *testing.T) {

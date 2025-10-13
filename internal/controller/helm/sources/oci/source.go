@@ -14,8 +14,6 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/registry"
 	corev1 "k8s.io/api/core/v1"
@@ -97,16 +95,19 @@ func (s *Source) ParseAndValidate(ctx context.Context, rawConfig json.RawMessage
 	return nil
 }
 
-// GetChart retrieves a chart from an OCI registry using the configuration
-// from the last ParseAndValidate call.
+// LocateChart retrieves a chart from an OCI registry and returns the path to the
+// downloaded chart file.
 //
 // This handles:
 //   - Optional authentication via Kubernetes secrets
 //   - Chart pulling using Helm's action.Pull
-//   - Chart loading from downloaded archive
-func (s *Source) GetChart(ctx context.Context, settings *cli.EnvSettings) (*chart.Chart, error) {
+//   - Returns path to downloaded chart archive
+//
+// Note: This currently uses action.Pull which is a temporary implementation.
+// Phase 2 will refactor to use ChartDownloader directly for proper authentication.
+func (s *Source) LocateChart(ctx context.Context, settings *cli.EnvSettings) (string, error) {
 	if s.config == nil {
-		return nil, fmt.Errorf("ParseAndValidate must be called before GetChart")
+		return "", fmt.Errorf("ParseAndValidate must be called before LocateChart")
 	}
 
 	log := logf.FromContext(ctx)
@@ -115,7 +116,7 @@ func (s *Source) GetChart(ctx context.Context, settings *cli.EnvSettings) (*char
 	// Parse OCI reference to extract registry host for authentication
 	registryHost, chartPath, version, err := parseOCIReference(s.config.Chart)
 	if err != nil {
-		return nil, fmt.Errorf("invalid OCI reference: %w", err)
+		return "", fmt.Errorf("invalid OCI reference: %w", err)
 	}
 
 	log.V(1).Info("Parsed OCI reference",
@@ -128,26 +129,26 @@ func (s *Source) GetChart(ctx context.Context, settings *cli.EnvSettings) (*char
 		registry.ClientOptDebug(settings.Debug),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create registry client: %w", err)
+		return "", fmt.Errorf("failed to create registry client: %w", err)
 	}
 
 	// Authenticate if credentials are configured
 	if s.config.Authentication != nil {
 		username, password, token, err := s.resolveCredentials(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve credentials: %w", err)
+			return "", fmt.Errorf("failed to resolve credentials: %w", err)
 		}
 
 		// Login to registry
 		if token != "" {
 			log.V(1).Info("Authenticating with token", "registry", registryHost)
 			if err := registryClient.Login(registryHost, registry.LoginOptBasicAuth("", token)); err != nil {
-				return nil, fmt.Errorf("failed to authenticate with token: %w", err)
+				return "", fmt.Errorf("failed to authenticate with token: %w", err)
 			}
 		} else {
 			log.V(1).Info("Authenticating with username/password", "registry", registryHost, "username", username)
 			if err := registryClient.Login(registryHost, registry.LoginOptBasicAuth(username, password)); err != nil {
-				return nil, fmt.Errorf("failed to authenticate with credentials: %w", err)
+				return "", fmt.Errorf("failed to authenticate with credentials: %w", err)
 			}
 		}
 
@@ -157,7 +158,7 @@ func (s *Source) GetChart(ctx context.Context, settings *cli.EnvSettings) (*char
 	// Set up temporary directory for chart download
 	tempDir, err := os.MkdirTemp("", "helm-oci-chart-*")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp directory: %w", err)
+		return "", fmt.Errorf("failed to create temp directory: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
 
@@ -170,22 +171,12 @@ func (s *Source) GetChart(ctx context.Context, settings *cli.EnvSettings) (*char
 
 	downloadedPath, err := pullAction.Run(s.config.Chart)
 	if err != nil {
-		return nil, fmt.Errorf("failed to pull chart from OCI registry: %w", err)
+		return "", fmt.Errorf("failed to pull chart from OCI registry: %w", err)
 	}
 
-	log.V(1).Info("Chart downloaded", "path", downloadedPath)
+	log.Info("Chart downloaded to path", "path", downloadedPath)
 
-	// Load the chart from the downloaded file
-	loadedChart, err := loader.Load(downloadedPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load chart from %s: %w", downloadedPath, err)
-	}
-
-	log.Info("Successfully loaded chart from OCI registry",
-		"name", loadedChart.Metadata.Name,
-		"version", loadedChart.Metadata.Version)
-
-	return loadedChart, nil
+	return downloadedPath, nil
 }
 
 // GetVersion returns the configured chart version from the last ParseAndValidate call.

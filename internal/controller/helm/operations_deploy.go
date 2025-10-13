@@ -11,6 +11,7 @@ import (
 	"github.com/rinswind/deployment-operator/componentkit/controller"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/kube"
 	"k8s.io/client-go/kubernetes"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -27,12 +28,21 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*controller.OperationResul
 
 	releaseName := h.config.ReleaseName
 
-	// Get chart from configured source
-	// Phase 1: Only HTTP source is supported (OCI in Phase 2)
-	chart, err := h.getChart(ctx)
+	// Locate chart from configured source
+	chartPath, err := h.chartSource.LocateChart(ctx, h.settings)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get chart: %w", err)
+		return nil, fmt.Errorf("failed to locate chart: %w", err)
 	}
+
+	log.V(1).Info("Chart located", "path", chartPath)
+
+	// Load chart from path
+	chart, err := loader.Load(chartPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load chart: %w", err)
+	}
+
+	log.V(1).Info("Chart loaded", "name", chart.Metadata.Name, "version", chart.Metadata.Version)
 
 	// Check if release already exists
 	getAction := action.NewGet(h.actionConfig)
@@ -59,7 +69,7 @@ func (h *HelmOperations) install(ctx context.Context, chart *chart.Chart) (*cont
 	installAction.ReleaseName = releaseName
 	installAction.Namespace = releaseNamespace
 	installAction.CreateNamespace = *h.config.ManageNamespace
-	installAction.Version = h.getChartVersion()
+	installAction.Version = h.chartSource.GetVersion()
 	installAction.Wait = false               // Async deployment - don't block reconcile loop
 	installAction.Timeout = 30 * time.Second // Quick timeout for install operation itself
 
@@ -97,7 +107,7 @@ func (h *HelmOperations) upgrade(ctx context.Context, chart *chart.Chart) (*cont
 
 	// Create upgrade action
 	upgradeAction := action.NewUpgrade(h.actionConfig)
-	upgradeAction.Version = h.getChartVersion()
+	upgradeAction.Version = h.chartSource.GetVersion()
 	upgradeAction.Wait = false               // Async upgrade - don't block reconcile loop
 	upgradeAction.Timeout = 30 * time.Second // Quick timeout for upgrade operation itself
 

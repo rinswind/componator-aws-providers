@@ -13,7 +13,6 @@ import (
 	"context"
 	"encoding/json"
 
-	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/cli"
 )
 
@@ -48,15 +47,16 @@ type ChartSource interface {
 	// Returns error if parsing or validation fails.
 	ParseAndValidate(ctx context.Context, rawConfig json.RawMessage) error
 
-	// GetChart retrieves a Helm chart using the configuration from ParseAndValidate.
+	// LocateChart retrieves a Helm chart and returns the path to the cached chart file.
 	// Must be called after ParseAndValidate has successfully configured the source.
 	//
 	// Parameters:
 	//   - ctx: Context for cancellation and timeouts
 	//   - settings: Helm CLI settings for chart operations
 	//
-	// Returns the loaded chart ready for installation/upgrade, or error if retrieval fails.
-	GetChart(ctx context.Context, settings *cli.EnvSettings) (*chart.Chart, error)
+	// Returns the path to the downloaded chart file (typically a .tgz in Helm cache),
+	// or error if retrieval fails.
+	LocateChart(ctx context.Context, settings *cli.EnvSettings) (string, error)
 
 	// GetVersion returns the configured chart version from the last ParseAndValidate call.
 	// This is used for status reporting and change detection.

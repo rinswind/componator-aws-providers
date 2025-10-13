@@ -10,7 +10,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/cli"
 )
 
@@ -28,8 +27,8 @@ func (m *mockSource) ParseAndValidate(ctx context.Context, rawConfig json.RawMes
 	return nil
 }
 
-func (m *mockSource) GetChart(ctx context.Context, settings *cli.EnvSettings) (*chart.Chart, error) {
-	return nil, nil
+func (m *mockSource) LocateChart(ctx context.Context, settings *cli.EnvSettings) (string, error) {
+	return "", nil
 }
 
 func (m *mockSource) GetVersion() string {

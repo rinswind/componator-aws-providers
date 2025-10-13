@@ -12,7 +12,6 @@ import (
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources"
 	"github.com/rinswind/deployment-operator/componentkit/controller"
 	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/kube"
 	"helm.sh/helm/v3/pkg/release"
@@ -166,15 +165,4 @@ func (h *HelmOperations) gatherHelmReleaseResources(ctx context.Context, rel *re
 		"resourceCount", len(resourceList))
 
 	return resourceList, nil
-}
-
-// getChart retrieves the chart from the configured source.
-// The source was configured via ParseAndValidate during factory initialization.
-func (h *HelmOperations) getChart(ctx context.Context) (*chart.Chart, error) {
-	return h.chartSource.GetChart(ctx, h.settings)
-}
-
-// getChartVersion returns the chart version from the configured source.
-func (h *HelmOperations) getChartVersion() string {
-	return h.chartSource.GetVersion()
 }

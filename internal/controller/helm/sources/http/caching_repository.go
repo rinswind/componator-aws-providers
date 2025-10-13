@@ -12,10 +12,8 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
+	"helm.sh/helm/v3/pkg/downloader"
 	"helm.sh/helm/v3/pkg/getter"
 	"helm.sh/helm/v3/pkg/repo"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -81,7 +79,8 @@ func NewCachingRepository(basePath string, cacheSize int, cacheTTL, refreshInter
 	return s, nil
 }
 
-// GetChart retrieves a Helm chart from an HTTP repository with caching.
+// LocateChart retrieves a Helm chart from an HTTP repository with caching and returns
+// the path to the cached chart file.
 // This is the main entry point for chart operations and orchestrates:
 //  1. Repository configuration (repositories.yaml)
 //  2. Index caching (in-memory and on-disk)
@@ -92,15 +91,15 @@ func NewCachingRepository(basePath string, cacheSize int, cacheTTL, refreshInter
 //   - repoURL: Repository URL (e.g., "https://charts.bitnami.com/bitnami")
 //   - chartName: Chart name (e.g., "postgresql")
 //   - version: Chart version (e.g., "12.1.2")
-//   - settings: Helm CLI settings (used for chart locating)
+//   - settings: Helm CLI settings (used for chart downloading)
 //
-// Returns the loaded chart ready for installation/upgrade.
-func (s *CachingRepository) GetChart(repoName, repoURL, chartName, version string, settings *cli.EnvSettings) (*chart.Chart, error) {
+// Returns the path to the downloaded chart file (typically a .tgz in Helm cache).
+func (s *CachingRepository) LocateChart(repoName, repoURL, chartName, version string, settings *cli.EnvSettings) (string, error) {
 	log := logf.Log.WithName("http-chart-source")
 
 	// Step 1: Ensure repository is configured in repositories.yaml
 	if err := s.ensureRepository(repoName, repoURL); err != nil {
-		return nil, fmt.Errorf("failed to ensure repository: %w", err)
+		return "", fmt.Errorf("failed to ensure repository: %w", err)
 	}
 
 	// Step 2: Check in-memory cache for repository index
@@ -114,7 +113,7 @@ func (s *CachingRepository) GetChart(repoName, repoURL, chartName, version strin
 	// Step 3: Load or download index from disk/network
 	index, err := s.loadOrDownloadIndex(repoName, repoURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load repository index: %w", err)
+		return "", fmt.Errorf("failed to load repository index: %w", err)
 	}
 
 	// Step 4: Cache the index for next time
@@ -234,23 +233,20 @@ func (s *CachingRepository) loadOrDownloadIndex(repoName, repoURL string) (*repo
 	return index, nil
 }
 
-// loadChartFromIndex locates and loads a chart using the repository index.
-// This searches the index for the chart version, downloads it, and loads it.
-func (s *CachingRepository) loadChartFromIndex(index *repo.IndexFile, chartName, version string, settings *cli.EnvSettings) (*chart.Chart, error) {
+// loadChartFromIndex locates and downloads a chart using the repository index.
+// This searches the index for the chart version and downloads it to Helm cache
+// using ChartDownloader.
+func (s *CachingRepository) loadChartFromIndex(index *repo.IndexFile, chartName, version string, settings *cli.EnvSettings) (string, error) {
 	log := logf.Log.WithName("http-chart-source")
 
 	// Configure Helm settings to use our repository paths
 	settings.RepositoryConfig = s.repoConfigPath
 	settings.RepositoryCache = s.repoCachePath
 
-	// Use Helm's standard chart resolution
-	// Note: We can't use the repo/chart format here because we're working with
-	// the index directly. Instead, we need to download the chart manually.
-
 	// Find the chart version in the index
 	chartVersions, ok := index.Entries[chartName]
 	if !ok {
-		return nil, fmt.Errorf("chart %q not found in repository index", chartName)
+		return "", fmt.Errorf("chart %q not found in repository index", chartName)
 	}
 
 	var chartVersion *repo.ChartVersion
@@ -262,33 +258,29 @@ func (s *CachingRepository) loadChartFromIndex(index *repo.IndexFile, chartName,
 	}
 
 	if chartVersion == nil {
-		return nil, fmt.Errorf("chart %q version %q not found in repository index", chartName, version)
+		return "", fmt.Errorf("chart %q version %q not found in repository index", chartName, version)
 	}
 
-	// Use Helm's chart location logic
-	// This handles downloading the chart to cache if needed
-	chartPathOptions := &action.ChartPathOptions{
-		Version: version,
-	}
-
-	// Build chart reference from first URL in the chart version
+	// Get chart URL from first URL in the chart version
 	if len(chartVersion.URLs) == 0 {
-		return nil, fmt.Errorf("chart %q version %q has no URLs", chartName, version)
+		return "", fmt.Errorf("chart %q version %q has no URLs", chartName, version)
+	}
+	chartURL := chartVersion.URLs[0]
+
+	// Use ChartDownloader to download chart to cache
+	dl := &downloader.ChartDownloader{
+		Out:              os.Stdout,
+		RepositoryConfig: s.repoConfigPath,
+		RepositoryCache:  s.repoCachePath,
+		Getters:          getter.All(settings),
 	}
 
-	// Use LocateChart to download and cache the chart
-	chartPath, err := chartPathOptions.LocateChart(chartVersion.URLs[0], settings)
+	chartPath, _, err := dl.DownloadTo(chartURL, version, s.repoCachePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to locate chart: %w", err)
+		return "", fmt.Errorf("failed to download chart: %w", err)
 	}
 
-	log.V(1).Info("Located chart", "chart", chartName, "version", version, "path", chartPath)
+	log.V(1).Info("Downloaded chart", "chart", chartName, "version", version, "path", chartPath)
 
-	// Load the chart
-	chartLoaded, err := loader.Load(chartPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load chart from %s: %w", chartPath, err)
-	}
-
-	return chartLoaded, nil
+	return chartPath, nil
 }
