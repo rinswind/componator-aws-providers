@@ -204,16 +204,19 @@ Deploy(ctx):
 
 ## Implementation Phases
 
-### Phase 1: Update ChartSource Interface and HTTP Source
+### Phase 1: Update ChartSource Interface and HTTP Source ✅ COMPLETE
 
 **Goals:**
-- Rename `GetChart()` to `LocateChart()` in interface and implementations
-- Change return type from `(*chart.Chart, error)` to `(string, error)`
-- Update `CachingRepository.loadChartFromIndex()` to use ChartDownloader directly
-- Remove `loader.Load()` call from `loadChartFromIndex()`, return path only
-- Update tests for HTTP source
+- ✅ Rename `GetChart()` to `LocateChart()` in interface and implementations
+- ✅ Change return type from `(*chart.Chart, error)` to `(string, error)`
+- ✅ Update `CachingRepository.loadChartFromIndex()` to use ChartDownloader directly
+- ✅ Remove `loader.Load()` call from `loadChartFromIndex()`, return path only
+- ✅ Update tests for HTTP source
+- ✅ Update OCI source for interface compliance
+- ✅ Update Deploy action to handle chart loading
+- ✅ Remove helper methods and update all tests
 
-**Deliverable:** HTTP source uses ChartDownloader and returns chart path string; tests validate path return and caching behavior.
+**Deliverable:** ✅ HTTP source uses ChartDownloader and returns chart path string; tests validate path return and caching behavior. Committed in b7ed719.
 
 ### Phase 2: Fix OCI Source (PRIMARY GOAL)
 
