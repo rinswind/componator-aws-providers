@@ -29,18 +29,14 @@ func TestFactory_CreateSource(t *testing.T) {
 		{
 			name: "valid http source configuration",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "http",
-					"repository": {
-						"url": "https://charts.example.com",
-						"name": "example"
-					},
-					"chart": {
-						"name": "mychart",
-						"version": "1.0.0"
-					}
+				"type": "http",
+				"repository": {
+					"url": "https://charts.example.com",
+					"name": "example"
+				},
+				"chart": {
+					"name": "mychart",
+					"version": "1.0.0"
 				}
 			}`,
 			expectError: false,
@@ -56,25 +52,12 @@ func TestFactory_CreateSource(t *testing.T) {
 			},
 		},
 		{
-			name: "missing source field",
-			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default"
-			}`,
-			expectError: true,
-			errorMsg:    "source field is required",
-		},
-		{
 			name: "missing repository field",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "http",
-					"chart": {
-						"name": "mychart",
-						"version": "1.0.0"
-					}
+				"type": "http",
+				"chart": {
+					"name": "mychart",
+					"version": "1.0.0"
 				}
 			}`,
 			expectError: true,
@@ -83,14 +66,10 @@ func TestFactory_CreateSource(t *testing.T) {
 		{
 			name: "missing chart field",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "http",
-					"repository": {
-						"url": "https://charts.example.com",
-						"name": "example"
-					}
+				"type": "http",
+				"repository": {
+					"url": "https://charts.example.com",
+					"name": "example"
 				}
 			}`,
 			expectError: true,
@@ -99,18 +78,14 @@ func TestFactory_CreateSource(t *testing.T) {
 		{
 			name: "invalid repository URL",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "http",
-					"repository": {
-						"url": "not-a-url",
-						"name": "example"
-					},
-					"chart": {
-						"name": "mychart",
-						"version": "1.0.0"
-					}
+				"type": "http",
+				"repository": {
+					"url": "not-a-url",
+					"name": "example"
+				},
+				"chart": {
+					"name": "mychart",
+					"version": "1.0.0"
 				}
 			}`,
 			expectError: true,
@@ -119,18 +94,14 @@ func TestFactory_CreateSource(t *testing.T) {
 		{
 			name: "empty chart name",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "http",
-					"repository": {
-						"url": "https://charts.example.com",
-						"name": "example"
-					},
-					"chart": {
-						"name": "",
-						"version": "1.0.0"
-					}
+				"type": "http",
+				"repository": {
+					"url": "https://charts.example.com",
+					"name": "example"
+				},
+				"chart": {
+					"name": "",
+					"version": "1.0.0"
 				}
 			}`,
 			expectError: true,
@@ -170,18 +141,14 @@ func TestHTTPSource_GetVersion(t *testing.T) {
 	settings := cli.New()
 
 	rawConfig := `{
-		"releaseName": "my-release",
-		"releaseNamespace": "default",
-		"source": {
-			"type": "http",
-			"repository": {
-				"url": "https://charts.example.com",
-				"name": "example"
-			},
-			"chart": {
-				"name": "mychart",
-				"version": "1.2.3"
-			}
+		"type": "http",
+		"repository": {
+			"url": "https://charts.example.com",
+			"name": "example"
+		},
+		"chart": {
+			"name": "mychart",
+			"version": "1.2.3"
 		}
 	}`
 

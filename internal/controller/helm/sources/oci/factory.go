@@ -40,38 +40,23 @@ func (f *Factory) Type() string {
 }
 
 // CreateSource parses and validates OCI source configuration, then creates an immutable OCISource instance.
-// This extracts the "source" section and validates the OCI-specific fields including OCI reference format.
+// The rawConfig parameter contains only the source section (already extracted by composite Registry).
+// Validates OCI-specific fields including OCI reference format.
 //
 // Expected JSON structure:
 //
 //	{
-//	  "releaseName": "...",
-//	  "releaseNamespace": "...",
-//	  "source": {
-//	    "type": "oci",
-//	    "chart": "oci://registry.example.com/path/chart:version",
-//	    "authentication": {
-//	      "method": "registry",
-//	      "secretRef": {"name": "...", "namespace": "..."}
-//	    }
+//	  "type": "oci",
+//	  "chart": "oci://registry.example.com/path/chart:version",
+//	  "authentication": {
+//	    "method": "registry",
+//	    "secretRef": {"name": "...", "namespace": "..."}
 //	  }
 //	}
 func (f *Factory) CreateSource(ctx context.Context, rawConfig json.RawMessage, settings *cli.EnvSettings) (sources.ChartSource, error) {
-	// Parse the raw config to extract the source section
-	var configMap map[string]json.RawMessage
-	if err := json.Unmarshal(rawConfig, &configMap); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
-	}
-
-	// Extract source section
-	rawSource, hasSource := configMap["source"]
-	if !hasSource {
-		return nil, fmt.Errorf("source field is required")
-	}
-
-	// Parse source configuration
+	// Parse source configuration (rawConfig is already the source section)
 	var config Config
-	if err := json.Unmarshal(rawSource, &config); err != nil {
+	if err := json.Unmarshal(rawConfig, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse OCI source configuration: %w", err)
 	}
 

@@ -45,8 +45,19 @@ func (f *HelmOperationsFactory) NewOperations(
 		return nil, fmt.Errorf("failed to parse helm configuration: %w", err)
 	}
 
-	// Step 2: Parse the source part of the config
-	chartSource, err := f.chartSourceFactory.CreateSource(ctx, rawConfig, settings)
+	// Step 2: Extract source section from config
+	var configMap map[string]json.RawMessage
+	if err := json.Unmarshal(rawConfig, &configMap); err != nil {
+		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	rawSource, hasSource := configMap["source"]
+	if !hasSource {
+		return nil, fmt.Errorf("source field is required in helm configuration")
+	}
+
+	// Step 3: Parse the source part of the config (pass just the source section)
+	chartSource, err := f.chartSourceFactory.CreateSource(ctx, rawSource, settings)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chart source: %w", err)
 	}

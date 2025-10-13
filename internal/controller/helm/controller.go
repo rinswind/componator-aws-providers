@@ -6,7 +6,7 @@ package helm
 import (
 	"time"
 
-	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources"
+	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources/composite"
 	httpsource "github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources/http"
 	ocisource "github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources/oci"
 	"github.com/rinswind/deployment-operator/componentkit/controller"
@@ -57,7 +57,7 @@ func NewComponentReconciler(k8sClient client.Client) (*ComponentReconciler, erro
 	ociFactory := ocisource.NewFactory(k8sClient, helmBasePath)
 
 	// Create and populate factory registry
-	registry := sources.NewRegistry()
+	registry := composite.NewFactory()
 	registry.Register(httpFactory)
 	registry.Register(ociFactory)
 

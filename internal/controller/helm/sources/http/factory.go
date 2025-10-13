@@ -33,35 +33,19 @@ func (f *Factory) Type() string {
 }
 
 // CreateSource parses and validates HTTP source configuration, then creates an immutable HTTPSource instance.
-// This extracts the "source" section and validates the HTTP-specific fields.
+// The rawConfig parameter contains only the source section (already extracted by composite Registry).
 //
 // Expected JSON structure:
 //
 //	{
-//	  "releaseName": "...",
-//	  "releaseNamespace": "...",
-//	  "source": {
-//	    "type": "http",
-//	    "repository": {"url": "...", "name": "..."},
-//	    "chart": {"name": "...", "version": "..."}
-//	  }
+//	  "type": "http",
+//	  "repository": {"url": "...", "name": "..."},
+//	  "chart": {"name": "...", "version": "..."}
 //	}
 func (f *Factory) CreateSource(ctx context.Context, rawConfig json.RawMessage, settings *cli.EnvSettings) (sources.ChartSource, error) {
-	// Parse the raw config to extract the source section
-	var configMap map[string]json.RawMessage
-	if err := json.Unmarshal(rawConfig, &configMap); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
-	}
-
-	// Extract source section
-	rawSource, hasSource := configMap["source"]
-	if !hasSource {
-		return nil, fmt.Errorf("source field is required")
-	}
-
-	// Parse source configuration
+	// Parse source configuration (rawConfig is already the source section)
 	var config Config
-	if err := json.Unmarshal(rawSource, &config); err != nil {
+	if err := json.Unmarshal(rawConfig, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse HTTP source configuration: %w", err)
 	}
 

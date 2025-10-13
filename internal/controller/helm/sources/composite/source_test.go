@@ -1,13 +1,14 @@
 // Copyright 2025.
 // SPDX-License-Identifier: Apache-2.0
 
-package sources
+package composite
 
 import (
 	"context"
 	"encoding/json"
 	"testing"
 
+	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"helm.sh/helm/v3/pkg/cli"
@@ -23,7 +24,7 @@ func (m *mockFactory) Type() string {
 	return m.sourceType
 }
 
-func (m *mockFactory) CreateSource(ctx context.Context, rawConfig json.RawMessage, settings *cli.EnvSettings) (ChartSource, error) {
+func (m *mockFactory) CreateSource(ctx context.Context, rawConfig json.RawMessage, settings *cli.EnvSettings) (sources.ChartSource, error) {
 	return &mockChartSource{version: m.version}, nil
 }
 
@@ -41,7 +42,7 @@ func (m *mockChartSource) GetVersion() string {
 }
 
 func TestRegistry_RegisterAndGet(t *testing.T) {
-	registry := NewRegistry()
+	registry := NewFactory()
 
 	httpFactory := &mockFactory{sourceType: "http", version: "1.0.0"}
 	ociFactory := &mockFactory{sourceType: "oci", version: "2.0.0"}
@@ -76,7 +77,7 @@ func TestRegistry_CreateSource(t *testing.T) {
 	ctx := context.Background()
 	settings := cli.New()
 
-	registry := NewRegistry()
+	registry := NewFactory()
 	httpFactory := &mockFactory{sourceType: "http", version: "1.0.0"}
 	ociFactory := &mockFactory{sourceType: "oci", version: "2.0.0"}
 
@@ -93,13 +94,9 @@ func TestRegistry_CreateSource(t *testing.T) {
 		{
 			name: "http source type - composite pattern delegates to http factory",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "http",
-					"repository": {"url": "https://charts.example.com", "name": "example"},
-					"chart": {"name": "mychart", "version": "1.0.0"}
-				}
+				"type": "http",
+				"repository": {"url": "https://charts.example.com", "name": "example"},
+				"chart": {"name": "mychart", "version": "1.0.0"}
 			}`,
 			expectedVersion: "1.0.0",
 			expectError:     false,
@@ -107,12 +104,8 @@ func TestRegistry_CreateSource(t *testing.T) {
 		{
 			name: "oci source type - composite pattern delegates to oci factory",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "oci",
-					"chart": "oci://ghcr.io/example/mychart:1.0.0"
-				}
+				"type": "oci",
+				"chart": "oci://ghcr.io/example/mychart:1.0.0"
 			}`,
 			expectedVersion: "2.0.0",
 			expectError:     false,
@@ -120,33 +113,16 @@ func TestRegistry_CreateSource(t *testing.T) {
 		{
 			name: "unknown source type",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "git",
-					"repository": "https://github.com/example/charts"
-				}
+				"type": "git",
+				"repository": "https://github.com/example/charts"
 			}`,
 			expectError: true,
 			errorMsg:    "unknown source type: git",
 		},
 		{
-			name: "missing source field",
-			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default"
-			}`,
-			expectError: true,
-			errorMsg:    "source field is required",
-		},
-		{
 			name: "missing type field",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"repository": {"url": "https://charts.example.com"}
-				}
+				"repository": {"url": "https://charts.example.com"}
 			}`,
 			expectError: true,
 			errorMsg:    "source.type is required",
@@ -172,56 +148,35 @@ func TestRegistry_CreateSource(t *testing.T) {
 
 func TestDetectSourceType(t *testing.T) {
 	tests := []struct {
-		name        string
-		rawConfig   string
-		expected    string
-		expectError bool
-		errorMsg    string
+		name         string
+		rawConfig    string
+		expectedType string
+		expectError  bool
+		errorMsg     string
 	}{
 		{
 			name: "http source type",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "http",
-					"repository": {"url": "https://charts.example.com", "name": "example"},
-					"chart": {"name": "mychart", "version": "1.0.0"}
-				}
+				"type": "http",
+				"repository": {"url": "https://charts.example.com", "name": "example"},
+				"chart": {"name": "mychart", "version": "1.0.0"}
 			}`,
-			expected:    "http",
-			expectError: false,
+			expectedType: "http",
+			expectError:  false,
 		},
 		{
 			name: "oci source type",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "oci",
-					"chart": "oci://ghcr.io/example/mychart:1.0.0"
-				}
+				"type": "oci",
+				"chart": "oci://ghcr.io/example/mychart:1.0.0"
 			}`,
-			expected:    "oci",
-			expectError: false,
-		},
-		{
-			name: "missing source field",
-			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default"
-			}`,
-			expectError: true,
-			errorMsg:    "source field is required",
+			expectedType: "oci",
+			expectError:  false,
 		},
 		{
 			name: "missing type field",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"repository": {"url": "https://charts.example.com"}
-				}
+				"repository": {"url": "https://charts.example.com"}
 			}`,
 			expectError: true,
 			errorMsg:    "source.type is required",
@@ -229,12 +184,8 @@ func TestDetectSourceType(t *testing.T) {
 		{
 			name: "empty type field",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "",
-					"repository": {"url": "https://charts.example.com"}
-				}
+				"type": "",
+				"repository": {"url": "https://charts.example.com"}
 			}`,
 			expectError: true,
 			errorMsg:    "source.type is required",
@@ -243,7 +194,7 @@ func TestDetectSourceType(t *testing.T) {
 			name:        "invalid json",
 			rawConfig:   `{invalid json}`,
 			expectError: true,
-			errorMsg:    "failed to parse config",
+			errorMsg:    "failed to parse",
 		},
 	}
 
@@ -256,7 +207,7 @@ func TestDetectSourceType(t *testing.T) {
 				assert.Contains(t, err.Error(), tt.errorMsg)
 			} else {
 				require.NoError(t, err)
-				assert.Equal(t, tt.expected, sourceType)
+				assert.Equal(t, tt.expectedType, sourceType)
 			}
 		})
 	}

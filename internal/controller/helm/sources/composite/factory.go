@@ -1,13 +1,16 @@
 // Copyright 2025.
 // SPDX-License-Identifier: Apache-2.0
 
-package sources
+package composite
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 
+	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources"
 	"helm.sh/helm/v3/pkg/cli"
 )
 
@@ -27,10 +30,10 @@ import (
 // To:
 //
 //	source := registry.CreateSource(...)
-type Registry map[string]ChartSourceFactory
+type Registry map[string]sources.ChartSourceFactory
 
-// NewRegistry creates a new empty factory registry.
-func NewRegistry() Registry {
+// NewFactory creates a new empty factory registry.
+func NewFactory() Registry {
 	return make(Registry)
 }
 
@@ -38,35 +41,37 @@ func NewRegistry() Registry {
 //
 // Parameters:
 //   - factory: ChartSourceFactory instance to register
-func (r Registry) Register(factory ChartSourceFactory) {
+func (r Registry) Register(factory sources.ChartSourceFactory) {
 	r[factory.Type()] = factory
 }
 
 // Type returns the source type identifier for the composite registry.
 // This is not typically used since Registry acts as a meta-factory.
 func (r Registry) Type() string {
-	return "registry"
+	return "composite"
 }
 
 // CreateSource implements ChartSourceFactory by detecting the source type
 // and delegating to the appropriate registered factory.
 //
 // This implements the Composite Pattern by:
-//  1. Detecting source type from rawConfig
+//  1. Detecting source type from rawConfig (which is the source section)
 //  2. Looking up the appropriate factory
 //  3. Delegating to that factory's CreateSource
 //
 // Parameters:
 //   - ctx: Context for cancellation and timeouts
-//   - rawConfig: Raw JSON from Component.Spec.Config
+//   - rawConfig: Raw JSON of the source section (not the full Component.Spec.Config)
 //   - settings: Helm CLI settings for chart operations
 //
 // Returns a configured ChartSource instance, or error if:
 //   - Source type detection fails
 //   - Source type is not registered
 //   - Underlying factory's CreateSource fails
-func (r Registry) CreateSource(ctx context.Context, rawConfig json.RawMessage, settings *cli.EnvSettings) (ChartSource, error) {
-	// Step 1: Detect source type from config
+func (r Registry) CreateSource(
+	ctx context.Context, rawConfig json.RawMessage, settings *cli.EnvSettings) (sources.ChartSource, error) {
+
+	// Step 1: Detect source type from the source section
 	sourceType, err := detectSourceType(rawConfig)
 	if err != nil {
 		return nil, err
@@ -75,7 +80,7 @@ func (r Registry) CreateSource(ctx context.Context, rawConfig json.RawMessage, s
 	// Step 2: Lookup factory
 	factory, found := r[sourceType]
 	if !found {
-		return nil, fmt.Errorf("unknown source type: %s (available types: %v)", sourceType, r.availableTypes())
+		return nil, fmt.Errorf("unknown source type: %s (available types: %v)", sourceType, slices.Collect(maps.Keys(r)))
 	}
 
 	// Step 3: Delegate to concrete factory
@@ -90,44 +95,30 @@ func (r Registry) CreateSource(ctx context.Context, rawConfig json.RawMessage, s
 //   - sourceType: Source type identifier ("http", "oci", etc.)
 //
 // Returns the registered factory instance, or error if the type is unknown.
-func (r Registry) Get(sourceType string) (ChartSourceFactory, error) {
+func (r Registry) Get(sourceType string) (sources.ChartSourceFactory, error) {
 	factory, found := r[sourceType]
 	if !found {
-		return nil, fmt.Errorf("unknown source type: %s (available types: %v)", sourceType, r.availableTypes())
+		return nil, fmt.Errorf("unknown source type: %s (available types: %v)", sourceType, slices.Collect(maps.Keys(r)))
 	}
 
 	return factory, nil
 }
 
-// detectSourceType extracts the source type field from raw configuration.
-// This is now an internal implementation detail of the Registry composite.
+// detectSourceType extracts the source type field from the source section.
 //
 // Parameters:
-//   - rawConfig: Raw JSON from Component.Spec.Config
+//   - rawConfig: Raw JSON of the source section
 //
-// Returns the source type identifier ("http", "oci", etc.) or error if:
-//   - JSON parsing fails
-//   - "source" field is missing
-//   - "source.type" field is missing or empty
+// Returns:
+//   - sourceType: The source type identifier ("http", "oci", etc.)
+//   - error: Error if parsing fails or type is missing/empty
 func detectSourceType(rawConfig json.RawMessage) (string, error) {
-	// Parse the raw config to extract the source section
-	var configMap map[string]json.RawMessage
-	if err := json.Unmarshal(rawConfig, &configMap); err != nil {
-		return "", fmt.Errorf("failed to parse config: %w", err)
-	}
-
-	// Ensure source field exists
-	rawSource, hasSource := configMap["source"]
-	if !hasSource {
-		return "", fmt.Errorf("config validation failed: source field is required")
-	}
-
 	// Parse the type field from source section
 	var typeDetector struct {
 		Type string `json:"type"`
 	}
 
-	if err := json.Unmarshal(rawSource, &typeDetector); err != nil {
+	if err := json.Unmarshal(rawConfig, &typeDetector); err != nil {
 		return "", fmt.Errorf("failed to parse source section: %w", err)
 	}
 
@@ -136,13 +127,4 @@ func detectSourceType(rawConfig json.RawMessage) (string, error) {
 	}
 
 	return typeDetector.Type, nil
-}
-
-// availableTypes returns a slice of registered source types for error messages.
-func (r Registry) availableTypes() []string {
-	types := make([]string, 0, len(r))
-	for t := range r {
-		types = append(types, t)
-	}
-	return types
 }

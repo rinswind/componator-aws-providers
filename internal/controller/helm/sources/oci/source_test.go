@@ -30,12 +30,8 @@ func TestFactory_CreateSource(t *testing.T) {
 		{
 			name: "valid oci source without authentication",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "oci",
-					"chart": "oci://ghcr.io/example/mychart:1.0.0"
-				}
+				"type": "oci",
+				"chart": "oci://ghcr.io/example/mychart:1.0.0"
 			}`,
 			expectError: false,
 			wantChart:   "oci://ghcr.io/example/mychart:1.0.0",
@@ -43,17 +39,13 @@ func TestFactory_CreateSource(t *testing.T) {
 		{
 			name: "valid oci source with authentication",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "oci",
-					"chart": "oci://registry.example.com/charts/mychart:2.0.0",
-					"authentication": {
-						"method": "registry",
-						"secretRef": {
-							"name": "registry-creds",
-							"namespace": "default"
-						}
+				"type": "oci",
+				"chart": "oci://registry.example.com/charts/mychart:2.0.0",
+				"authentication": {
+					"method": "registry",
+					"secretRef": {
+						"name": "registry-creds",
+						"namespace": "default"
 					}
 				}
 			}`,
@@ -61,22 +53,9 @@ func TestFactory_CreateSource(t *testing.T) {
 			wantChart:   "oci://registry.example.com/charts/mychart:2.0.0",
 		},
 		{
-			name: "missing source field",
-			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default"
-			}`,
-			expectError: true,
-			errorMsg:    "source field is required",
-		},
-		{
 			name: "missing chart field",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "oci"
-				}
+				"type": "oci"
 			}`,
 			expectError: true,
 			errorMsg:    "validation failed",
@@ -84,12 +63,8 @@ func TestFactory_CreateSource(t *testing.T) {
 		{
 			name: "invalid oci reference - missing oci:// prefix",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "oci",
-					"chart": "ghcr.io/example/mychart:1.0.0"
-				}
+				"type": "oci",
+				"chart": "ghcr.io/example/mychart:1.0.0"
 			}`,
 			expectError: true,
 			errorMsg:    "validation failed",
@@ -97,12 +72,8 @@ func TestFactory_CreateSource(t *testing.T) {
 		{
 			name: "invalid oci reference - missing version",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "oci",
-					"chart": "oci://ghcr.io/example/mychart"
-				}
+				"type": "oci",
+				"chart": "oci://ghcr.io/example/mychart"
 			}`,
 			expectError: true,
 			errorMsg:    "validation failed",
@@ -110,12 +81,8 @@ func TestFactory_CreateSource(t *testing.T) {
 		{
 			name: "invalid oci reference - missing path",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "oci",
-					"chart": "oci://ghcr.io:1.0.0"
-				}
+				"type": "oci",
+				"chart": "oci://ghcr.io:1.0.0"
 			}`,
 			expectError: true,
 			errorMsg:    "validation failed",
@@ -123,17 +90,13 @@ func TestFactory_CreateSource(t *testing.T) {
 		{
 			name: "invalid authentication - wrong method",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "oci",
-					"chart": "oci://ghcr.io/example/mychart:1.0.0",
-					"authentication": {
-						"method": "oauth",
-						"secretRef": {
-							"name": "creds",
-							"namespace": "default"
-						}
+				"type": "oci",
+				"chart": "oci://ghcr.io/example/mychart:1.0.0",
+				"authentication": {
+					"method": "oauth",
+					"secretRef": {
+						"name": "creds",
+						"namespace": "default"
 					}
 				}
 			}`,
@@ -143,14 +106,10 @@ func TestFactory_CreateSource(t *testing.T) {
 		{
 			name: "invalid authentication - missing secretRef",
 			rawConfig: `{
-				"releaseName": "my-release",
-				"releaseNamespace": "default",
-				"source": {
-					"type": "oci",
-					"chart": "oci://ghcr.io/example/mychart:1.0.0",
-					"authentication": {
-						"method": "registry"
-					}
+				"type": "oci",
+				"chart": "oci://ghcr.io/example/mychart:1.0.0",
+				"authentication": {
+					"method": "registry"
 				}
 			}`,
 			expectError: true,
@@ -187,12 +146,8 @@ func TestOCISource_GetVersion(t *testing.T) {
 	settings := cli.New()
 
 	rawConfig := `{
-		"releaseName": "my-release",
-		"releaseNamespace": "default",
-		"source": {
-			"type": "oci",
-			"chart": "oci://ghcr.io/example/mychart:1.2.3"
-		}
+		"type": "oci",
+		"chart": "oci://ghcr.io/example/mychart:1.2.3"
 	}`
 
 	source, err := factory.CreateSource(ctx, json.RawMessage(rawConfig), settings)
