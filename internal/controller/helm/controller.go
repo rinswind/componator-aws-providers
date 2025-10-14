@@ -10,6 +10,7 @@ import (
 	httpsource "github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources/http"
 	ocisource "github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources/oci"
 	"github.com/rinswind/deployment-operator/componentkit/controller"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -67,4 +68,10 @@ func NewComponentReconciler(k8sClient client.Client) (*ComponentReconciler, erro
 	config := controller.DefaultComponentReconcilerConfig("helm")
 
 	return &ComponentReconciler{controller.NewComponentReconciler(operationsFactory, config)}, nil
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return r.ComponentReconciler.BuildDefaultController(mgr).
+		Complete(r.ComponentReconciler)
 }

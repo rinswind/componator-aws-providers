@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rinswind/deployment-operator/componentkit/controller"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 //+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
@@ -32,4 +33,10 @@ func NewComponentReconciler() *ComponentReconciler {
 	config.StatusCheckRequeue = 30 * time.Second
 
 	return &ComponentReconciler{controller.NewComponentReconciler(factory, config)}
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return r.ComponentReconciler.BuildDefaultController(mgr).
+		Complete(r.ComponentReconciler)
 }
