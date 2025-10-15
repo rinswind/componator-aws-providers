@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 
@@ -19,11 +20,13 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"github.com/rinswind/deployment-operator-handlers/internal/controller/configreader"
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm"
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/rds"
 	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/core/v1alpha1"
@@ -163,6 +166,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Setup field indexer for Components by handler for efficient lookups
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&deploymentsv1alpha1.Component{},
+		"spec.handler",
+		func(obj client.Object) []string {
+			component := obj.(*deploymentsv1alpha1.Component)
+			return []string{component.Spec.Handler}
+		},
+	); err != nil {
+		setupLog.Error(err, "unable to setup field indexer for Components")
+		os.Exit(1)
+	}
+
 	// Initialize Helm controller with k8s client for OCI credential resolution
 	// The client is needed during factory initialization to create OCI chart sources
 	helmController, err := helm.NewComponentReconciler(mgr.GetClient())
@@ -177,6 +194,11 @@ func main() {
 
 	if err := rds.NewComponentReconciler().SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RDSComponent")
+		os.Exit(1)
+	}
+
+	if err := configreader.NewComponentReconciler(mgr).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ConfigReaderComponent")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

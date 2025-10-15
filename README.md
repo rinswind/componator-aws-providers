@@ -8,6 +8,7 @@ This project contains multiple controllers that handle different component types
 
 - **Helm Handler** (`internal/controller/helm/`) - Deploy and manage Helm charts
 - **RDS Handler** (`internal/controller/rds/`) - Deploy and manage RDS instances via Terraform
+- **Config-Reader Handler** (`internal/controller/configreader/`) - Read ConfigMaps and export values for template resolution
 
 Each handler claims and processes Component resources based on their `spec.handler` field, implementing the actual deployment logic while following standardized protocols and enhanced orchestration capabilities.
 
@@ -34,6 +35,12 @@ if err := helm.NewComponentReconciler().SetupWithManager(mgr); err != nil {
 // Register RDS handler  
 if err := rds.NewComponentReconciler().SetupWithManager(mgr); err != nil {
     setupLog.Error(err, "unable to create controller", "controller", "RDS")
+    os.Exit(1)
+}
+
+// Register Config-Reader handler
+if err := configreader.NewComponentReconciler(mgr).SetupWithManager(mgr); err != nil {
+    setupLog.Error(err, "unable to create controller", "controller", "ConfigReader")
     os.Exit(1)
 }
 ```

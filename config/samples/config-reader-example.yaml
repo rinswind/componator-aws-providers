@@ -1,0 +1,36 @@
+# Example ConfigMap with Terraform outputs
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: terraform-outputs
+  namespace: default
+data:
+  vpc_id: "vpc-0123456789abcdef0"
+  subnet_ids: "subnet-111,subnet-222,subnet-333"
+  security_group_id: "sg-0123456789abcdef0"
+  eso_irsa_role_arn: "arn:aws:iam::123456789012:role/eso-role"
+  eks_cluster_endpoint: "https://example.eks.amazonaws.com"
+  cluster_domain: "cluster.local"
+
+---
+# Config-reader Component that reads the ConfigMap
+apiVersion: deployment-orchestrator.io/v1alpha1
+kind: Component
+metadata:
+  name: infra-config
+  namespace: default
+spec:
+  handler: config-reader
+  config:
+    sources:
+      - name: terraform-outputs
+        namespace: default
+        exports:
+          - key: vpc_id
+          - key: subnet_ids
+          - key: security_group_id
+          - key: eso_irsa_role_arn
+          - key: eks_cluster_endpoint
+            as: cluster_endpoint  # Rename for brevity
+          - key: cluster_domain
