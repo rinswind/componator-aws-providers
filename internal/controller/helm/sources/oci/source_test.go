@@ -9,13 +9,15 @@ import (
 	"strings"
 	"testing"
 
+	"time"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"helm.sh/helm/v3/pkg/cli"
 )
 
 func TestFactory_Type(t *testing.T) {
-	factory := NewFactory(nil, "/tmp/test-cache")
+	factory := NewFactory(nil, "/tmp/test-cache", 30*time.Second)
 	assert.Equal(t, "oci", factory.Type())
 }
 
@@ -119,7 +121,7 @@ func TestFactory_CreateSource(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			factory := NewFactory(nil, "/tmp/test-cache")
+			factory := NewFactory(nil, "/tmp/test-cache", 30*time.Second)
 			ctx := context.Background()
 			settings := cli.New()
 
@@ -141,7 +143,7 @@ func TestFactory_CreateSource(t *testing.T) {
 }
 
 func TestOCISource_GetVersion(t *testing.T) {
-	factory := NewFactory(nil, "/tmp/test-cache")
+	factory := NewFactory(nil, "/tmp/test-cache", 30*time.Second)
 	ctx := context.Background()
 	settings := cli.New()
 

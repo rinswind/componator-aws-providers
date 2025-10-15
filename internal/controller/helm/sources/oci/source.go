@@ -31,6 +31,7 @@ import (
 type Factory struct {
 	k8sClient       client.Client // Kubernetes client for secret resolution (thread-safe)
 	repositoryCache string        // Path to Helm repository cache directory
+	lockTimeout     time.Duration // Timeout for file locks
 }
 
 // NewFactory creates a new OCI chart source factory with Kubernetes client for secret resolution
@@ -39,10 +40,12 @@ type Factory struct {
 // Parameters:
 //   - k8sClient: Kubernetes client for resolving registry credentials from secrets
 //   - repositoryCache: Path to Helm repository cache directory (e.g., "/helm/repository")
-func NewFactory(k8sClient client.Client, repositoryCache string) *Factory {
+//   - lockTimeout: Maximum time to wait for file locks
+func NewFactory(k8sClient client.Client, repositoryCache string, lockTimeout time.Duration) *Factory {
 	return &Factory{
 		k8sClient:       k8sClient,
 		repositoryCache: repositoryCache,
+		lockTimeout:     lockTimeout,
 	}
 }
 
@@ -81,6 +84,7 @@ func (f *Factory) CreateSource(ctx context.Context, rawConfig json.RawMessage, s
 	return OCISource{
 		k8sClient:       f.k8sClient,
 		repositoryCache: f.repositoryCache,
+		lockTimeout:     f.lockTimeout,
 		config:          config,
 		settings:        settings,
 	}, nil
@@ -92,6 +96,7 @@ func (f *Factory) CreateSource(ctx context.Context, rawConfig json.RawMessage, s
 type OCISource struct {
 	k8sClient       client.Client    // Kubernetes client for secret resolution (thread-safe)
 	repositoryCache string           // Path to Helm repository cache directory
+	lockTimeout     time.Duration    // Timeout for file locks
 	config          Config           // Immutable configuration (no pointer, value type)
 	settings        *cli.EnvSettings // Immutable settings (no mutation after creation)
 }
@@ -154,7 +159,7 @@ func (s OCISource) LocateChart(ctx context.Context) (string, error) {
 
 	// Protect chart download with file lock
 	var downloadedPath string
-	err = filelock.WithLock(lockPath, 30*time.Second, func() error {
+	err = filelock.WithLock(lockPath, s.lockTimeout, func() error {
 		// Use ChartDownloader to download chart to cache with authenticated registry client
 		dl := &downloader.ChartDownloader{
 			Out:            os.Stdout,

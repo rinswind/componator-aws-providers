@@ -20,6 +20,7 @@ const (
 	indexCacheSize       = 10
 	indexCacheTTL        = 1 * time.Hour
 	indexRefreshInterval = 5 * time.Minute
+	fileLockTimeout      = 30 * time.Second
 )
 
 //+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
@@ -47,6 +48,7 @@ func NewComponentReconciler(k8sClient client.Client) (*ComponentReconciler, erro
 		indexCacheSize,
 		indexCacheTTL,
 		indexRefreshInterval,
+		fileLockTimeout,
 	)
 	if err != nil {
 		return nil, err
@@ -55,7 +57,7 @@ func NewComponentReconciler(k8sClient client.Client) (*ComponentReconciler, erro
 	// Create factory instances (stateless singletons)
 	// Both HTTP and OCI sources share the same repository cache directory
 	httpFactory := httpsource.NewFactory(httpRepo)
-	ociFactory := ocisource.NewFactory(k8sClient, helmBasePath)
+	ociFactory := ocisource.NewFactory(k8sClient, helmBasePath, fileLockTimeout)
 
 	// Create and populate factory registry
 	registry := composite.NewFactory()

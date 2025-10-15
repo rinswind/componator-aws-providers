@@ -35,6 +35,7 @@ type CachingRepository struct {
 	repoConfigPath  string
 	repoCachePath   string
 	refreshInterval time.Duration
+	lockTimeout     time.Duration
 }
 
 // NewCachingRepository creates a new HTTP CachingRepository with the specified configuration.
@@ -44,9 +45,10 @@ type CachingRepository struct {
 //   - cacheSize: Maximum number of repository indexes to cache (0 = disabled)
 //   - cacheTTL: Time-to-live for cached indexes
 //   - refreshInterval: How often to check for stale repository indexes on disk
+//   - lockTimeout: Maximum time to wait for file locks
 //
 // The basePath directory will be created if it doesn't exist.
-func NewCachingRepository(basePath string, cacheSize int, cacheTTL, refreshInterval time.Duration) (*CachingRepository, error) {
+func NewCachingRepository(basePath string, cacheSize int, cacheTTL, refreshInterval, lockTimeout time.Duration) (*CachingRepository, error) {
 	log := logf.Log.WithName("http-caching-repository")
 
 	// Resolve to absolute path
@@ -61,19 +63,27 @@ func NewCachingRepository(basePath string, cacheSize int, cacheTTL, refreshInter
 		return nil, fmt.Errorf("failed to create helm cache directory: %w", err)
 	}
 
+	// Ensure charts subdirectory exists (required by Helm's DownloadTo)
+	chartsPath := filepath.Join(repoCachePath, "charts")
+	if err := os.MkdirAll(chartsPath, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create helm charts directory: %w", err)
+	}
+
 	s := &CachingRepository{
 		indexCache:      NewIndexCache(cacheSize, cacheTTL),
 		basePath:        absPath,
 		repoConfigPath:  filepath.Join(absPath, helmRepositoriesFile),
 		repoCachePath:   repoCachePath,
 		refreshInterval: refreshInterval,
+		lockTimeout:     lockTimeout,
 	}
 
 	log.Info("HTTP chart source initialized",
 		"basePath", absPath,
 		"cacheSize", cacheSize,
 		"cacheTTL", cacheTTL,
-		"refreshInterval", refreshInterval)
+		"refreshInterval", refreshInterval,
+		"lockTimeout", lockTimeout)
 
 	return s, nil
 }
@@ -94,7 +104,10 @@ func NewCachingRepository(basePath string, cacheSize int, cacheTTL, refreshInter
 //
 // Returns the path to the downloaded chart file (typically a .tgz in Helm cache).
 func (s *CachingRepository) LocateChart(repoName, repoURL, chartName, version string, settings *cli.EnvSettings) (string, error) {
-	log := logf.Log.WithName("http-chart-source")
+	log := logf.Log.WithName("http-chart-source").WithValues(
+		"repo", repoName,
+		"chart", chartName,
+		"version", version)
 
 	// Step 1: Ensure repository is configured in repositories.yaml
 	if err := s.ensureRepository(repoName, repoURL); err != nil {
@@ -103,11 +116,11 @@ func (s *CachingRepository) LocateChart(repoName, repoURL, chartName, version st
 
 	// Step 2: Check in-memory cache for repository index
 	if index, found := s.indexCache.Get(repoName); found {
-		log.V(1).Info("Using cached index", "repo", repoName)
-		return s.loadChartFromIndex(repoName, index, chartName, version, settings)
+		log.V(1).Info("Using cached index")
+		return s.loadChartFromIndex(repoName, repoURL, index, chartName, version, settings)
 	}
 
-	log.V(1).Info("Index cache miss", "repo", repoName)
+	log.V(1).Info("Index cache miss")
 
 	// Step 3: Load or download index from disk/network
 	index, err := s.loadOrDownloadIndex(repoName, repoURL)
@@ -119,7 +132,7 @@ func (s *CachingRepository) LocateChart(repoName, repoURL, chartName, version st
 	s.indexCache.Set(repoName, repoURL, index)
 
 	// Step 5: Load chart from the index
-	return s.loadChartFromIndex(repoName, index, chartName, version, settings)
+	return s.loadChartFromIndex(repoName, repoURL, index, chartName, version, settings)
 }
 
 // ensureRepository ensures a Helm repository is properly configured in repositories.yaml.
@@ -130,12 +143,12 @@ func (s *CachingRepository) LocateChart(repoName, repoURL, chartName, version st
 // without proper locking. We use filelock with 30s timeout following
 // the exact pattern from Helm CLI.
 func (s *CachingRepository) ensureRepository(repoName, repoURL string) error {
-	log := logf.Log.WithName("http-chart-source")
+	log := logf.Log.WithName("http-chart-source").WithValues("repo", repoName, "url", repoURL)
 
 	// Acquire file lock for process synchronization (critical for horizontally scaled controllers)
 	lockPath := filepath.Join(filepath.Dir(s.repoConfigPath), helmRepositoriesLock)
 
-	return filelock.WithLock(lockPath, 30*time.Second, func() error {
+	return filelock.WithLock(lockPath, s.lockTimeout, func() error {
 		// Ensure parent directory exists before attempting to load the file
 		if err := os.MkdirAll(filepath.Dir(s.repoConfigPath), 0755); err != nil {
 			return fmt.Errorf("failed to create repository config directory: %w", err)
@@ -168,7 +181,7 @@ func (s *CachingRepository) ensureRepository(repoName, repoURL string) error {
 			return fmt.Errorf("write repository file: %w", err)
 		}
 
-		log.V(1).Info("Repository configuration updated", "repo", repoName, "url", repoURL)
+		log.V(1).Info("Repository configuration updated")
 		return nil
 	})
 }
@@ -177,25 +190,25 @@ func (s *CachingRepository) ensureRepository(repoName, repoURL string) error {
 // This implements a disk-based cache layer below the in-memory cache.
 // Uses file locking to prevent concurrent downloads of the same index.
 func (s *CachingRepository) loadOrDownloadIndex(repoName, repoURL string) (*repo.IndexFile, error) {
-	log := logf.Log.WithName("http-chart-source")
+	log := logf.Log.WithName("http-chart-source").WithValues("repo", repoName)
 
 	indexPath := filepath.Join(s.repoCachePath, fmt.Sprintf("%s-index.yaml", repoName))
 	lockPath := filepath.Join(s.repoCachePath, fmt.Sprintf("%s-index.lock", repoName))
 
 	// Protect index download with file lock
-	err := filelock.WithLock(lockPath, 30*time.Second, func() error {
+	err := filelock.WithLock(lockPath, s.lockTimeout, func() error {
 		// Check if index exists and is fresh (inside lock to avoid race)
 		needsDownload := true
 		if stat, err := os.Stat(indexPath); err == nil {
 			age := time.Since(stat.ModTime())
 			if age < s.refreshInterval {
 				needsDownload = false
-				log.V(1).Info("Using cached index file", "repo", repoName, "age", age)
+				log.V(1).Info("Using cached index file", "age", age)
 			} else {
-				log.V(1).Info("Index file is stale", "repo", repoName, "age", age, "threshold", s.refreshInterval)
+				log.V(1).Info("Index file is stale", "age", age, "threshold", s.refreshInterval)
 			}
 		} else {
-			log.V(1).Info("Index file not found, will download", "repo", repoName)
+			log.V(1).Info("Index file not found, will download")
 		}
 
 		// Download if needed
@@ -211,7 +224,7 @@ func (s *CachingRepository) loadOrDownloadIndex(repoName, repoURL string) (*repo
 			}
 			r.CachePath = s.repoCachePath
 
-			log.Info("Downloading repository index", "repo", repoName, "url", repoURL)
+			log.Info("Downloading repository index", "url", repoURL)
 			if _, err := r.DownloadIndexFile(); err != nil {
 				return fmt.Errorf("download repository index: %w", err)
 			}
@@ -229,15 +242,21 @@ func (s *CachingRepository) loadOrDownloadIndex(repoName, repoURL string) (*repo
 		return nil, fmt.Errorf("load index file: %w", err)
 	}
 
-	log.V(1).Info("Loaded repository index", "repo", repoName, "chartCount", len(index.Entries))
+	log.V(1).Info("Loaded repository index", "chartCount", len(index.Entries))
 	return index, nil
 }
 
 // loadChartFromIndex locates and downloads a chart using the repository index.
 // This searches the index for the chart version and downloads it to Helm cache
 // using ChartDownloader. Uses file locking to prevent concurrent downloads of the same chart.
-func (s *CachingRepository) loadChartFromIndex(repoName string, index *repo.IndexFile, chartName, version string, settings *cli.EnvSettings) (string, error) {
-	log := logf.Log.WithName("http-chart-source")
+func (s *CachingRepository) loadChartFromIndex(
+	repoName, repoURL string,
+	index *repo.IndexFile,
+	chartName,
+	chartVersion string,
+	settings *cli.EnvSettings) (string, error) {
+
+	log := logf.Log.WithName("http-chart-source").WithValues("chart", chartName, "version", chartVersion)
 
 	// Configure Helm settings to use our repository paths
 	settings.RepositoryConfig = s.repoConfigPath
@@ -249,31 +268,40 @@ func (s *CachingRepository) loadChartFromIndex(repoName string, index *repo.Inde
 		return "", fmt.Errorf("chart %q not found in repository index", chartName)
 	}
 
-	var chartVersion *repo.ChartVersion
+	var resolvedChartVersion *repo.ChartVersion
 	for _, cv := range chartVersions {
-		if cv.Version == version {
-			chartVersion = cv
+		if cv.Version == chartVersion {
+			resolvedChartVersion = cv
 			break
 		}
 	}
 
-	if chartVersion == nil {
-		return "", fmt.Errorf("chart %q version %q not found in repository index", chartName, version)
+	if resolvedChartVersion == nil {
+		return "", fmt.Errorf("chart %q version %q not found in repository index", chartName, chartVersion)
 	}
 
 	// Get chart URL from first URL in the chart version
-	if len(chartVersion.URLs) == 0 {
-		return "", fmt.Errorf("chart %q version %q has no URLs", chartName, version)
+	if len(resolvedChartVersion.URLs) == 0 {
+		return "", fmt.Errorf("chart %q version %q has no URLs", chartName, chartVersion)
 	}
-	chartURL := chartVersion.URLs[0]
+	relativeChartURL := resolvedChartVersion.URLs[0]
+
+	// Resolve relative URL against repository base URL
+	chartURL, err := repo.ResolveReferenceURL(repoURL, relativeChartURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve chart URL: %w", err)
+	}
+
+	log = log.WithValues("chartURL", chartURL)
+
+	log.V(1).Info("Resolved chart URL")
 
 	// Create lock file path based on chart identity
-	lockPath := filepath.Join(s.repoCachePath,
-		fmt.Sprintf("%s-%s-%s.lock", repoName, chartName, version))
+	lockPath := filepath.Join(s.repoCachePath, fmt.Sprintf("%s-%s-%s.lock", repoName, chartName, chartVersion))
 
 	// Protect chart download with file lock
 	var chartPath string
-	err := filelock.WithLock(lockPath, 30*time.Second, func() error {
+	err = filelock.WithLock(lockPath, s.lockTimeout, func() error {
 		// Use ChartDownloader to download chart to cache
 		dl := &downloader.ChartDownloader{
 			Out:              os.Stdout,
@@ -283,12 +311,13 @@ func (s *CachingRepository) loadChartFromIndex(repoName string, index *repo.Inde
 		}
 
 		var err error
-		chartPath, _, err = dl.DownloadTo(chartURL, version, s.basePath)
+		chartPath, _, err = dl.DownloadTo(chartURL, chartVersion, s.repoCachePath)
 		if err != nil {
+			log.Error(err, "Chart download failed")
 			return fmt.Errorf("failed to download chart: %w", err)
 		}
 
-		log.V(1).Info("Downloaded chart", "chart", chartName, "version", version, "path", chartPath)
+		log.Info("Downloaded chart successfully", "path", chartPath)
 		return nil
 	})
 	if err != nil {
