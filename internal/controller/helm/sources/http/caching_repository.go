@@ -283,7 +283,7 @@ func (s *CachingRepository) loadChartFromIndex(repoName string, index *repo.Inde
 		}
 
 		var err error
-		chartPath, _, err = dl.DownloadTo(chartURL, version, s.repoCachePath)
+		chartPath, _, err = dl.DownloadTo(chartURL, version, s.basePath)
 		if err != nil {
 			return fmt.Errorf("failed to download chart: %w", err)
 		}

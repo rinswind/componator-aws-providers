@@ -37,6 +37,6 @@ func NewComponentReconciler() *ComponentReconciler {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return r.ComponentReconciler.BuildDefaultController(mgr).
+	return r.ComponentReconciler.NewDefaultController(mgr).
 		Complete(r.ComponentReconciler)
 }
