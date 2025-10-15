@@ -42,7 +42,9 @@ type ComponentReconciler struct {
 // Returns error if initialization fails (e.g., unable to create required directories).
 // Note: k8sClient parameter added for OCI registry credential resolution.
 func NewComponentReconciler(k8sClient client.Client) (*ComponentReconciler, error) {
-	// Create HTTP caching repository singleton (shared across all HTTP sources)
+	// Use /helm/repository for all chart downloads and cache (HTTP and OCI)
+	repositoryCachePath := helmBasePath + "/repository"
+
 	httpRepo, err := httpsource.NewCachingRepository(
 		helmBasePath,
 		indexCacheSize,
@@ -54,17 +56,13 @@ func NewComponentReconciler(k8sClient client.Client) (*ComponentReconciler, erro
 		return nil, err
 	}
 
-	// Create factory instances (stateless singletons)
-	// Both HTTP and OCI sources share the same repository cache directory
 	httpFactory := httpsource.NewFactory(httpRepo)
-	ociFactory := ocisource.NewFactory(k8sClient, helmBasePath, fileLockTimeout)
+	ociFactory := ocisource.NewFactory(k8sClient, repositoryCachePath, fileLockTimeout)
 
-	// Create and populate factory registry
 	registry := composite.NewFactory()
 	registry.Register(httpFactory)
 	registry.Register(ociFactory)
 
-	// Create operations factory with factory registry
 	operationsFactory := NewHelmOperationsFactory(registry)
 
 	config := controller.DefaultComponentReconcilerConfig("helm")

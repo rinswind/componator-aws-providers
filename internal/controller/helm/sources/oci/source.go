@@ -120,7 +120,7 @@ func (s OCISource) LocateChart(ctx context.Context) (string, error) {
 		"registry", registryHost,
 		"chart", chartPath,
 		"version", version)
-	
+
 	log.Info("Fetching chart from OCI registry")
 	log.V(1).Info("Parsed OCI reference")
 
@@ -155,8 +155,7 @@ func (s OCISource) LocateChart(ctx context.Context) (string, error) {
 		log.Info("Successfully authenticated to registry")
 	}
 
-	// Create lock file path based on OCI reference
-	// Replace / with - to make it filesystem-safe
+	// Create lock file path in the same directory as the chart tarball
 	safePath := strings.ReplaceAll(chartPath, "/", "-")
 	lockPath := filepath.Join(s.repositoryCache, fmt.Sprintf("%s-%s-%s.lock", registryHost, safePath, version))
 

@@ -63,12 +63,6 @@ func NewCachingRepository(basePath string, cacheSize int, cacheTTL, refreshInter
 		return nil, fmt.Errorf("failed to create helm cache directory: %w", err)
 	}
 
-	// Ensure charts subdirectory exists (required by Helm's DownloadTo)
-	chartsPath := filepath.Join(repoCachePath, "charts")
-	if err := os.MkdirAll(chartsPath, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create helm charts directory: %w", err)
-	}
-
 	s := &CachingRepository{
 		indexCache:      NewIndexCache(cacheSize, cacheTTL),
 		basePath:        absPath,
@@ -296,7 +290,7 @@ func (s *CachingRepository) loadChartFromIndex(
 
 	log.V(1).Info("Resolved chart URL")
 
-	// Create lock file path based on chart identity
+	// Create lock file path in the same directory as the chart tarball
 	lockPath := filepath.Join(s.repoCachePath, fmt.Sprintf("%s-%s-%s.lock", repoName, chartName, chartVersion))
 
 	// Protect chart download with file lock
