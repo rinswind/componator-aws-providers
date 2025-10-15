@@ -67,8 +67,6 @@ type HelmStatus struct {
 // resolveHelmConfig unmarshals Component.Spec.Config into HelmConfig struct.
 // Source configuration is handled separately by the source registry via ParseAndValidate.
 func resolveHelmConfig(ctx context.Context, rawConfig json.RawMessage) (*HelmConfig, error) {
-	log := logf.FromContext(ctx)
-
 	// Parse config fields (source is handled separately)
 	var config HelmConfig
 	if err := json.Unmarshal(rawConfig, &config); err != nil {
@@ -87,10 +85,11 @@ func resolveHelmConfig(ctx context.Context, rawConfig json.RawMessage) (*HelmCon
 		config.ManageNamespace = &defaultManageNamespace
 	}
 
-	log.V(1).Info("Resolved helm config",
+	log := logf.FromContext(ctx).WithValues(
 		"releaseName", config.ReleaseName,
-		"releaseNamespace", config.ReleaseNamespace,
+		"namespace", config.ReleaseNamespace,
 		"valuesCount", len(config.Values))
+	log.V(1).Info("Resolved helm config")
 
 	return &config, nil
 }

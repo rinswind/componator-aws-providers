@@ -110,16 +110,19 @@ type OCISource struct {
 //   - Returns path to cached chart archive
 func (s OCISource) LocateChart(ctx context.Context) (string, error) {
 
-	log := logf.FromContext(ctx)
-	log.Info("Fetching chart from OCI registry", "ref", s.config.Chart)
-
 	// Parse OCI reference to extract registry host for authentication
 	registryHost, chartPath, version, err := parseOCIReference(s.config.Chart)
 	if err != nil {
 		return "", fmt.Errorf("invalid OCI reference: %w", err)
 	}
 
-	log.V(1).Info("Parsed OCI reference", "registry", registryHost, "chartPath", chartPath, "version", version)
+	log := logf.FromContext(ctx).WithValues(
+		"registry", registryHost,
+		"chart", chartPath,
+		"version", version)
+	
+	log.Info("Fetching chart from OCI registry")
+	log.V(1).Info("Parsed OCI reference")
 
 	// Create registry client for authentication
 	registryClient, err := registry.NewClient(
@@ -138,18 +141,18 @@ func (s OCISource) LocateChart(ctx context.Context) (string, error) {
 
 		// Login to registry
 		if token != "" {
-			log.V(1).Info("Authenticating with token", "registry", registryHost)
+			log.V(1).Info("Authenticating with token")
 			if err := registryClient.Login(registryHost, registry.LoginOptBasicAuth("", token)); err != nil {
 				return "", fmt.Errorf("failed to authenticate with token: %w", err)
 			}
 		} else {
-			log.V(1).Info("Authenticating with username/password", "registry", registryHost, "username", username)
+			log.V(1).Info("Authenticating with username/password", "username", username)
 			if err := registryClient.Login(registryHost, registry.LoginOptBasicAuth(username, password)); err != nil {
 				return "", fmt.Errorf("failed to authenticate with credentials: %w", err)
 			}
 		}
 
-		log.Info("Successfully authenticated to registry", "registry", registryHost)
+		log.Info("Successfully authenticated to registry")
 	}
 
 	// Create lock file path based on OCI reference
@@ -172,10 +175,11 @@ func (s OCISource) LocateChart(ctx context.Context) (string, error) {
 		var err error
 		downloadedPath, _, err = dl.DownloadTo(s.config.Chart, "", s.repositoryCache)
 		if err != nil {
+			log.Error(err, "Chart download failed")
 			return fmt.Errorf("failed to download chart from OCI registry: %w", err)
 		}
 
-		log.Info("Chart downloaded to cache", "path", downloadedPath)
+		log.Info("Downloaded chart successfully", "path", downloadedPath)
 		return nil
 	})
 	if err != nil {
@@ -200,9 +204,10 @@ func (s OCISource) GetVersion() string {
 // Fails fast if secret is not found - no fallback behavior.
 // Returns: username, password, token (token takes precedence if present)
 func (s OCISource) resolveCredentials(ctx context.Context) (username, password, token string, err error) {
-	log := logf.FromContext(ctx)
-
 	secretRef := s.config.Authentication.SecretRef
+	log := logf.FromContext(ctx).WithValues(
+		"secretNamespace", secretRef.Namespace,
+		"secretName", secretRef.Name)
 
 	// Get credentials from the specified namespace only - fail fast if not found
 	username, password, token, err = s.getSecretCredentials(ctx, secretRef.Name, secretRef.Namespace)
@@ -211,9 +216,7 @@ func (s OCISource) resolveCredentials(ctx context.Context) (username, password, 
 			secretRef.Namespace, secretRef.Name, err)
 	}
 
-	log.V(1).Info("Found credentials",
-		"namespace", secretRef.Namespace,
-		"secret", secretRef.Name)
+	log.V(1).Info("Found credentials")
 
 	return username, password, token, nil
 }

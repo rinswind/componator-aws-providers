@@ -24,9 +24,8 @@ import (
 // After successful deployment, persists the actual release name to status so that
 // all subsequent operations use the deployed name for consistency.
 func (h *HelmOperations) Deploy(ctx context.Context) (*controller.OperationResult, error) {
-	log := logf.FromContext(ctx)
-
 	releaseName := h.config.ReleaseName
+	log := logf.FromContext(ctx).WithValues("releaseName", releaseName)
 
 	// Locate chart from configured source (settings are baked into chartSource)
 	chartPath, err := h.chartSource.LocateChart(ctx)
@@ -59,21 +58,21 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*controller.OperationResul
 	getAction := action.NewGet(h.actionConfig)
 	getAction.Version = 0 // Get latest version
 	if rel, err := getAction.Run(releaseName); err == nil && rel != nil {
-		log.Info("Release already exists, upgrading", "releaseName", releaseName, "version", rel.Version)
+		log.Info("Release already exists, upgrading", "version", rel.Version)
 
 		return h.upgrade(ctx, chart)
 	}
 
-	log.Info("Release does not exist, installing new release", "releaseName", releaseName)
+	log.Info("Release does not exist, installing new release")
 	return h.install(ctx, chart)
 }
 
 func (h *HelmOperations) install(ctx context.Context, chart *chart.Chart) (*controller.OperationResult, error) {
-	log := logf.FromContext(ctx)
-
 	// Use the spec release name for installs
 	releaseName := h.config.ReleaseName
 	releaseNamespace := h.config.ReleaseNamespace
+	
+	log := logf.FromContext(ctx).WithValues("releaseName", releaseName, "namespace", releaseNamespace)
 
 	// Create install action
 	installAction := action.NewInstall(h.actionConfig)
@@ -94,8 +93,6 @@ func (h *HelmOperations) install(ctx context.Context, chart *chart.Chart) (*cont
 	}
 
 	log.Info("Successfully installed helm release",
-		"releaseName", releaseName,
-		"namespace", releaseNamespace,
 		"version", rel.Version,
 		"status", rel.Info.Status.String())
 
@@ -110,11 +107,11 @@ func (h *HelmOperations) install(ctx context.Context, chart *chart.Chart) (*cont
 
 // startHelmReleaseUpgrade handles upgrading an existing Helm release using pre-parsed configuration
 func (h *HelmOperations) upgrade(ctx context.Context, chart *chart.Chart) (*controller.OperationResult, error) {
-	log := logf.FromContext(ctx)
-
 	// Use status release name for upgrades
 	releaseName := h.status.ReleaseName
 	releaseNamespace := h.config.ReleaseNamespace
+	
+	log := logf.FromContext(ctx).WithValues("releaseName", releaseName, "namespace", releaseNamespace)
 
 	// Create upgrade action
 	upgradeAction := action.NewUpgrade(h.actionConfig)
@@ -132,8 +129,6 @@ func (h *HelmOperations) upgrade(ctx context.Context, chart *chart.Chart) (*cont
 	}
 
 	log.Info("Successfully started helm release upgrade",
-		"releaseName", releaseName,
-		"namespace", releaseNamespace,
 		"version", rel.Version,
 		"status", rel.Info.Status.String())
 
@@ -175,7 +170,7 @@ func (h *HelmOperations) CheckDeployment(ctx context.Context) (*controller.Opera
 
 // checkResourcesReady performs non-blocking readiness checks on Kubernetes resources
 func (h *HelmOperations) checkResourcesReady(ctx context.Context, resourceList kube.ResourceList) (bool, error) {
-	log := logf.FromContext(ctx)
+	log := logf.FromContext(ctx).WithValues("releaseName", h.status.ReleaseName)
 
 	if len(resourceList) == 0 {
 		log.Info("No resources to check, treating as ready")

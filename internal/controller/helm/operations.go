@@ -34,8 +34,6 @@ func NewHelmOperationsFactory(sourceFactory sources.ChartSourceFactory) *HelmOpe
 func (f *HelmOperationsFactory) NewOperations(
 	ctx context.Context, rawConfig json.RawMessage, rawStatus json.RawMessage) (controller.ComponentOperations, error) {
 
-	log := logf.FromContext(ctx)
-
 	// Step 0: Initialize settings (needed for both factory and actionConfig)
 	settings := cli.New()
 
@@ -44,6 +42,10 @@ func (f *HelmOperationsFactory) NewOperations(
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse helm configuration: %w", err)
 	}
+
+	log := logf.FromContext(ctx).WithValues(
+		"releaseName", config.ReleaseName,
+		"namespace", config.ReleaseNamespace)
 
 	// Step 2: Extract source section from config
 	var configMap map[string]json.RawMessage
@@ -143,7 +145,7 @@ func (h *HelmOperations) pendingResult() *controller.OperationResult {
 // gatherHelmReleaseResources extracts Kubernetes resources from a Helm release manifest
 // and builds a ResourceList for status checking
 func (h *HelmOperations) gatherHelmReleaseResources(ctx context.Context, rel *release.Release) (kube.ResourceList, error) {
-	log := logf.FromContext(ctx)
+	log := logf.FromContext(ctx).WithValues("releaseName", rel.Name)
 
 	if rel.Manifest == "" {
 		log.Info("Release has no manifest, treating as ready")
@@ -159,9 +161,7 @@ func (h *HelmOperations) gatherHelmReleaseResources(ctx context.Context, rel *re
 		return nil, fmt.Errorf("failed to build resource list from manifest: %w", err)
 	}
 
-	log.Info("Built resource list from release manifest",
-		"releaseName", rel.Name,
-		"resourceCount", len(resourceList))
+	log.Info("Built resource list from release manifest", "resourceCount", len(resourceList))
 
 	return resourceList, nil
 }

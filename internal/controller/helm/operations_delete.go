@@ -22,15 +22,12 @@ import (
 
 // Delete starts asynchronous helm release deletion using pre-parsed configuration
 func (h *HelmOperations) Delete(ctx context.Context) (*controller.OperationResult, error) {
-	log := logf.FromContext(ctx)
-
 	// Use effective release name from status for deletion
 	releaseName := h.status.ReleaseName
 	targetNamespace := h.config.ReleaseNamespace
 
-	log.Info("Performing helm cleanup using effective release name",
-		"releaseName", releaseName,
-		"targetNamespace", targetNamespace)
+	log := logf.FromContext(ctx).WithValues("releaseName", releaseName, "namespace", targetNamespace)
+	log.Info("Performing helm cleanup using effective release name")
 
 	// Check if release exists
 	getAction := action.NewGet(h.actionConfig)
@@ -53,10 +50,7 @@ func (h *HelmOperations) Delete(ctx context.Context) (*controller.OperationResul
 		return nil, fmt.Errorf("failed to uninstall helm release %s: %w", releaseName, err)
 	}
 
-	log.Info("Successfully uninstalled helm release",
-		"releaseName", releaseName,
-		"namespace", targetNamespace,
-		"info", res.Info)
+	log.Info("Successfully uninstalled helm release", "info", res.Info)
 
 	// Clean up namespace if we're managing it
 	if *h.config.ManageNamespace {
@@ -72,7 +66,7 @@ func (h *HelmOperations) Delete(ctx context.Context) (*controller.OperationResul
 // checkDeletion verifies if a Helm release and all its resources have been deleted using pre-parsed configuration
 // Returns OperationResult with Success indicating deletion completion status
 func (h *HelmOperations) CheckDeletion(ctx context.Context) (*controller.OperationResult, error) {
-	log := logf.FromContext(ctx)
+	log := logf.FromContext(ctx).WithValues("releaseName", h.status.ReleaseName)
 
 	// Try to get the current release
 	rel, err := h.getHelmRelease(h.status.ReleaseName)
@@ -86,9 +80,7 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context) (*controller.Operati
 	}
 
 	// Release still exists - check if its resources are gone
-	log.Info("Release still exists, checking if resources are deleted",
-		"releaseName", rel.Name,
-		"status", rel.Info.Status.String())
+	log.Info("Release still exists, checking if resources are deleted", "status", rel.Info.Status.String())
 
 	resourceList, err := h.gatherHelmReleaseResources(ctx, rel)
 	if err != nil {
@@ -131,7 +123,7 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context) (*controller.Operati
 // checkResourcesDeleted performs non-blocking deletion checks on Kubernetes resources
 // Returns true when all resources from the list no longer exist in the cluster
 func checkResourcesDeleted(ctx context.Context, resourceList kube.ResourceList) (bool, error) {
-	log := logf.FromContext(ctx)
+	log := logf.FromContext(ctx).WithValues("totalResources", len(resourceList))
 
 	if len(resourceList) == 0 {
 		log.Info("No resources to check for deletion, treating as deleted")
@@ -218,7 +210,7 @@ func (h *HelmOperations) namespaceExists(ctx context.Context) (bool, error) {
 }
 
 func (h *HelmOperations) deleteNamespace(ctx context.Context) error {
-	log := logf.FromContext(ctx)
+	log := logf.FromContext(ctx).WithValues("namespace", h.config.ReleaseNamespace)
 
 	// Get Kubernetes client using the same approach as in deploy operations
 	restConfig, err := h.actionConfig.RESTClientGetter.ToRESTConfig()
@@ -237,6 +229,6 @@ func (h *HelmOperations) deleteNamespace(ctx context.Context) error {
 		return fmt.Errorf("failed to delete namespace: %w", err)
 	}
 
-	log.Info("Successfully initiated namespace deletion", "namespace", h.config.ReleaseNamespace)
+	log.Info("Successfully initiated namespace deletion")
 	return nil
 }
