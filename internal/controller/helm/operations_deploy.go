@@ -60,6 +60,11 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*controller.OperationResul
 	if rel, err := getAction.Run(releaseName); err == nil && rel != nil {
 		log.Info("Release already exists, upgrading", "version", rel.Version)
 
+		// Populate status with release name before upgrade (handles takeover of existing releases)
+		if h.status.ReleaseName == "" {
+			h.status.ReleaseName = rel.Name
+		}
+
 		return h.upgrade(ctx, chart)
 	}
 
