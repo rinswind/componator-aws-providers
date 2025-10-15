@@ -28,8 +28,9 @@ import (
 
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/configreader"
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm"
+	"github.com/rinswind/deployment-operator-handlers/internal/controller/manifest"
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/rds"
-	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/core/v1alpha1"
+	corev1alpha1 "github.com/rinswind/deployment-operator/api/core/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -41,7 +42,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(deploymentsv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(corev1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -169,10 +170,10 @@ func main() {
 	// Setup field indexer for Components by handler for efficient lookups
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(),
-		&deploymentsv1alpha1.Component{},
+		&corev1alpha1.Component{},
 		"spec.handler",
 		func(obj client.Object) []string {
-			component := obj.(*deploymentsv1alpha1.Component)
+			component := obj.(*corev1alpha1.Component)
 			return []string{component.Spec.Handler}
 		},
 	); err != nil {
@@ -199,6 +200,18 @@ func main() {
 
 	if err := configreader.NewComponentReconciler(mgr).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ConfigReaderComponent")
+		os.Exit(1)
+	}
+
+	// Initialize Manifest controller with manager
+	// The controller extracts dynamic client and REST mapper for applying arbitrary resource types
+	manifestController, err := manifest.NewComponentReconciler(mgr)
+	if err != nil {
+		setupLog.Error(err, "unable to initialize manifest controller")
+		os.Exit(1)
+	}
+	if err := manifestController.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ManifestComponent")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

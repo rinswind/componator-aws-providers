@@ -1,0 +1,92 @@
+---
+# Example: Deploying cert-manager ClusterIssuer and external-secrets SecretStore
+apiVersion: deployment-orchestrator.io/v1alpha1
+kind: Component
+metadata:
+  name: platform-config
+  namespace: default
+spec:
+  handler: manifest
+  config:
+    manifests:
+      # cert-manager Let's Encrypt ClusterIssuer
+      - apiVersion: cert-manager.io/v1
+        kind: ClusterIssuer
+        metadata:
+          name: letsencrypt-prod
+        spec:
+          acme:
+            server: https://acme-v02.api.letsencrypt.org/directory
+            email: admin@example.com
+            privateKeySecretRef:
+              name: letsencrypt-prod-key
+            solvers:
+              - http01:
+                  ingress:
+                    class: nginx
+      
+      # external-secrets AWS SecretStore
+      - apiVersion: external-secrets.io/v1beta1
+        kind: SecretStore
+        metadata:
+          name: aws-secrets
+          namespace: default
+        spec:
+          provider:
+            aws:
+              service: SecretsManager
+              region: us-east-1
+              auth:
+                jwt:
+                  serviceAccountRef:
+                    name: external-secrets-sa
+
+---
+# Example: Deploying simple ConfigMap and Secret
+apiVersion: deployment-orchestrator.io/v1alpha1
+kind: Component
+metadata:
+  name: app-config
+  namespace: default
+spec:
+  handler: manifest
+  config:
+    manifests:
+      - apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: app-settings
+          namespace: default
+        data:
+          environment: production
+          log_level: info
+          
+      - apiVersion: v1
+        kind: Secret
+        metadata:
+          name: app-credentials
+          namespace: default
+        type: Opaque
+        stringData:
+          api_key: replace-with-actual-key
+          webhook_secret: replace-with-actual-secret
+
+---
+# Example: Cluster-scoped resource (no namespace)
+apiVersion: deployment-orchestrator.io/v1alpha1
+kind: Component
+metadata:
+  name: cluster-role-config
+  namespace: default
+spec:
+  handler: manifest
+  config:
+    manifests:
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        metadata:
+          name: app-cluster-reader
+        rules:
+          - apiGroups: [""]
+            resources: ["namespaces", "nodes"]
+            verbs: ["get", "list", "watch"]

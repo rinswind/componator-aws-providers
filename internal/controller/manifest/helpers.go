@@ -1,0 +1,26 @@
+// Copyright 2025.
+// SPDX-License-Identifier: Apache-2.0
+
+package manifest
+
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// applyOptions returns the options for server-side apply operations.
+func applyOptions(fieldManager string) metav1.ApplyOptions {
+	return metav1.ApplyOptions{
+		FieldManager: fieldManager,
+		Force:        false, // Don't force - fail on conflicts
+	}
+}
+
+// getOptions returns the options for Get operations.
+func getOptions() metav1.GetOptions {
+	return metav1.GetOptions{}
+}
+
+// deleteOptions returns the options for Delete operations.
+func deleteOptions() metav1.DeleteOptions {
+	return metav1.DeleteOptions{}
+}
