@@ -164,7 +164,7 @@ func (h *HelmOperations) CheckDeployment(ctx context.Context) (*controller.Opera
 	// Use non-blocking readiness check
 	ready, err := h.checkResourcesReady(ctx, resourceList)
 	if err != nil {
-		return h.errorResult(fmt.Errorf("deployment failed: %w", err)), nil
+		return nil, fmt.Errorf("failed to check resources ready: %w", err) // I/O error - should retry
 	}
 
 	if ready {
