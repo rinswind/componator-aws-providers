@@ -108,13 +108,13 @@ func (m *ManifestOperations) pendingResult(ctx context.Context) (*controller.Ope
 	}, nil
 }
 
-// resourceRefToGVR converts a ResourceReference to GroupVersionResource using the REST mapper.
-// Returns the GVR, REST mapping, and any error encountered.
-func (m *ManifestOperations) resourceRefToGVR(ref ResourceReference) (schema.GroupVersionResource, *meta.RESTMapping, error) {
+// getResourceInterface returns a properly scoped dynamic.ResourceInterface for the given reference.
+// Handles both namespaced and cluster-scoped resources.
+func (m *ManifestOperations) getResourceInterface(ref ResourceReference) (dynamic.ResourceInterface, error) {
 	// Parse GVK from reference
 	gv, err := schema.ParseGroupVersion(ref.APIVersion)
 	if err != nil {
-		return schema.GroupVersionResource{}, nil, fmt.Errorf("failed to parse apiVersion %s: %w", ref.APIVersion, err)
+		return nil, fmt.Errorf("failed to parse apiVersion %s: %w", ref.APIVersion, err)
 	}
 
 	gvk := schema.GroupVersionKind{
@@ -126,41 +126,41 @@ func (m *ManifestOperations) resourceRefToGVR(ref ResourceReference) (schema.Gro
 	// Get GVR from GVK using REST mapper
 	mapping, err := m.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
 	if err != nil {
-		return schema.GroupVersionResource{}, nil, fmt.Errorf("failed to get REST mapping for %s: %w", gvk.String(), err)
+		return nil, fmt.Errorf("failed to get REST mapping for %s: %w", gvk.String(), err)
 	}
 
-	return mapping.Resource, mapping, nil
-}
-
-// getResourceInterface returns a properly scoped dynamic.ResourceInterface for the given reference.
-// Handles both namespaced and cluster-scoped resources.
-func (m *ManifestOperations) getResourceInterface(ref ResourceReference) (dynamic.ResourceInterface, error) {
-	gvr, mapping, err := m.resourceRefToGVR(ref)
-	if err != nil {
-		return nil, err
-	}
-
-	// Determine if resource is namespaced
-	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
-		if ref.Namespace == "" {
-			return nil, fmt.Errorf("namespaced resource %s missing namespace in reference", ref.Kind)
-		}
-		return m.dynamicClient.Resource(gvr).Namespace(ref.Namespace), nil
-	}
-
-	// Cluster-scoped resource
-	return m.dynamicClient.Resource(gvr), nil
+	return m.resourceInterfaceFromMapping(mapping.Resource, mapping, ref.Namespace, ref.Kind)
 }
 
 // getResourceInterfaceForGVK returns a properly scoped dynamic.ResourceInterface for a given GVK and namespace.
 // Handles both namespaced and cluster-scoped resources. Used during manifest application.
-func (m *ManifestOperations) getResourceInterfaceForGVK(gvk schema.GroupVersionKind, namespace string) (dynamic.ResourceInterface, error) {
-	// Convert GVK to ResourceReference and delegate to getResourceInterface
-	ref := ResourceReference{
-		APIVersion: gvk.GroupVersion().String(),
-		Kind:       gvk.Kind,
-		Namespace:  namespace,
-		// Name is not needed for resource interface creation
+func (m *ManifestOperations) getResourceInterfaceForGVK(
+	gvk schema.GroupVersionKind, namespace string) (dynamic.ResourceInterface, error) {
+
+	mapping, err := m.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get REST mapping for %s: %w", gvk.String(), err)
 	}
-	return m.getResourceInterface(ref)
+
+	return m.resourceInterfaceFromMapping(mapping.Resource, mapping, namespace, gvk.String())
+}
+
+// resourceInterfaceFromMapping creates a properly scoped ResourceInterface from GVR, mapping, and namespace.
+// Handles both namespaced and cluster-scoped resources.
+func (m *ManifestOperations) resourceInterfaceFromMapping(
+	gvr schema.GroupVersionResource,
+	mapping *meta.RESTMapping,
+	namespace string,
+	resourceDesc string) (dynamic.ResourceInterface, error) {
+
+	// Determine if resource is namespaced
+	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+		if namespace == "" {
+			return nil, fmt.Errorf("namespaced resource %s missing namespace", resourceDesc)
+		}
+		return m.dynamicClient.Resource(gvr).Namespace(namespace), nil
+	}
+
+	// Cluster-scoped resource
+	return m.dynamicClient.Resource(gvr), nil
 }

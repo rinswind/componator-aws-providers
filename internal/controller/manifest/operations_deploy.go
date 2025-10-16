@@ -35,13 +35,6 @@ func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.OperationR
 		// Convert map to unstructured object
 		obj := &unstructured.Unstructured{Object: manifestMap}
 
-		// Validate required fields
-		if obj.GetAPIVersion() == "" || obj.GetKind() == "" || obj.GetName() == "" {
-			err := fmt.Errorf("manifest at index %d missing required fields (apiVersion, kind, or name)", i)
-			log.Error(err, "Invalid manifest")
-			return m.errorResult(ctx, err)
-		}
-
 		log = log.WithValues(
 			"apiVersion", obj.GetAPIVersion(),
 			"kind", obj.GetKind(),
