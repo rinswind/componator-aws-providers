@@ -30,7 +30,7 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*controller.OperationResul
 	// Locate chart from configured source (settings are baked into chartSource)
 	chartPath, err := h.chartSource.LocateChart(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to locate chart: %w", err)
+		return h.errorResult(fmt.Errorf("failed to locate chart: %w", err))
 	}
 
 	log.V(1).Info("Chart located", "path", chartPath)
@@ -38,7 +38,7 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*controller.OperationResul
 	// Load chart from path
 	chart, err := loader.Load(chartPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load chart: %w", err)
+		return h.errorResult(fmt.Errorf("failed to load chart: %w", err))
 	}
 
 	log.V(1).Info("Chart loaded", "name", chart.Metadata.Name, "version", chart.Metadata.Version)
@@ -48,7 +48,7 @@ func (h *HelmOperations) Deploy(ctx context.Context) (*controller.OperationResul
 		log.V(1).Info("Validating chart dependencies", "count", len(chart.Metadata.Dependencies))
 
 		if err := action.CheckDependencies(chart, chart.Metadata.Dependencies); err != nil {
-			return nil, fmt.Errorf("chart has unfulfilled dependencies - charts must be pre-packaged with all dependencies included: %w", err)
+			return h.errorResult(fmt.Errorf("chart has unfulfilled dependencies - charts must be pre-packaged with all dependencies included: %w", err))
 		}
 
 		log.V(1).Info("Chart dependencies validated successfully")
@@ -76,7 +76,7 @@ func (h *HelmOperations) install(ctx context.Context, chart *chart.Chart) (*cont
 	// Use the spec release name for installs
 	releaseName := h.config.ReleaseName
 	releaseNamespace := h.config.ReleaseNamespace
-	
+
 	log := logf.FromContext(ctx).WithValues("releaseName", releaseName, "namespace", releaseNamespace)
 
 	// Create install action
@@ -94,7 +94,7 @@ func (h *HelmOperations) install(ctx context.Context, chart *chart.Chart) (*cont
 	// Install the chart
 	rel, err := installAction.Run(chart, vals)
 	if err != nil {
-		return nil, fmt.Errorf("failed to install helm release %s: %w", releaseName, err)
+		return h.errorResult(fmt.Errorf("failed to install helm release %s: %w", releaseName, err))
 	}
 
 	log.Info("Successfully installed helm release",
@@ -107,7 +107,7 @@ func (h *HelmOperations) install(ctx context.Context, chart *chart.Chart) (*cont
 	h.status.ChartVersion = rel.Chart.Metadata.Version
 	h.status.LastDeployTime = time.Now().Format(time.RFC3339)
 
-	return h.successResult(), nil
+	return h.successResult()
 }
 
 // startHelmReleaseUpgrade handles upgrading an existing Helm release using pre-parsed configuration
@@ -115,7 +115,7 @@ func (h *HelmOperations) upgrade(ctx context.Context, chart *chart.Chart) (*cont
 	// Use status release name for upgrades
 	releaseName := h.status.ReleaseName
 	releaseNamespace := h.config.ReleaseNamespace
-	
+
 	log := logf.FromContext(ctx).WithValues("releaseName", releaseName, "namespace", releaseNamespace)
 
 	// Create upgrade action
@@ -130,7 +130,7 @@ func (h *HelmOperations) upgrade(ctx context.Context, chart *chart.Chart) (*cont
 	// Upgrade the chart
 	rel, err := upgradeAction.Run(releaseName, chart, vals)
 	if err != nil {
-		return nil, fmt.Errorf("failed to upgrade helm release %s: %w", releaseName, err)
+		return h.errorResult(fmt.Errorf("failed to upgrade helm release %s: %w", releaseName, err))
 	}
 
 	log.Info("Successfully started helm release upgrade",
@@ -143,7 +143,7 @@ func (h *HelmOperations) upgrade(ctx context.Context, chart *chart.Chart) (*cont
 	h.status.ChartVersion = rel.Chart.Metadata.Version
 	h.status.LastDeployTime = time.Now().Format(time.RFC3339)
 
-	return h.successResult(), nil
+	return h.successResult()
 }
 
 // checkReleaseDeployed verifies if a Helm release and all its resources are ready using pre-parsed configuration
@@ -152,25 +152,25 @@ func (h *HelmOperations) CheckDeployment(ctx context.Context) (*controller.Opera
 	// Get the current release
 	rel, err := h.getHelmRelease(h.status.ReleaseName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check helm release readiness: %w", err) // I/O error
+		return h.errorResult(fmt.Errorf("failed to check helm release readiness: %w", err))
 	}
 
 	// Build ResourceList from release manifest for non-blocking status checking
 	resourceList, err := h.gatherHelmReleaseResources(ctx, rel)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build resource list from release: %w", err) // I/O error
+		return h.errorResult(fmt.Errorf("failed to build resource list from release: %w", err))
 	}
 
 	// Use non-blocking readiness check
 	ready, err := h.checkResourcesReady(ctx, resourceList)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check resources ready: %w", err) // I/O error - should retry
+		return h.errorResult(fmt.Errorf("failed to check resources ready: %w", err))
 	}
 
 	if ready {
-		return h.successResult(), nil
+		return h.successResult()
 	}
-	return h.pendingResult(), nil
+	return h.pendingResult()
 }
 
 // checkResourcesReady performs non-blocking readiness checks on Kubernetes resources

@@ -114,32 +114,39 @@ func (h *HelmOperations) getHelmRelease(releaseName string) (*release.Release, e
 	return rel, nil
 }
 
-// successResult creates an OperationResult for successful operations
-func (h *HelmOperations) successResult() *controller.OperationResult {
+// successResult creates an OperationResult for successful operations.
+// Returns the result and nil error, matching the ComponentOperations method signatures.
+func (h *HelmOperations) successResult() (*controller.OperationResult, error) {
 	updatedStatus, _ := json.Marshal(h.status)
 	return &controller.OperationResult{
 		UpdatedStatus: updatedStatus,
 		Success:       true,
-	}
+	}, nil
 }
 
-// errorResult creates an OperationResult for failed operations with error details
-func (h *HelmOperations) errorResult(err error) *controller.OperationResult {
+// errorResult creates a standardized error response for Helm operations.
+// Unlike RDS and Manifest handlers, Helm treats ALL errors as transient because the Helm SDK
+// abstracts away error details making reliable classification impractical. Helm operations involve
+// multiple layers (chart sources, file I/O, Helm actions, Kubernetes API) with errors wrapped by
+// the SDK. Conservative approach: retry all errors rather than risk marking transient issues permanent.
+func (h *HelmOperations) errorResult(err error) (*controller.OperationResult, error) {
 	updatedStatus, _ := json.Marshal(h.status)
+
+	// Always treat as transient - return error to trigger retry
 	return &controller.OperationResult{
-		UpdatedStatus:  updatedStatus,
-		Success:        false,
-		OperationError: err,
-	}
+		UpdatedStatus: updatedStatus,
+		Success:       false,
+	}, err
 }
 
-// pendingResult creates an OperationResult for operations still in progress
-func (h *HelmOperations) pendingResult() *controller.OperationResult {
+// pendingResult creates an OperationResult for operations still in progress.
+// Returns the result and nil error, matching the ComponentOperations method signatures.
+func (h *HelmOperations) pendingResult() (*controller.OperationResult, error) {
 	updatedStatus, _ := json.Marshal(h.status)
 	return &controller.OperationResult{
 		UpdatedStatus: updatedStatus,
 		Success:       false,
-	}
+	}, nil
 }
 
 // gatherHelmReleaseResources extracts Kubernetes resources from a Helm release manifest
