@@ -36,8 +36,8 @@ func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.Operat
 		}
 
 		if err := o.apiReader.Get(ctx, namespacedName, &configMap); err != nil {
-			return o.errorResult(fmt.Errorf("failed to read ConfigMap %s/%s: %w",
-				source.Namespace, source.Name, err)), nil
+			return o.errorResult(ctx, fmt.Errorf("failed to read ConfigMap %s/%s: %w",
+				source.Namespace, source.Name, err))
 		}
 
 		// Extract and export each key
@@ -49,9 +49,9 @@ func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.Operat
 				for k := range configMap.Data {
 					availableKeys = append(availableKeys, k)
 				}
-				return o.errorResult(fmt.Errorf(
+				return o.errorResult(ctx, fmt.Errorf(
 					"key %q not found in ConfigMap %s/%s (available keys: %v)",
-					export.Key, source.Namespace, source.Name, availableKeys)), nil
+					export.Key, source.Namespace, source.Name, availableKeys))
 			}
 
 			// Determine output key (use 'as' if specified, otherwise use 'key')
@@ -71,11 +71,11 @@ func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.Operat
 	log.Info("Successfully read all ConfigMaps",
 		"exportCount", len(o.status))
 
-	return o.successResult(), nil
+	return o.successResult()
 }
 
 // CheckDeployment always returns success immediately since Deploy completes synchronously.
 // Config-reader has no async operations to wait for.
 func (o *ConfigReaderOperations) CheckDeployment(ctx context.Context) (*controller.OperationResult, error) {
-	return o.successResult(), nil
+	return o.successResult()
 }
