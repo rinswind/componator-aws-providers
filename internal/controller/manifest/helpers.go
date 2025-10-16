@@ -4,6 +4,8 @@
 package manifest
 
 import (
+	"fmt"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -23,4 +25,14 @@ func getOptions() metav1.GetOptions {
 // deleteOptions returns the options for Delete operations.
 func deleteOptions() metav1.DeleteOptions {
 	return metav1.DeleteOptions{}
+}
+
+// resourceErrorf creates a formatted error message for a specific resource reference.
+func resourceErrorf(ref ResourceReference, format string, args ...interface{}) error {
+	// Prepend resource identification to the message
+	msg := fmt.Sprintf(format, args...)
+	if ref.Namespace != "" {
+		return fmt.Errorf("resource %s %s/%s: %s", ref.Kind, ref.Namespace, ref.Name, msg)
+	}
+	return fmt.Errorf("resource %s %s: %s", ref.Kind, ref.Name, msg)
 }

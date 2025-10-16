@@ -10,6 +10,7 @@ import (
 
 	"github.com/rinswind/deployment-operator/componentkit/controller"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -67,30 +68,99 @@ type ManifestOperations struct {
 	status        *ManifestStatus
 }
 
-// successResult creates an OperationResult for successful operations
-func (m *ManifestOperations) successResult() *controller.OperationResult {
-	updatedStatus, _ := json.Marshal(m.status)
-	return &controller.OperationResult{
-		UpdatedStatus: updatedStatus,
-		Success:       true,
+// marshalStatus marshals the handler status and logs any errors.
+// Returns the marshaled status or nil if marshaling fails.
+func (m *ManifestOperations) marshalStatus(ctx context.Context) json.RawMessage {
+	updatedStatus, err := json.Marshal(m.status)
+	if err != nil {
+		// This should never happen with our simple status struct, but log it if it does
+		logf.FromContext(ctx).Error(err, "Failed to marshal handler status")
+		return nil
 	}
+	return updatedStatus
 }
 
-// errorResult creates an OperationResult for failed operations with error details
-func (m *ManifestOperations) errorResult(err error) *controller.OperationResult {
-	updatedStatus, _ := json.Marshal(m.status)
+// successResult creates an OperationResult for successful operations.
+// Returns the result and nil error, matching the ComponentOperations method signatures.
+func (m *ManifestOperations) successResult(ctx context.Context) (*controller.OperationResult, error) {
 	return &controller.OperationResult{
-		UpdatedStatus:  updatedStatus,
+		UpdatedStatus: m.marshalStatus(ctx),
+		Success:       true,
+	}, nil
+}
+
+// errorResult creates an OperationResult for failed operations with error details.
+// Returns the result and nil error, matching the ComponentOperations method signatures.
+func (m *ManifestOperations) errorResult(ctx context.Context, err error) (*controller.OperationResult, error) {
+	return &controller.OperationResult{
+		UpdatedStatus:  m.marshalStatus(ctx),
 		Success:        false,
 		OperationError: err,
-	}
+	}, nil
 }
 
-// pendingResult creates an OperationResult for operations still in progress
-func (m *ManifestOperations) pendingResult() *controller.OperationResult {
-	updatedStatus, _ := json.Marshal(m.status)
+// pendingResult creates an OperationResult for operations still in progress.
+// Returns the result and nil error, matching the ComponentOperations method signatures.
+func (m *ManifestOperations) pendingResult(ctx context.Context) (*controller.OperationResult, error) {
 	return &controller.OperationResult{
-		UpdatedStatus: updatedStatus,
+		UpdatedStatus: m.marshalStatus(ctx),
 		Success:       false,
+	}, nil
+}
+
+// resourceRefToGVR converts a ResourceReference to GroupVersionResource using the REST mapper.
+// Returns the GVR, REST mapping, and any error encountered.
+func (m *ManifestOperations) resourceRefToGVR(ref ResourceReference) (schema.GroupVersionResource, *meta.RESTMapping, error) {
+	// Parse GVK from reference
+	gv, err := schema.ParseGroupVersion(ref.APIVersion)
+	if err != nil {
+		return schema.GroupVersionResource{}, nil, fmt.Errorf("failed to parse apiVersion %s: %w", ref.APIVersion, err)
 	}
+
+	gvk := schema.GroupVersionKind{
+		Group:   gv.Group,
+		Version: gv.Version,
+		Kind:    ref.Kind,
+	}
+
+	// Get GVR from GVK using REST mapper
+	mapping, err := m.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err != nil {
+		return schema.GroupVersionResource{}, nil, fmt.Errorf("failed to get REST mapping for %s: %w", gvk.String(), err)
+	}
+
+	return mapping.Resource, mapping, nil
+}
+
+// getResourceInterface returns a properly scoped dynamic.ResourceInterface for the given reference.
+// Handles both namespaced and cluster-scoped resources.
+func (m *ManifestOperations) getResourceInterface(ref ResourceReference) (dynamic.ResourceInterface, error) {
+	gvr, mapping, err := m.resourceRefToGVR(ref)
+	if err != nil {
+		return nil, err
+	}
+
+	// Determine if resource is namespaced
+	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+		if ref.Namespace == "" {
+			return nil, fmt.Errorf("namespaced resource %s missing namespace in reference", ref.Kind)
+		}
+		return m.dynamicClient.Resource(gvr).Namespace(ref.Namespace), nil
+	}
+
+	// Cluster-scoped resource
+	return m.dynamicClient.Resource(gvr), nil
+}
+
+// getResourceInterfaceForGVK returns a properly scoped dynamic.ResourceInterface for a given GVK and namespace.
+// Handles both namespaced and cluster-scoped resources. Used during manifest application.
+func (m *ManifestOperations) getResourceInterfaceForGVK(gvk schema.GroupVersionKind, namespace string) (dynamic.ResourceInterface, error) {
+	// Convert GVK to ResourceReference and delegate to getResourceInterface
+	ref := ResourceReference{
+		APIVersion: gvk.GroupVersion().String(),
+		Kind:       gvk.Kind,
+		Namespace:  namespace,
+		// Name is not needed for resource interface creation
+	}
+	return m.getResourceInterface(ref)
 }

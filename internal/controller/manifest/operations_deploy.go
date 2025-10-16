@@ -8,10 +8,7 @@ import (
 	"fmt"
 
 	"github.com/rinswind/deployment-operator/componentkit/controller"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/cli-utils/pkg/kstatus/status"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -42,7 +39,7 @@ func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.OperationR
 		if obj.GetAPIVersion() == "" || obj.GetKind() == "" || obj.GetName() == "" {
 			err := fmt.Errorf("manifest at index %d missing required fields (apiVersion, kind, or name)", i)
 			log.Error(err, "Invalid manifest")
-			return m.errorResult(err), nil
+			return m.errorResult(ctx, err)
 		}
 
 		log = log.WithValues(
@@ -62,32 +59,12 @@ func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.OperationR
 		labels[trackingLabelKey] = "true"
 		obj.SetLabels(labels)
 
-		// Get GVR from GVK using RESTMapper
+		// Get properly scoped resource interface for this manifest
 		gvk := obj.GroupVersionKind()
-		mapping, err := m.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+		resourceClient, err := m.getResourceInterfaceForGVK(gvk, obj.GetNamespace())
 		if err != nil {
-			err = fmt.Errorf("failed to get REST mapping for %s: %w", gvk.String(), err)
-			log.Error(err, "REST mapping failed")
-			return m.errorResult(err), nil
-		}
-
-		gvr := mapping.Resource
-		log.V(1).Info("Resolved GVR", "gvr", gvr.String())
-
-		// Determine if resource is namespaced
-		var resourceClient dynamic.ResourceInterface
-		if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
-			// Namespaced resource
-			namespace := obj.GetNamespace()
-			if namespace == "" {
-				err := fmt.Errorf("namespaced resource %s missing namespace", gvk.String())
-				log.Error(err, "Missing namespace")
-				return m.errorResult(err), nil
-			}
-			resourceClient = m.dynamicClient.Resource(gvr).Namespace(namespace)
-		} else {
-			// Cluster-scoped resource
-			resourceClient = m.dynamicClient.Resource(gvr)
+			log.Error(err, "Failed to resolve resource")
+			return m.errorResult(ctx, err)
 		}
 
 		// Apply using server-side apply
@@ -96,7 +73,7 @@ func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.OperationR
 		if err != nil {
 			err = fmt.Errorf("failed to apply manifest %s %s/%s: %w", gvk.String(), obj.GetNamespace(), obj.GetName(), err)
 			log.Error(err, "Apply failed")
-			return m.errorResult(err), nil
+			return m.errorResult(ctx, err)
 		}
 
 		// Record applied resource reference
@@ -113,7 +90,7 @@ func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.OperationR
 	log.Info("All manifests applied successfully", "appliedCount", len(m.status.AppliedResources))
 
 	// Return pending - need to check status separately
-	return m.pendingResult(), nil
+	return m.pendingResult(ctx)
 }
 
 // CheckDeployment verifies the readiness of all applied resources using kstatus.
@@ -124,7 +101,7 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.O
 	// If no resources were applied, consider it ready (edge case)
 	if len(m.status.AppliedResources) == 0 {
 		log.Info("No applied resources to check, considering ready")
-		return m.successResult(), nil
+		return m.successResult(ctx)
 	}
 
 	// Check status of each applied resource
@@ -138,48 +115,19 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.O
 			"namespace", ref.Namespace,
 		)
 
-		// Parse GVK from reference
-		gv, err := schema.ParseGroupVersion(ref.APIVersion)
+		// Get properly scoped resource interface
+		resourceClient, err := m.getResourceInterface(ref)
 		if err != nil {
-			err = fmt.Errorf("invalid apiVersion %s: %w", ref.APIVersion, err)
-			log.Error(err, "Failed to parse apiVersion")
-			return m.errorResult(err), nil
+			log.Error(err, "Failed to resolve resource")
+			return m.errorResult(ctx, err)
 		}
-
-		gvk := schema.GroupVersionKind{
-			Group:   gv.Group,
-			Version: gv.Version,
-			Kind:    ref.Kind,
-		}
-
-		// Get GVR from GVK
-		mapping, err := m.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
-		if err != nil {
-			err = fmt.Errorf("failed to get REST mapping for %s: %w", gvk.String(), err)
-			log.Error(err, "REST mapping failed")
-			return m.errorResult(err), nil
-		}
-
-		gvr := mapping.Resource
 
 		// Get current resource from API server
-		var resourceClient dynamic.ResourceInterface
-		if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
-			if ref.Namespace == "" {
-				err := fmt.Errorf("namespaced resource %s missing namespace in reference", gvk.String())
-				log.Error(err, "Missing namespace in reference")
-				return m.errorResult(err), nil
-			}
-			resourceClient = m.dynamicClient.Resource(gvr).Namespace(ref.Namespace)
-		} else {
-			resourceClient = m.dynamicClient.Resource(gvr)
-		}
-
 		obj, err := resourceClient.Get(ctx, ref.Name, getOptions())
 		if err != nil {
-			err = fmt.Errorf("resource %s %s/%s disappeared: %w", gvk.String(), ref.Namespace, ref.Name, err)
+			err = fmt.Errorf("resource disappeared: %w", err)
 			log.Error(err, "Resource not found")
-			return m.errorResult(err), nil
+			return m.errorResult(ctx, err)
 		}
 
 		// Compute status using kstatus
@@ -207,21 +155,21 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.O
 
 		case status.FailedStatus:
 			// Resource has failed
-			err := fmt.Errorf("resource %s %s/%s failed: %s", gvk.String(), ref.Namespace, ref.Name, statusResult.Message)
+			err := resourceErrorf(ref, "failed: %s", statusResult.Message)
 			log.Error(err, "Resource failed")
-			return m.errorResult(err), nil
+			return m.errorResult(ctx, err)
 
 		case status.TerminatingStatus:
 			// Resource is being deleted (unexpected during deployment)
-			err := fmt.Errorf("resource %s %s/%s is terminating", gvk.String(), ref.Namespace, ref.Name)
+			err := resourceErrorf(ref, "is terminating")
 			log.Error(err, "Resource terminating")
-			return m.errorResult(err), nil
+			return m.errorResult(ctx, err)
 
 		case status.NotFoundStatus:
 			// Resource disappeared
-			err := fmt.Errorf("resource %s %s/%s not found", gvk.String(), ref.Namespace, ref.Name)
+			err := resourceErrorf(ref, "not found")
 			log.Error(err, "Resource disappeared")
-			return m.errorResult(err), nil
+			return m.errorResult(ctx, err)
 
 		default:
 			// Unknown status
@@ -232,9 +180,9 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.O
 
 	if allReady {
 		log.Info("All resources are ready")
-		return m.successResult(), nil
+		return m.successResult(ctx)
 	}
 
 	log.Info("Some resources not ready yet")
-	return m.pendingResult(), nil
+	return m.pendingResult(ctx)
 }

@@ -5,12 +5,9 @@ package manifest
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/rinswind/deployment-operator/componentkit/controller"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -22,7 +19,7 @@ func (m *ManifestOperations) Delete(ctx context.Context) (*controller.OperationR
 	// If no resources were applied, consider it complete
 	if len(m.status.AppliedResources) == 0 {
 		log.Info("No applied resources to delete")
-		return m.successResult(), nil
+		return m.successResult(ctx)
 	}
 
 	// Delete resources in reverse order (helps with dependencies)
@@ -36,41 +33,16 @@ func (m *ManifestOperations) Delete(ctx context.Context) (*controller.OperationR
 			"namespace", ref.Namespace,
 		)
 
-		// Parse GVK from reference
-		gv, err := schema.ParseGroupVersion(ref.APIVersion)
+		// Get properly scoped resource interface
+		resourceClient, err := m.getResourceInterface(ref)
 		if err != nil {
 			// Log warning but continue with best-effort cleanup
-			log.Error(err, "Failed to parse apiVersion, skipping resource")
+			log.Error(err, "Failed to resolve resource, skipping")
 			continue
 		}
 
-		gvk := schema.GroupVersionKind{
-			Group:   gv.Group,
-			Version: gv.Version,
-			Kind:    ref.Kind,
-		}
-
-		// Get GVR from GVK
-		mapping, err := m.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
-		if err != nil {
-			// Log warning but continue with best-effort cleanup
-			log.Error(err, "Failed to get REST mapping, skipping resource")
-			continue
-		}
-
-		gvr := mapping.Resource
-
-		// Determine if resource is namespaced
-		if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
-			if ref.Namespace == "" {
-				log.Error(fmt.Errorf("missing namespace"), "Namespaced resource missing namespace in reference, skipping")
-				continue
-			}
-			err = m.dynamicClient.Resource(gvr).Namespace(ref.Namespace).Delete(ctx, ref.Name, deleteOptions())
-		} else {
-			err = m.dynamicClient.Resource(gvr).Delete(ctx, ref.Name, deleteOptions())
-		}
-
+		// Delete the resource
+		err = resourceClient.Delete(ctx, ref.Name, deleteOptions())
 		if err != nil {
 			if errors.IsNotFound(err) {
 				// Resource already deleted - this is fine
@@ -88,7 +60,7 @@ func (m *ManifestOperations) Delete(ctx context.Context) (*controller.OperationR
 
 	// Return success immediately - deletion is complete
 	// (Kubernetes handles finalizers and cascading deletion)
-	return m.successResult(), nil
+	return m.successResult(ctx)
 }
 
 // CheckDeletion verifies that all resources have been deleted.
@@ -101,7 +73,7 @@ func (m *ManifestOperations) CheckDeletion(ctx context.Context) (*controller.Ope
 	// If no resources were applied, consider it complete
 	if len(m.status.AppliedResources) == 0 {
 		log.Info("No applied resources, deletion complete")
-		return m.successResult(), nil
+		return m.successResult(ctx)
 	}
 
 	// Check if any resources still exist
@@ -115,48 +87,23 @@ func (m *ManifestOperations) CheckDeletion(ctx context.Context) (*controller.Ope
 			"namespace", ref.Namespace,
 		)
 
-		// Parse GVK from reference
-		gv, err := schema.ParseGroupVersion(ref.APIVersion)
+		// Get properly scoped resource interface
+		resourceClient, err := m.getResourceInterface(ref)
 		if err != nil {
-			// If we can't parse, skip this resource
-			log.V(1).Info("Failed to parse apiVersion, skipping check")
+			// If we can't resolve, skip this resource
+			log.V(1).Info("Failed to resolve resource, skipping check")
 			continue
 		}
-
-		gvk := schema.GroupVersionKind{
-			Group:   gv.Group,
-			Version: gv.Version,
-			Kind:    ref.Kind,
-		}
-
-		// Get GVR from GVK
-		mapping, err := m.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
-		if err != nil {
-			// If we can't get mapping, skip this resource
-			log.V(1).Info("Failed to get REST mapping, skipping check")
-			continue
-		}
-
-		gvr := mapping.Resource
 
 		// Check if resource still exists
-		var err2 error
-		if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
-			if ref.Namespace == "" {
-				continue
-			}
-			_, err2 = m.dynamicClient.Resource(gvr).Namespace(ref.Namespace).Get(ctx, ref.Name, getOptions())
-		} else {
-			_, err2 = m.dynamicClient.Resource(gvr).Get(ctx, ref.Name, getOptions())
-		}
-
-		if err2 != nil {
-			if errors.IsNotFound(err2) {
+		_, err = resourceClient.Get(ctx, ref.Name, getOptions())
+		if err != nil {
+			if errors.IsNotFound(err) {
 				// Resource deleted - this is what we want
 				log.V(1).Info("Resource deleted")
 			} else {
 				// Error checking - log but continue
-				log.Error(err2, "Failed to check resource status")
+				log.Error(err, "Failed to check resource status")
 			}
 		} else {
 			// Resource still exists
@@ -167,9 +114,9 @@ func (m *ManifestOperations) CheckDeletion(ctx context.Context) (*controller.Ope
 
 	if anyExist {
 		log.Info("Some resources still exist, waiting for deletion")
-		return m.pendingResult(), nil
+		return m.pendingResult(ctx)
 	}
 
 	log.Info("All resources deleted")
-	return m.successResult(), nil
+	return m.successResult(ctx)
 }
