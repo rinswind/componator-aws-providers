@@ -10,8 +10,8 @@ import (
 
 	"github.com/rinswind/deployment-operator/componentkit/controller"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // ConfigReaderOperationsFactory implements the ComponentOperationsFactory interface for config-reader components.
@@ -141,4 +141,3 @@ func isTransientError(err error) bool {
 
 	return false
 }
-

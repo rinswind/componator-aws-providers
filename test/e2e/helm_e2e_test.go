@@ -74,10 +74,9 @@ var _ = Describe("Helm Handler E2E", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred(), "Failed to create controller manager")
 
 		By("registering Helm controller")
-		err = (&helmcontroller.ComponentReconciler{
-			Client: helmMgr.GetClient(),
-			Scheme: helmMgr.GetScheme(),
-		}).SetupWithManager(helmMgr)
+		helmReconciler, err := helmcontroller.NewComponentReconciler(helmMgr.GetClient())
+		Expect(err).NotTo(HaveOccurred(), "Failed to create Helm reconciler")
+		err = helmReconciler.SetupWithManager(helmMgr)
 		Expect(err).NotTo(HaveOccurred(), "Failed to setup Helm controller")
 
 		By("starting Helm controller manager")

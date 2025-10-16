@@ -217,7 +217,7 @@ var _ = Describe("RDS Handler E2E", Ordered, func() {
 				}, &component)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(component.Status.Phase).To(Or(
-					Equal(deploymentsv1alpha1.ComponentPhaseProgressing),
+					Equal(deploymentsv1alpha1.ComponentPhaseDeploying),
 					Equal(deploymentsv1alpha1.ComponentPhaseReady),
 				), "Component should progress through deployment phases")
 			}, 3*time.Minute, 15*time.Second).Should(Succeed())
