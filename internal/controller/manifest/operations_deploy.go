@@ -44,6 +44,7 @@ func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.OperationR
 		gvk := obj.GroupVersionKind()
 		resourceClient, err := m.getResourceInterfaceForGVK(gvk, obj.GetNamespace())
 		if err != nil {
+			// REST mapper resolution failure - treat as permanent error
 			log.Error(err, "Failed to resolve resource")
 			return m.errorResult(ctx, err)
 		}
@@ -52,9 +53,8 @@ func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.OperationR
 		log.Info("Applying manifest")
 		_, err = resourceClient.Apply(ctx, obj.GetName(), obj, applyOptions(fieldManager))
 		if err != nil {
-			err = fmt.Errorf("failed to apply manifest %s %s/%s: %w", gvk.String(), obj.GetNamespace(), obj.GetName(), err)
-			log.Error(err, "Apply failed")
-			return m.errorResult(ctx, err)
+			// Kubernetes API I/O error - return for retry
+			return nil, fmt.Errorf("failed to apply manifest %s %s/%s: %w", gvk.String(), obj.GetNamespace(), obj.GetName(), err)
 		}
 
 		// Record applied resource reference
@@ -99,6 +99,7 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.O
 		// Get properly scoped resource interface
 		resourceClient, err := m.getResourceInterface(ref)
 		if err != nil {
+			// REST mapper resolution failure - treat as permanent error
 			log.Error(err, "Failed to resolve resource")
 			return m.errorResult(ctx, err)
 		}
@@ -106,9 +107,8 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.O
 		// Get current resource from API server
 		obj, err := resourceClient.Get(ctx, ref.Name, getOptions())
 		if err != nil {
-			err = fmt.Errorf("resource disappeared: %w", err)
-			log.Error(err, "Resource not found")
-			return m.errorResult(ctx, err)
+			// Kubernetes API I/O error - return for retry
+			return nil, fmt.Errorf("failed to get resource %s %s/%s: %w", ref.Kind, ref.Namespace, ref.Name, err)
 		}
 
 		// Compute status using kstatus
