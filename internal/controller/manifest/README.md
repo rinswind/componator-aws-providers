@@ -66,7 +66,6 @@ spec:
 
 1. **Apply Phase**:
    - Converts each manifest to unstructured object
-   - Adds tracking label for resource identification
    - Resolves GVK to GVR using REST mapper
    - Applies using server-side apply with field manager "manifest-handler"
    - Records applied resource references in handler status

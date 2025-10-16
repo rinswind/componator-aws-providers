@@ -16,8 +16,6 @@ import (
 const (
 	// fieldManager identifies this controller as the owner of applied fields
 	fieldManager = "manifest-handler"
-	// trackingLabel is added to all applied resources for identification
-	trackingLabelKey = "manifest.deployment-orchestrator.io/component"
 )
 
 // Deploy initiates the deployment by applying all manifests to the cluster.
@@ -41,16 +39,6 @@ func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.OperationR
 			"name", obj.GetName(),
 			"namespace", obj.GetNamespace(),
 		)
-
-		// Add tracking label to identify resources managed by this component
-		labels := obj.GetLabels()
-		if labels == nil {
-			labels = make(map[string]string)
-		}
-		// Note: Component name would need to be passed in context or config
-		// For now, we'll use a generic label
-		labels[trackingLabelKey] = "true"
-		obj.SetLabels(labels)
 
 		// Get properly scoped resource interface for this manifest
 		gvk := obj.GroupVersionKind()
