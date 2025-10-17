@@ -47,7 +47,10 @@ func (h *HelmOperations) Delete(ctx context.Context) (*controller.ActionResult, 
 	// Uninstall the release
 	res, err := uninstallAction.Run(releaseName)
 	if err != nil {
-		return controller.ActionResultForError(h.status, fmt.Errorf("failed to uninstall helm release %s: %w", releaseName, err), controller.AlwaysRetryErrorClassifier)
+		return controller.ActionResultForError(
+			h.status,
+			fmt.Errorf("failed to uninstall helm release %s: %w", releaseName, err),
+			controller.AlwaysRetryOnError)
 	}
 
 	log.Info("Successfully uninstalled helm release", "info", res.Info)
@@ -76,7 +79,10 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context) (*controller.CheckRe
 			log.Info("Release no longer exists, deletion complete")
 			return controller.CheckComplete(h.status)
 		}
-		return controller.CheckResultForError(h.status, fmt.Errorf("failed to check release status during deletion: %w", err), controller.AlwaysRetryErrorClassifier)
+		return controller.CheckResultForError(
+			h.status,
+			fmt.Errorf("failed to check release status during deletion: %w", err),
+			controller.AlwaysRetryOnError)
 	}
 
 	// Release still exists - check if its resources are gone
@@ -84,13 +90,19 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context) (*controller.CheckRe
 
 	resourceList, err := h.gatherHelmReleaseResources(ctx, rel)
 	if err != nil {
-		return controller.CheckResultForError(h.status, fmt.Errorf("failed to gather resources for deletion check: %w", err), controller.AlwaysRetryErrorClassifier)
+		return controller.CheckResultForError(
+			h.status,
+			fmt.Errorf("failed to gather resources for deletion check: %w", err),
+			controller.AlwaysRetryOnError)
 	}
 
 	// Check if all resources from manifest are deleted
 	allDeleted, err := checkResourcesDeleted(ctx, resourceList)
 	if err != nil {
-		return controller.CheckResultForError(h.status, fmt.Errorf("failed to check resource deletion status: %w", err), controller.AlwaysRetryErrorClassifier)
+		return controller.CheckResultForError(
+			h.status,
+			fmt.Errorf("failed to check resource deletion status: %w", err),
+			controller.AlwaysRetryOnError)
 	}
 
 	if !allDeleted {
@@ -108,7 +120,10 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context) (*controller.CheckRe
 
 	exists, err := h.namespaceExists(ctx)
 	if err != nil {
-		return controller.CheckResultForError(h.status, fmt.Errorf("failed to check namespace status: %w", err), controller.AlwaysRetryErrorClassifier)
+		return controller.CheckResultForError(
+			h.status,
+			fmt.Errorf("failed to check namespace status: %w", err),
+			controller.AlwaysRetryOnError)
 	}
 
 	if exists {

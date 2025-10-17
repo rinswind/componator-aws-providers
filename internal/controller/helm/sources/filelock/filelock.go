@@ -47,7 +47,7 @@ func WithLock(lockPath string, timeout time.Duration, operation func() error) er
 		return fmt.Errorf("failed to acquire file lock %s: %w", lockPath, err)
 	}
 	if !locked {
-		return fmt.Errorf("failed to acquire file lock %s: timeout after %v", lockPath, timeout)
+		return fmt.Errorf("failed to acquire file lock %s: timeout after %s", lockPath, timeout)
 	}
 
 	return operation()
@@ -85,7 +85,7 @@ func WithLockContext(ctx context.Context, lockPath string, timeout time.Duration
 		return fmt.Errorf("failed to acquire file lock %s: %w", lockPath, err)
 	}
 	if !locked {
-		return fmt.Errorf("failed to acquire file lock %s: timeout after %v", lockPath, timeout)
+		return fmt.Errorf("failed to acquire file lock %s: timeout after %s", lockPath, timeout)
 	}
 
 	return operation(ctx)

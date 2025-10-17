@@ -6,6 +6,9 @@ package configreader
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 
 	"github.com/rinswind/deployment-operator/componentkit/controller"
 	corev1 "k8s.io/api/core/v1"
@@ -36,9 +39,9 @@ func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.Action
 		}
 
 		if err := o.apiReader.Get(ctx, namespacedName, &configMap); err != nil {
-			return controller.ActionResultForError(o.status, fmt.Errorf(
-				"failed to read ConfigMap %s/%s: %w", source.Namespace, source.Name, err),
-				controller.KubernetesErrorClassifier)
+			return controller.ActionResultForError(
+				o.status, fmt.Errorf("failed to read ConfigMap %s/%s: %w", source.Namespace, source.Name, err),
+				controller.IsRetryableKubernetesError)
 		}
 
 		// Extract and export each key
@@ -46,14 +49,12 @@ func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.Action
 			value, exists := configMap.Data[export.Key]
 			if !exists {
 				// List available keys to help user debug
-				availableKeys := make([]string, 0, len(configMap.Data))
-				for k := range configMap.Data {
-					availableKeys = append(availableKeys, k)
-				}
-				return controller.ActionResultForError(o.status, fmt.Errorf(
-					"key %q not found in ConfigMap %s/%s (available keys: %v)",
-					export.Key, source.Namespace, source.Name, availableKeys),
-					controller.KubernetesErrorClassifier)
+				availableKeys := strings.Join(slices.Sorted(maps.Keys(configMap.Data)), ", ")
+				return controller.ActionResultForError(
+					o.status,
+					fmt.Errorf("key %q not found in ConfigMap %s/%s (available keys: %s)",
+						export.Key, source.Namespace, source.Name, availableKeys),
+					controller.IsRetryableKubernetesError)
 			}
 
 			// Determine output key (use 'as' if specified, otherwise use 'key')
@@ -70,8 +71,7 @@ func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.Action
 		}
 	}
 
-	log.Info("Successfully read all ConfigMaps",
-		"exportCount", len(o.status))
+	log.Info("Successfully read all ConfigMaps", "exportCount", len(o.status))
 
 	return controller.ActionSuccess(o.status)
 }

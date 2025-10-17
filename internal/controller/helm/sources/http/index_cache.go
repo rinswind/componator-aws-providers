@@ -4,6 +4,7 @@
 package http
 
 import (
+	"maps"
 	"sync"
 	"time"
 
@@ -200,13 +201,15 @@ func (c *IndexCache) cleanupExpired() {
 	defer c.mu.Unlock()
 
 	expiredCount := 0
-	for name, cached := range c.items {
-		if c.isExpired(cached) {
-			delete(c.items, name)
-			expiredCount++
-			c.log.V(1).Info("Expired index removed", "repo", name, "age", time.Since(cached.CachedAt))
+	maps.DeleteFunc(c.items, func(name string, cached *CachedIndex) bool {
+		if !c.isExpired(cached) {
+			return false
 		}
-	}
+
+		expiredCount++
+		c.log.V(1).Info("Expired index removed", "repo", name, "age", time.Since(cached.CachedAt))
+		return true // delete this entry
+	})
 
 	if expiredCount > 0 {
 		c.log.Info("Cleanup completed", "expiredItems", expiredCount, "remainingItems", len(c.items))
