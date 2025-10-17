@@ -26,7 +26,7 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*controller.ActionResult, e
 	if err != nil {
 		checkErr := fmt.Errorf("failed to check RDS instance existence: %w", err)
 		log.Error(checkErr, "Failed to check if RDS instance exists")
-		return r.newActionResultForError(checkErr)
+		return controller.ActionResultForError(r.status, checkErr, rdsErrorClassifier)
 	}
 
 	if instance == nil {
@@ -52,13 +52,13 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context) (*controller.CheckR
 	if err != nil {
 		describeErr := fmt.Errorf("failed to describe RDS instance: %w", err)
 		log.Error(describeErr, "Failed to check RDS instance status")
-		return r.newCheckResultForError(describeErr)
+		return controller.CheckResultForError(r.status, describeErr, rdsErrorClassifier)
 	}
 
 	if instance == nil {
 		notFoundErr := fmt.Errorf("RDS instance %s not found during deployment check", instanceID)
 		log.Error(notFoundErr, "RDS instance not found")
-		return r.checkFailureResult(notFoundErr)
+		return controller.CheckFailure(r.status, notFoundErr)
 	}
 
 	// Update status with current instance information
@@ -73,23 +73,23 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context) (*controller.CheckR
 			"endpoint", r.status.Endpoint,
 			"port", r.status.Port)
 
-		return r.checkCompleteResult()
+		return controller.CheckComplete(r.status)
 
 	case "creating", "backing-up", "modifying":
 		// Still in progress
 		log.Info("RDS instance deployment in progress")
-		return r.checkInProgressResult()
+		return controller.CheckInProgress(r.status)
 
 	case "failed", "incompatible-restore", "incompatible-network":
 		// Failed states
 		failureErr := fmt.Errorf("RDS instance deployment failed with status: %s", r.status.InstanceStatus)
 		log.Error(failureErr, "RDS instance deployment failed")
-		return r.checkFailureResult(failureErr)
+		return controller.CheckFailure(r.status, failureErr)
 
 	default:
 		// Unknown status - log and continue checking
 		log.Info("RDS instance in unknown status, continuing to monitor")
-		return r.checkInProgressResult()
+		return controller.CheckInProgress(r.status)
 	}
 }
 
@@ -151,7 +151,7 @@ func (r *RdsOperations) createInstance(ctx context.Context) (*controller.ActionR
 	if err != nil {
 		createErr := fmt.Errorf("failed to create RDS instance: %w", err)
 		log.Error(createErr, "Failed to create RDS instance")
-		return r.newActionResultForError(createErr)
+		return controller.ActionResultForError(r.status, createErr, rdsErrorClassifier)
 	}
 
 	// Update status with deployment information
@@ -159,7 +159,7 @@ func (r *RdsOperations) createInstance(ctx context.Context) (*controller.ActionR
 
 	log.Info("RDS instance creation initiated successfully", "status", r.status.InstanceStatus)
 
-	return r.actionSuccessResult()
+	return controller.ActionSuccess(r.status)
 }
 
 // modifyInstance handles RDS instance modification using pre-parsed configuration
@@ -192,7 +192,7 @@ func (r *RdsOperations) modifyInstance(ctx context.Context) (*controller.ActionR
 	if err != nil {
 		modifyErr := fmt.Errorf("failed to modify RDS instance: %w", err)
 		log.Error(modifyErr, "Failed to modify RDS instance")
-		return r.newActionResultForError(modifyErr)
+		return controller.ActionResultForError(r.status, modifyErr, rdsErrorClassifier)
 	}
 
 	// Update status with modification information
@@ -200,5 +200,5 @@ func (r *RdsOperations) modifyInstance(ctx context.Context) (*controller.ActionR
 
 	log.Info("RDS instance modification initiated successfully", "status", r.status.InstanceStatus)
 
-	return r.actionSuccessResult()
+	return controller.ActionSuccess(r.status)
 }

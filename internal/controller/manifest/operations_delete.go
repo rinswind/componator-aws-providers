@@ -19,7 +19,7 @@ func (m *ManifestOperations) Delete(ctx context.Context) (*controller.ActionResu
 	// If no resources were applied, consider it complete
 	if len(m.status.AppliedResources) == 0 {
 		log.Info("No applied resources to delete")
-		return m.actionSuccessResult()
+		return controller.ActionSuccess(m.status)
 	}
 
 	// Delete resources in reverse order (helps with dependencies)
@@ -60,7 +60,7 @@ func (m *ManifestOperations) Delete(ctx context.Context) (*controller.ActionResu
 
 	// Return success immediately - deletion is complete
 	// (Kubernetes handles finalizers and cascading deletion)
-	return m.actionSuccessResult()
+	return controller.ActionSuccess(m.status)
 }
 
 // CheckDeletion verifies that all resources have been deleted.
@@ -73,7 +73,7 @@ func (m *ManifestOperations) CheckDeletion(ctx context.Context) (*controller.Che
 	// If no resources were applied, consider it complete
 	if len(m.status.AppliedResources) == 0 {
 		log.Info("No applied resources, deletion complete")
-		return m.checkCompleteResult()
+		return controller.CheckComplete(m.status)
 	}
 
 	// Check if any resources still exist
@@ -114,9 +114,9 @@ func (m *ManifestOperations) CheckDeletion(ctx context.Context) (*controller.Che
 
 	if anyExist {
 		log.Info("Some resources still exist, waiting for deletion")
-		return m.checkInProgressResult()
+		return controller.CheckInProgress(m.status)
 	}
 
 	log.Info("All resources deleted")
-	return m.checkCompleteResult()
+	return controller.CheckComplete(m.status)
 }

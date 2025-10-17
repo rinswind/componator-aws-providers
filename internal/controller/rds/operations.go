@@ -27,6 +27,10 @@ const (
 	ControllerName = "rds-component"
 )
 
+// rdsErrorClassifier wraps the AWS SDK retry logic for use with result builder utilities.
+// This allows RDS handler to use the generic result builders while maintaining AWS-specific error classification.
+var rdsErrorClassifier = controller.ErrorClassifier(isRetryable)
+
 // RdsOperationsFactory implements the ComponentOperationsFactory interface for RDS deployments.
 // This factory creates stateful RdsOperations instances with pre-parsed configuration,
 // eliminating repeated configuration parsing during reconciliation loops.
@@ -116,80 +120,6 @@ func NewRdsOperationsConfig() controller.ComponentReconcilerConfig {
 }
 
 // Helper methods for RDS operations
-
-// actionSuccessResult creates an ActionResult for successful Deploy/Delete operations
-func (r *RdsOperations) actionSuccessResult() (*controller.ActionResult, error) {
-	updatedStatus, _ := json.Marshal(r.status)
-	return &controller.ActionResult{
-		UpdatedStatus: updatedStatus,
-	}, nil
-}
-
-// actionFailureResult creates an ActionResult for permanent failures in Deploy/Delete operations
-func (r *RdsOperations) actionFailureResult(err error) (*controller.ActionResult, error) {
-	updatedStatus, _ := json.Marshal(r.status)
-	return &controller.ActionResult{
-		UpdatedStatus:    updatedStatus,
-		PermanentFailure: err,
-	}, nil
-}
-
-// checkCompleteResult creates a CheckResult for completed check operations
-func (r *RdsOperations) checkCompleteResult() (*controller.CheckResult, error) {
-	updatedStatus, _ := json.Marshal(r.status)
-	return &controller.CheckResult{
-		UpdatedStatus: updatedStatus,
-		Complete:      true,
-	}, nil
-}
-
-// checkInProgressResult creates a CheckResult for check operations still in progress
-func (r *RdsOperations) checkInProgressResult() (*controller.CheckResult, error) {
-	updatedStatus, _ := json.Marshal(r.status)
-	return &controller.CheckResult{
-		UpdatedStatus: updatedStatus,
-		Complete:      false,
-	}, nil
-}
-
-// checkFailureResult creates a CheckResult for permanent failures in check operations
-func (r *RdsOperations) checkFailureResult(err error) (*controller.CheckResult, error) {
-	updatedStatus, _ := json.Marshal(r.status)
-	return &controller.CheckResult{
-		UpdatedStatus:    updatedStatus,
-		PermanentFailure: err,
-	}, nil
-}
-
-// newActionResultForError creates a standardized error response for RDS action operations.
-// Uses AWS SDK retry classification to distinguish retryable errors (network, timeouts, rate limiting)
-// from permanent errors (validation, auth). Returns ActionResult with error for retryable issues.
-func (r *RdsOperations) newActionResultForError(err error) (*controller.ActionResult, error) {
-	updatedStatus, _ := json.Marshal(r.status)
-
-	// Check if this error should be retried
-	if isRetryable(err) {
-		return &controller.ActionResult{UpdatedStatus: updatedStatus}, err
-	}
-
-	// Permanent error
-	return r.actionFailureResult(err)
-}
-
-// newCheckResultForError creates a standardized error response for RDS check operations.
-// Uses AWS SDK retry classification to distinguish retryable errors (network, timeouts, rate limiting)
-// from permanent errors (validation, auth). Returns CheckResult with error for retryable issues.
-func (r *RdsOperations) newCheckResultForError(err error) (*controller.CheckResult, error) {
-	updatedStatus, _ := json.Marshal(r.status)
-
-	// Check if this error should be retried
-	if isRetryable(err) {
-		return &controller.CheckResult{UpdatedStatus: updatedStatus}, err
-	}
-
-	// Permanent error
-	return r.checkFailureResult(err)
-}
 
 // updateStatus updates RdsStatus fields from AWS DBInstance data
 // This eliminates repetitive field-by-field copying across all RDS operations

@@ -36,8 +36,9 @@ func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.Action
 		}
 
 		if err := o.apiReader.Get(ctx, namespacedName, &configMap); err != nil {
-			return o.newActionResultForError(fmt.Errorf(
-				"failed to read ConfigMap %s/%s: %w", source.Namespace, source.Name, err))
+			return controller.ActionResultForError(o.status, fmt.Errorf(
+				"failed to read ConfigMap %s/%s: %w", source.Namespace, source.Name, err),
+				controller.KubernetesErrorClassifier)
 		}
 
 		// Extract and export each key
@@ -49,9 +50,10 @@ func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.Action
 				for k := range configMap.Data {
 					availableKeys = append(availableKeys, k)
 				}
-				return o.newActionResultForError(fmt.Errorf(
+				return controller.ActionResultForError(o.status, fmt.Errorf(
 					"key %q not found in ConfigMap %s/%s (available keys: %v)",
-					export.Key, source.Namespace, source.Name, availableKeys))
+					export.Key, source.Namespace, source.Name, availableKeys),
+					controller.KubernetesErrorClassifier)
 			}
 
 			// Determine output key (use 'as' if specified, otherwise use 'key')
@@ -71,11 +73,11 @@ func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.Action
 	log.Info("Successfully read all ConfigMaps",
 		"exportCount", len(o.status))
 
-	return o.actionSuccessResult()
+	return controller.ActionSuccess(o.status)
 }
 
 // CheckDeployment always returns success immediately since Deploy completes synchronously.
 // Config-reader has no async operations to wait for.
 func (o *ConfigReaderOperations) CheckDeployment(ctx context.Context) (*controller.CheckResult, error) {
-	return o.checkCompleteResult()
+	return controller.CheckComplete(o.status)
 }

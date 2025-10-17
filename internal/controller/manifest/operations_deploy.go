@@ -46,7 +46,7 @@ func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.ActionResu
 		if err != nil {
 			// REST mapper resolution failure - treat as permanent error
 			log.Error(err, "Failed to resolve resource")
-			return m.actionFailureResult(err)
+			return controller.ActionFailure(m.status, err)
 		}
 
 		// Apply using server-side apply
@@ -54,7 +54,7 @@ func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.ActionResu
 		_, err = resourceClient.Apply(ctx, obj.GetName(), obj, applyOptions(fieldManager))
 		if err != nil {
 			// Kubernetes API I/O error - return for retry
-			return m.newActionResultForError(fmt.Errorf("failed to apply manifest %s %s/%s: %w", gvk.String(), obj.GetNamespace(), obj.GetName(), err))
+			return controller.ActionResultForError(m.status, fmt.Errorf("failed to apply manifest %s %s/%s: %w", gvk.String(), obj.GetNamespace(), obj.GetName(), err), controller.KubernetesErrorClassifier)
 		}
 
 		// Record applied resource reference
@@ -71,7 +71,7 @@ func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.ActionResu
 	log.Info("All manifests applied successfully", "appliedCount", len(m.status.AppliedResources))
 
 	// Return pending - need to check status separately
-	return m.actionSuccessResult()
+	return controller.ActionSuccess(m.status)
 }
 
 // CheckDeployment verifies the readiness of all applied resources using kstatus.
@@ -82,7 +82,7 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.C
 	// If no resources were applied, consider it ready (edge case)
 	if len(m.status.AppliedResources) == 0 {
 		log.Info("No applied resources to check, considering ready")
-		return m.checkCompleteResult()
+		return controller.CheckComplete(m.status)
 	}
 
 	// Check status of each applied resource
@@ -101,14 +101,14 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.C
 		if err != nil {
 			// REST mapper resolution failure - treat as permanent error
 			log.Error(err, "Failed to resolve resource")
-			return m.checkFailureResult(err)
+			return controller.CheckFailure(m.status, err)
 		}
 
 		// Get current resource from API server
 		obj, err := resourceClient.Get(ctx, ref.Name, getOptions())
 		if err != nil {
 			// Kubernetes API I/O error - return for retry
-			return m.newCheckResultForError(fmt.Errorf("failed to get resource %s %s/%s: %w", ref.Kind, ref.Namespace, ref.Name, err))
+			return controller.CheckResultForError(m.status, fmt.Errorf("failed to get resource %s %s/%s: %w", ref.Kind, ref.Namespace, ref.Name, err), controller.KubernetesErrorClassifier)
 		}
 
 		// Compute status using kstatus
@@ -138,19 +138,19 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.C
 			// Resource has failed
 			err := resourceErrorf(ref, "failed: %s", statusResult.Message)
 			log.Error(err, "Resource failed")
-			return m.checkFailureResult(err)
+			return controller.CheckFailure(m.status, err)
 
 		case status.TerminatingStatus:
 			// Resource is being deleted (unexpected during deployment)
 			err := resourceErrorf(ref, "is terminating")
 			log.Error(err, "Resource terminating")
-			return m.checkFailureResult(err)
+			return controller.CheckFailure(m.status, err)
 
 		case status.NotFoundStatus:
 			// Resource disappeared
 			err := resourceErrorf(ref, "not found")
 			log.Error(err, "Resource disappeared")
-			return m.checkFailureResult(err)
+			return controller.CheckFailure(m.status, err)
 
 		default:
 			// Unknown status
@@ -161,9 +161,9 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.C
 
 	if allReady {
 		log.Info("All resources are ready")
-		return m.checkCompleteResult()
+		return controller.CheckComplete(m.status)
 	}
 
 	log.Info("Some resources not ready yet")
-	return m.checkInProgressResult()
+	return controller.CheckInProgress(m.status)
 }

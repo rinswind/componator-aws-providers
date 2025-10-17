@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"github.com/rinswind/deployment-operator/componentkit/controller"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -124,93 +123,4 @@ func (m *ManifestOperations) resourceInterfaceFromMapping(
 
 	// Cluster-scoped resource
 	return m.dynamicClient.Resource(gvr), nil
-}
-
-// actionSuccessResult creates an ActionResult for successful Deploy/Delete operations
-func (m *ManifestOperations) actionSuccessResult() (*controller.ActionResult, error) {
-	updatedStatus, _ := json.Marshal(m.status)
-	return &controller.ActionResult{
-		UpdatedStatus: updatedStatus,
-	}, nil
-}
-
-// actionFailureResult creates an ActionResult for permanent failures in Deploy/Delete operations
-func (m *ManifestOperations) actionFailureResult(err error) (*controller.ActionResult, error) {
-	updatedStatus, _ := json.Marshal(m.status)
-	return &controller.ActionResult{
-		UpdatedStatus:    updatedStatus,
-		PermanentFailure: err,
-	}, nil
-}
-
-// checkCompleteResult creates a CheckResult for completed check operations
-func (m *ManifestOperations) checkCompleteResult() (*controller.CheckResult, error) {
-	updatedStatus, _ := json.Marshal(m.status)
-	return &controller.CheckResult{
-		UpdatedStatus: updatedStatus,
-		Complete:      true,
-	}, nil
-}
-
-// checkInProgressResult creates a CheckResult for check operations still in progress
-func (m *ManifestOperations) checkInProgressResult() (*controller.CheckResult, error) {
-	updatedStatus, _ := json.Marshal(m.status)
-	return &controller.CheckResult{
-		UpdatedStatus: updatedStatus,
-		Complete:      false,
-	}, nil
-}
-
-// checkFailureResult creates a CheckResult for permanent failures in check operations
-func (m *ManifestOperations) checkFailureResult(err error) (*controller.CheckResult, error) {
-	updatedStatus, _ := json.Marshal(m.status)
-	return &controller.CheckResult{
-		UpdatedStatus:    updatedStatus,
-		PermanentFailure: err,
-	}, nil
-}
-
-// newActionResultForError creates a standardized error response for manifest action operations.
-// Uses Kubernetes apierrors classification to distinguish retryable errors (network, timeouts, rate limiting)
-// from permanent errors (validation, auth). Returns ActionResult with error for retryable issues.
-func (m *ManifestOperations) newActionResultForError(err error) (*controller.ActionResult, error) {
-	updatedStatus, _ := json.Marshal(m.status)
-
-	// Check if this error should be retried
-	if isRetryable(err) {
-		return &controller.ActionResult{UpdatedStatus: updatedStatus}, err
-	}
-
-	// Permanent error
-	return m.actionFailureResult(err)
-}
-
-// newCheckResultForError creates a standardized error response for manifest check operations.
-// Uses Kubernetes apierrors classification to distinguish retryable errors (network, timeouts, rate limiting)
-// from permanent errors (validation, auth). Returns CheckResult with error for retryable issues.
-func (m *ManifestOperations) newCheckResultForError(err error) (*controller.CheckResult, error) {
-	updatedStatus, _ := json.Marshal(m.status)
-
-	// Check if this error should be retried
-	if isRetryable(err) {
-		return &controller.CheckResult{UpdatedStatus: updatedStatus}, err
-	}
-
-	// Permanent error
-	return m.checkFailureResult(err)
-}
-
-// isRetryable determines if a Kubernetes API error is retryable.
-// Uses apierrors classification similar to how RDS handler uses AWS SDK retry classification.
-//
-// Retryable errors include network issues, timeouts, rate limiting, and temporary server problems.
-// Permanent errors include validation failures, authorization issues, and malformed requests.
-func isRetryable(err error) bool {
-	return apierrors.IsTimeout(err) ||
-		apierrors.IsServerTimeout(err) ||
-		apierrors.IsTooManyRequests(err) ||
-		apierrors.IsServiceUnavailable(err) ||
-		apierrors.IsInternalError(err) ||
-		apierrors.IsConflict(err) ||
-		apierrors.IsResourceExpired(err)
 }

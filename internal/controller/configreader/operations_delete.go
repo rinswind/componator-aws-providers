@@ -12,11 +12,11 @@ import (
 // Delete is a no-op for config-reader - no resources to clean up.
 // Config-reader only reads values, it doesn't create any Kubernetes resources.
 func (o *ConfigReaderOperations) Delete(ctx context.Context) (*controller.ActionResult, error) {
-	return o.actionSuccessResult()
+	return controller.ActionSuccess(o.status)
 }
 
 // CheckDeletion always returns success immediately since there's nothing to clean up.
 // Config-reader has no resources to wait for deletion.
 func (o *ConfigReaderOperations) CheckDeletion(ctx context.Context) (*controller.CheckResult, error) {
-	return o.checkCompleteResult()
+	return controller.CheckComplete(o.status)
 }

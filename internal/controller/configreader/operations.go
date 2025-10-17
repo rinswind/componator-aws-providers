@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"github.com/rinswind/deployment-operator/componentkit/controller"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -55,60 +54,4 @@ type ConfigReaderOperations struct {
 	config    *ConfigReaderConfig
 	status    ConfigReaderStatus
 	apiReader client.Reader
-}
-
-// actionSuccessResult creates an ActionResult for successful Deploy/Delete operations
-func (o *ConfigReaderOperations) actionSuccessResult() (*controller.ActionResult, error) {
-	updatedStatus, _ := json.Marshal(o.status)
-	return &controller.ActionResult{
-		UpdatedStatus: updatedStatus,
-	}, nil
-}
-
-// actionFailureResult creates an ActionResult for permanent failures in Deploy operations
-func (o *ConfigReaderOperations) actionFailureResult(err error) (*controller.ActionResult, error) {
-	updatedStatus, _ := json.Marshal(o.status)
-	return &controller.ActionResult{
-		UpdatedStatus:    updatedStatus,
-		PermanentFailure: err,
-	}, nil
-}
-
-// newActionResultForError creates a standardized error response for ConfigReader action operations.
-// Uses Kubernetes apierrors classification to distinguish retryable errors (network, timeouts,
-// rate limiting) from permanent errors (missing ConfigMap, RBAC issues, key not found).
-func (o *ConfigReaderOperations) newActionResultForError(err error) (*controller.ActionResult, error) {
-	updatedStatus, _ := json.Marshal(o.status)
-
-	// Check if this error should be retried
-	if isRetryable(err) {
-		return &controller.ActionResult{UpdatedStatus: updatedStatus}, err
-	}
-
-	// Permanent error - missing ConfigMap, RBAC issue, or key not found
-	return o.actionFailureResult(err)
-}
-
-// checkCompleteResult creates a CheckResult for completed check operations
-func (o *ConfigReaderOperations) checkCompleteResult() (*controller.CheckResult, error) {
-	updatedStatus, _ := json.Marshal(o.status)
-	return &controller.CheckResult{
-		UpdatedStatus: updatedStatus,
-		Complete:      true,
-	}, nil
-}
-
-// isRetryable determines if a Kubernetes API error is retryable.
-// Uses apierrors classification similar to how RDS handler uses AWS SDK retry classification.
-//
-// Retryable errors include network issues, timeouts, rate limiting, and temporary server problems.
-// Permanent errors include validation failures, authorization issues, and malformed requests.
-func isRetryable(err error) bool {
-	return apierrors.IsTimeout(err) ||
-		apierrors.IsServerTimeout(err) ||
-		apierrors.IsTooManyRequests(err) ||
-		apierrors.IsServiceUnavailable(err) ||
-		apierrors.IsInternalError(err) ||
-		apierrors.IsConflict(err) ||
-		apierrors.IsResourceExpired(err)
 }

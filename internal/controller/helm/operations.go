@@ -114,59 +114,6 @@ func (h *HelmOperations) getHelmRelease(releaseName string) (*release.Release, e
 	return rel, nil
 }
 
-// actionSuccessResult creates an ActionResult for successful Deploy/Delete operations.
-// Returns the result and nil error, matching the ComponentOperations method signatures.
-func (h *HelmOperations) actionSuccessResult() (*controller.ActionResult, error) {
-	updatedStatus, _ := json.Marshal(h.status)
-	return &controller.ActionResult{
-		UpdatedStatus: updatedStatus,
-	}, nil
-}
-
-// checkCompleteResult creates a CheckResult for completed check operations.
-// Returns the result and nil error, matching the ComponentOperations method signatures.
-func (h *HelmOperations) checkCompleteResult() (*controller.CheckResult, error) {
-	updatedStatus, _ := json.Marshal(h.status)
-	return &controller.CheckResult{
-		UpdatedStatus: updatedStatus,
-		Complete:      true,
-	}, nil
-}
-
-// checkInProgressResult creates a CheckResult for check operations still in progress.
-// Returns the result and nil error, matching the ComponentOperations method signatures.
-func (h *HelmOperations) checkInProgressResult() (*controller.CheckResult, error) {
-	updatedStatus, _ := json.Marshal(h.status)
-	return &controller.CheckResult{
-		UpdatedStatus: updatedStatus,
-		Complete:      false,
-	}, nil
-}
-
-// newActionResultForError creates a standardized error response for Helm action operations.
-// Unlike RDS and Manifest handlers, Helm treats ALL errors as transient because the Helm SDK
-// abstracts away error details making reliable classification impractical. Helm operations involve
-// multiple layers (chart sources, file I/O, Helm actions, Kubernetes API) with errors wrapped by
-// the SDK. Conservative approach: retry all errors rather than risk marking transient issues permanent.
-func (h *HelmOperations) newActionResultForError(err error) (*controller.ActionResult, error) {
-	updatedStatus, _ := json.Marshal(h.status)
-	return &controller.ActionResult{
-		UpdatedStatus: updatedStatus,
-	}, err
-}
-
-// newCheckResultForError creates a standardized error response for Helm check operations.
-// Unlike RDS and Manifest handlers, Helm treats ALL errors as transient because the Helm SDK
-// abstracts away error details making reliable classification impractical. Helm operations involve
-// multiple layers (chart sources, file I/O, Helm actions, Kubernetes API) with errors wrapped by
-// the SDK. Conservative approach: retry all errors rather than risk marking transient issues permanent.
-func (h *HelmOperations) newCheckResultForError(err error) (*controller.CheckResult, error) {
-	updatedStatus, _ := json.Marshal(h.status)
-	return &controller.CheckResult{
-		UpdatedStatus: updatedStatus,
-	}, err
-}
-
 // gatherHelmReleaseResources extracts Kubernetes resources from a Helm release manifest
 // and builds a ResourceList for status checking
 func (h *HelmOperations) gatherHelmReleaseResources(ctx context.Context, rel *release.Release) (kube.ResourceList, error) {

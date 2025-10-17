@@ -38,18 +38,18 @@ func (r *RdsOperations) Delete(ctx context.Context) (*controller.ActionResult, e
 	if err != nil {
 		if isInstanceNotFoundError(err) {
 			log.Info("RDS instance already deleted")
-			return r.actionSuccessResult()
+			return controller.ActionSuccess(r.status)
 		}
 
 		// Check if instance is already being deleted
 		if isInstanceAlreadyBeingDeletedError(err) {
 			log.Info("RDS instance is already being deleted, proceeding to monitor deletion")
-			return r.actionSuccessResult()
+			return controller.ActionSuccess(r.status)
 		}
 
 		deleteErr := fmt.Errorf("delete RDS instance call failed: %w", err)
 		log.Error(deleteErr, "Failed to delete RDS instance")
-		return r.newActionResultForError(deleteErr)
+		return controller.ActionResultForError(r.status, deleteErr, rdsErrorClassifier)
 	}
 
 	log.Info("RDS instance deletion initiated successfully")
@@ -57,7 +57,7 @@ func (r *RdsOperations) Delete(ctx context.Context) (*controller.ActionResult, e
 	// Update status with AWS response data
 	r.updateStatus(result.DBInstance)
 
-	return r.actionSuccessResult()
+	return controller.ActionSuccess(r.status)
 }
 
 // CheckDeletion verifies the current deletion status using pre-parsed configuration
@@ -74,12 +74,12 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context) (*controller.CheckRes
 	if err != nil {
 		checkErr := fmt.Errorf("failed to describe RDS instance during deletion check: %w", err)
 		log.Error(checkErr, "Failed to check RDS instance deletion status")
-		return r.newCheckResultForError(checkErr)
+		return controller.CheckResultForError(r.status, checkErr, rdsErrorClassifier)
 	}
 
 	if instance == nil {
 		log.Info("RDS instance successfully deleted")
-		return r.checkCompleteResult()
+		return controller.CheckComplete(r.status)
 	}
 	status := stringValue(instance.DBInstanceStatus)
 
@@ -94,18 +94,18 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context) (*controller.CheckRes
 	case "deleting":
 		// Still deleting - continue waiting
 		log.Info("RDS instance deletion in progress")
-		return r.checkInProgressResult()
+		return controller.CheckInProgress(r.status)
 
 	case "failed":
 		// Deletion failed, but don't block cleanup
 		log.Error(
 			fmt.Errorf("RDS instance deletion failed"),
 			"RDS instance deletion failed, but allowing cleanup to continue")
-		return r.checkCompleteResult()
+		return controller.CheckComplete(r.status)
 
 	default:
 		// Instance still exists in some other state
 		log.Info("RDS instance in unexpected state during deletion, continuing to wait", "status", status)
-		return r.checkInProgressResult()
+		return controller.CheckInProgress(r.status)
 	}
 }
