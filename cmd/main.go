@@ -28,6 +28,7 @@ import (
 
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/configreader"
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm"
+	iampolicy "github.com/rinswind/deployment-operator-handlers/internal/controller/iam-policy"
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/manifest"
 	"github.com/rinswind/deployment-operator-handlers/internal/controller/rds"
 	corev1alpha1 "github.com/rinswind/deployment-operator/api/core/v1alpha1"
@@ -195,6 +196,11 @@ func main() {
 
 	if err := rds.NewComponentReconciler().SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RDSComponent")
+		os.Exit(1)
+	}
+
+	if err := iampolicy.NewComponentReconciler().SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "IamPolicyComponent")
 		os.Exit(1)
 	}
 

@@ -5,6 +5,7 @@ go 1.24.5
 require (
 	github.com/aws/aws-sdk-go-v2 v1.39.2
 	github.com/aws/aws-sdk-go-v2/config v1.31.11
+	github.com/aws/aws-sdk-go-v2/service/iam v1.40.2
 	github.com/aws/aws-sdk-go-v2/service/rds v1.107.2
 	github.com/go-logr/logr v1.4.3
 	github.com/go-playground/validator/v10 v10.27.0
