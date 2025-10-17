@@ -67,7 +67,7 @@ var _ = Describe("Operations Integration", func() {
 			result, err := operations.Deploy(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(result.Success).To(BeTrue())
+			Expect(result.PermanentFailure).NotTo(HaveOccurred())
 			Expect(operations.status).To(HaveLen(1))
 			Expect(operations.status["key1"]).To(Equal("value1"))
 		})
@@ -106,7 +106,7 @@ var _ = Describe("Operations Integration", func() {
 			// Execute Deploy
 			result, err := operations.Deploy(ctx)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Success).To(BeTrue())
+			Expect(result.PermanentFailure).NotTo(HaveOccurred())
 			Expect(operations.status["short"]).To(Equal("value1"))
 			Expect(operations.status).NotTo(HaveKey("longKeyName"))
 		})
@@ -164,7 +164,7 @@ var _ = Describe("Operations Integration", func() {
 			// Execute Deploy
 			result, err := operations.Deploy(ctx)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Success).To(BeTrue())
+			Expect(result.PermanentFailure).NotTo(HaveOccurred())
 			Expect(operations.status).To(HaveLen(3))
 			Expect(operations.status["key1"]).To(Equal("value1"))
 			Expect(operations.status["renamed2"]).To(Equal("value2"))
@@ -194,9 +194,8 @@ var _ = Describe("Operations Integration", func() {
 			result, err := operations.Deploy(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(result.Success).To(BeFalse())
-			Expect(result.OperationError).To(HaveOccurred())
-			Expect(result.OperationError.Error()).To(ContainSubstring("failed to read ConfigMap"))
+			Expect(result.PermanentFailure).To(HaveOccurred())
+			Expect(result.PermanentFailure.Error()).To(ContainSubstring("failed to read ConfigMap"))
 		})
 
 		It("should fail when ConfigMap key does not exist", func() {
@@ -233,10 +232,9 @@ var _ = Describe("Operations Integration", func() {
 			// Execute Deploy
 			result, err := operations.Deploy(ctx)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Success).To(BeFalse())
-			Expect(result.OperationError).To(HaveOccurred())
-			Expect(result.OperationError.Error()).To(ContainSubstring("key \"missingKey\" not found"))
-			Expect(result.OperationError.Error()).To(ContainSubstring("available keys"))
+			Expect(result.PermanentFailure).To(HaveOccurred())
+			Expect(result.PermanentFailure.Error()).To(ContainSubstring("key \"missingKey\" not found"))
+			Expect(result.PermanentFailure.Error()).To(ContainSubstring("available keys"))
 		})
 
 		It("should serialize status to JSON correctly", func() {
@@ -275,7 +273,7 @@ var _ = Describe("Operations Integration", func() {
 			// Execute Deploy
 			result, err := operations.Deploy(ctx)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Success).To(BeTrue())
+			Expect(result.PermanentFailure).NotTo(HaveOccurred())
 
 			// Verify JSON serialization
 			var deserializedStatus ConfigReaderStatus
@@ -294,7 +292,7 @@ var _ = Describe("Operations Integration", func() {
 
 			result, err := operations.CheckDeployment(ctx)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Success).To(BeTrue())
+			Expect(result.Complete).To(BeTrue())
 		})
 	})
 
@@ -307,7 +305,7 @@ var _ = Describe("Operations Integration", func() {
 
 			result, err := operations.Delete(ctx)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Success).To(BeTrue())
+			Expect(result.PermanentFailure).NotTo(HaveOccurred())
 		})
 	})
 
@@ -320,7 +318,7 @@ var _ = Describe("Operations Integration", func() {
 
 			result, err := operations.CheckDeletion(ctx)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Success).To(BeTrue())
+			Expect(result.Complete).To(BeTrue())
 		})
 	})
 })

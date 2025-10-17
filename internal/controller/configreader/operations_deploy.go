@@ -15,7 +15,7 @@ import (
 
 // Deploy reads all ConfigMaps specified in config and exports values to handlerStatus.
 // This operation completes synchronously - there are no async operations for config-reader.
-func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.OperationResult, error) {
+func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.ActionResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Reset status to start fresh
@@ -36,8 +36,8 @@ func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.Operat
 		}
 
 		if err := o.apiReader.Get(ctx, namespacedName, &configMap); err != nil {
-			return o.errorResult(ctx, fmt.Errorf("failed to read ConfigMap %s/%s: %w",
-				source.Namespace, source.Name, err))
+			return o.newActionResultForError(fmt.Errorf(
+				"failed to read ConfigMap %s/%s: %w", source.Namespace, source.Name, err))
 		}
 
 		// Extract and export each key
@@ -49,7 +49,7 @@ func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.Operat
 				for k := range configMap.Data {
 					availableKeys = append(availableKeys, k)
 				}
-				return o.errorResult(ctx, fmt.Errorf(
+				return o.newActionResultForError(fmt.Errorf(
 					"key %q not found in ConfigMap %s/%s (available keys: %v)",
 					export.Key, source.Namespace, source.Name, availableKeys))
 			}
@@ -71,11 +71,11 @@ func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.Operat
 	log.Info("Successfully read all ConfigMaps",
 		"exportCount", len(o.status))
 
-	return o.successResult()
+	return o.actionSuccessResult()
 }
 
 // CheckDeployment always returns success immediately since Deploy completes synchronously.
 // Config-reader has no async operations to wait for.
-func (o *ConfigReaderOperations) CheckDeployment(ctx context.Context) (*controller.OperationResult, error) {
-	return o.successResult()
+func (o *ConfigReaderOperations) CheckDeployment(ctx context.Context) (*controller.CheckResult, error) {
+	return o.checkCompleteResult()
 }

@@ -126,107 +126,91 @@ func (m *ManifestOperations) resourceInterfaceFromMapping(
 	return m.dynamicClient.Resource(gvr), nil
 }
 
-// successResult creates an OperationResult for successful operations.
-// Returns the result and nil error, matching the ComponentOperations method signatures.
-func (m *ManifestOperations) successResult(ctx context.Context) (*controller.OperationResult, error) {
-	return &controller.OperationResult{
-		UpdatedStatus: m.marshalStatus(ctx),
-		Success:       true,
+// actionSuccessResult creates an ActionResult for successful Deploy/Delete operations
+func (m *ManifestOperations) actionSuccessResult() (*controller.ActionResult, error) {
+	updatedStatus, _ := json.Marshal(m.status)
+	return &controller.ActionResult{
+		UpdatedStatus: updatedStatus,
 	}, nil
 }
 
-// errorResult creates a standardized error response for manifest operations.
-// Similar to RDS handler's approach, uses Kubernetes apierrors classification to distinguish
-// transient errors (network, timeouts, rate limiting) from permanent errors (validation, auth).
-// Returns the result and nil error for permanent failures, or result and error for transient issues.
-func (m *ManifestOperations) errorResult(ctx context.Context, err error) (*controller.OperationResult, error) {
-	log := logf.FromContext(ctx)
+// actionFailureResult creates an ActionResult for permanent failures in Deploy/Delete operations
+func (m *ManifestOperations) actionFailureResult(err error) (*controller.ActionResult, error) {
+	updatedStatus, _ := json.Marshal(m.status)
+	return &controller.ActionResult{
+		UpdatedStatus:    updatedStatus,
+		PermanentFailure: err,
+	}, nil
+}
 
-	log.Error(err, "Manifest operation failed")
+// checkCompleteResult creates a CheckResult for completed check operations
+func (m *ManifestOperations) checkCompleteResult() (*controller.CheckResult, error) {
+	updatedStatus, _ := json.Marshal(m.status)
+	return &controller.CheckResult{
+		UpdatedStatus: updatedStatus,
+		Complete:      true,
+	}, nil
+}
 
-	// Check if this is a transient error that should be retried
-	if isTransientError(err) {
-		// I/O error pattern - return error to trigger retry
-		return &controller.OperationResult{
-			UpdatedStatus: m.marshalStatus(ctx),
-			Success:       false,
-		}, err
+// checkInProgressResult creates a CheckResult for check operations still in progress
+func (m *ManifestOperations) checkInProgressResult() (*controller.CheckResult, error) {
+	updatedStatus, _ := json.Marshal(m.status)
+	return &controller.CheckResult{
+		UpdatedStatus: updatedStatus,
+		Complete:      false,
+	}, nil
+}
+
+// checkFailureResult creates a CheckResult for permanent failures in check operations
+func (m *ManifestOperations) checkFailureResult(err error) (*controller.CheckResult, error) {
+	updatedStatus, _ := json.Marshal(m.status)
+	return &controller.CheckResult{
+		UpdatedStatus:    updatedStatus,
+		PermanentFailure: err,
+	}, nil
+}
+
+// newActionResultForError creates a standardized error response for manifest action operations.
+// Uses Kubernetes apierrors classification to distinguish retryable errors (network, timeouts, rate limiting)
+// from permanent errors (validation, auth). Returns ActionResult with error for retryable issues.
+func (m *ManifestOperations) newActionResultForError(err error) (*controller.ActionResult, error) {
+	updatedStatus, _ := json.Marshal(m.status)
+
+	// Check if this error should be retried
+	if isRetryable(err) {
+		return &controller.ActionResult{UpdatedStatus: updatedStatus}, err
 	}
 
-	// Permanent error - don't retry
-	return &controller.OperationResult{
-		UpdatedStatus:  m.marshalStatus(ctx),
-		Success:        false,
-		OperationError: err,
-	}, nil
+	// Permanent error
+	return m.actionFailureResult(err)
 }
 
-// pendingResult creates an OperationResult for operations still in progress.
-// Returns the result and nil error, matching the ComponentOperations method signatures.
-func (m *ManifestOperations) pendingResult(ctx context.Context) (*controller.OperationResult, error) {
-	return &controller.OperationResult{
-		UpdatedStatus: m.marshalStatus(ctx),
-		Success:       false,
-	}, nil
-}
+// newCheckResultForError creates a standardized error response for manifest check operations.
+// Uses Kubernetes apierrors classification to distinguish retryable errors (network, timeouts, rate limiting)
+// from permanent errors (validation, auth). Returns CheckResult with error for retryable issues.
+func (m *ManifestOperations) newCheckResultForError(err error) (*controller.CheckResult, error) {
+	updatedStatus, _ := json.Marshal(m.status)
 
-// marshalStatus marshals the handler status and logs any errors.
-// Returns the marshaled status or nil if marshaling fails.
-func (m *ManifestOperations) marshalStatus(ctx context.Context) json.RawMessage {
-	updatedStatus, err := json.Marshal(m.status)
-	if err != nil {
-		// This should never happen with our simple status struct, but log it if it does
-		logf.FromContext(ctx).Error(err, "Failed to marshal handler status")
-		return nil
+	// Check if this error should be retried
+	if isRetryable(err) {
+		return &controller.CheckResult{UpdatedStatus: updatedStatus}, err
 	}
-	return updatedStatus
+
+	// Permanent error
+	return m.checkFailureResult(err)
 }
 
-// isTransientError determines if a Kubernetes API error is transient and should be retried.
+// isRetryable determines if a Kubernetes API error is retryable.
 // Uses apierrors classification similar to how RDS handler uses AWS SDK retry classification.
 //
-// Transient errors include network issues, timeouts, rate limiting, and temporary server problems.
+// Retryable errors include network issues, timeouts, rate limiting, and temporary server problems.
 // Permanent errors include validation failures, authorization issues, and malformed requests.
-func isTransientError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// Transient errors that should be retried:
-
-	// Network and timeout errors - temporary connectivity issues
-	if apierrors.IsTimeout(err) || apierrors.IsServerTimeout(err) {
-		return true
-	}
-
-	// Rate limiting - server is overloaded but request is valid
-	if apierrors.IsTooManyRequests(err) {
-		return true
-	}
-
-	// Server errors - temporary server issues
-	if apierrors.IsServiceUnavailable(err) || apierrors.IsInternalError(err) {
-		return true
-	}
-
-	// Optimistic concurrency conflicts - safe to retry with fresh data
-	if apierrors.IsConflict(err) {
-		return true
-	}
-
-	// Resource version expired - need to refetch and retry
-	if apierrors.IsResourceExpired(err) {
-		return true
-	}
-
-	// All other errors are considered permanent:
-	// - IsInvalid() - 422 validation error (bad manifest YAML - won't fix itself)
-	// - IsBadRequest() - 400 bad request format (malformed request - won't fix itself)
-	// - IsForbidden() - 403 authorization denied (RBAC issue - need role/binding)
-	// - IsUnauthorized() - 401 authentication failed (need credentials)
-	// - IsMethodNotSupported() - 405 operation not supported (API limitation)
-	// - IsNotFound() - 404 resource type doesn't exist (need CRD installation)
-	// - IsAlreadyExists() - 409 resource already exists (different from conflict)
-
-	return false
+func isRetryable(err error) bool {
+	return apierrors.IsTimeout(err) ||
+		apierrors.IsServerTimeout(err) ||
+		apierrors.IsTooManyRequests(err) ||
+		apierrors.IsServiceUnavailable(err) ||
+		apierrors.IsInternalError(err) ||
+		apierrors.IsConflict(err) ||
+		apierrors.IsResourceExpired(err)
 }

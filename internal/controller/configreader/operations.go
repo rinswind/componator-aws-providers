@@ -11,7 +11,6 @@ import (
 	"github.com/rinswind/deployment-operator/componentkit/controller"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // ConfigReaderOperationsFactory implements the ComponentOperationsFactory interface for config-reader components.
@@ -58,86 +57,58 @@ type ConfigReaderOperations struct {
 	apiReader client.Reader
 }
 
-// successResult creates an OperationResult for successful operations.
-// Returns the result and nil error, matching the ComponentOperations method signatures.
-func (o *ConfigReaderOperations) successResult() (*controller.OperationResult, error) {
+// actionSuccessResult creates an ActionResult for successful Deploy/Delete operations
+func (o *ConfigReaderOperations) actionSuccessResult() (*controller.ActionResult, error) {
 	updatedStatus, _ := json.Marshal(o.status)
-	return &controller.OperationResult{
+	return &controller.ActionResult{
 		UpdatedStatus: updatedStatus,
-		Success:       true,
 	}, nil
 }
 
-// errorResult creates a standardized error response for ConfigReader operations.
-// Uses Kubernetes apierrors classification to distinguish transient errors (network, timeouts,
+// actionFailureResult creates an ActionResult for permanent failures in Deploy operations
+func (o *ConfigReaderOperations) actionFailureResult(err error) (*controller.ActionResult, error) {
+	updatedStatus, _ := json.Marshal(o.status)
+	return &controller.ActionResult{
+		UpdatedStatus:    updatedStatus,
+		PermanentFailure: err,
+	}, nil
+}
+
+// newActionResultForError creates a standardized error response for ConfigReader action operations.
+// Uses Kubernetes apierrors classification to distinguish retryable errors (network, timeouts,
 // rate limiting) from permanent errors (missing ConfigMap, RBAC issues, key not found).
-func (o *ConfigReaderOperations) errorResult(ctx context.Context, err error) (*controller.OperationResult, error) {
-	log := logf.FromContext(ctx)
-
-	log.Error(err, "ConfigReader operation failed")
-
+func (o *ConfigReaderOperations) newActionResultForError(err error) (*controller.ActionResult, error) {
 	updatedStatus, _ := json.Marshal(o.status)
 
-	// Check if this is a transient error that should be retried
-	if isTransientError(err) {
-		// Transient Kubernetes API error - return error to trigger retry
-		return &controller.OperationResult{
-			UpdatedStatus: updatedStatus,
-			Success:       false,
-		}, err
+	// Check if this error should be retried
+	if isRetryable(err) {
+		return &controller.ActionResult{UpdatedStatus: updatedStatus}, err
 	}
 
 	// Permanent error - missing ConfigMap, RBAC issue, or key not found
-	return &controller.OperationResult{
-		UpdatedStatus:  updatedStatus,
-		Success:        false,
-		OperationError: err,
+	return o.actionFailureResult(err)
+}
+
+// checkCompleteResult creates a CheckResult for completed check operations
+func (o *ConfigReaderOperations) checkCompleteResult() (*controller.CheckResult, error) {
+	updatedStatus, _ := json.Marshal(o.status)
+	return &controller.CheckResult{
+		UpdatedStatus: updatedStatus,
+		Complete:      true,
 	}, nil
 }
 
-// isTransientError determines if a Kubernetes API error is transient and should be retried.
-// Uses apierrors classification to handle ConfigMap access errors appropriately.
+// isRetryable determines if a Kubernetes API error is retryable.
+// Uses apierrors classification similar to how RDS handler uses AWS SDK retry classification.
 //
-// Transient errors include network issues, timeouts, rate limiting, and temporary server problems.
-// Permanent errors include validation failures, authorization issues, and missing resources.
-func isTransientError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// Transient errors that should be retried:
-
-	// Network and timeout errors - temporary connectivity issues
-	if apierrors.IsTimeout(err) || apierrors.IsServerTimeout(err) {
-		return true
-	}
-
-	// Rate limiting - server is overloaded but request is valid
-	if apierrors.IsTooManyRequests(err) {
-		return true
-	}
-
-	// Server errors - temporary server issues
-	if apierrors.IsServiceUnavailable(err) || apierrors.IsInternalError(err) {
-		return true
-	}
-
-	// Optimistic concurrency conflicts - safe to retry with fresh data
-	if apierrors.IsConflict(err) {
-		return true
-	}
-
-	// Resource version expired - need to refetch and retry
-	if apierrors.IsResourceExpired(err) {
-		return true
-	}
-
-	// All other errors are considered permanent:
-	// - IsNotFound() - ConfigMap doesn't exist (need user to create it)
-	// - IsForbidden() - RBAC issue (need role/binding)
-	// - IsUnauthorized() - authentication failed (need credentials)
-	// - IsBadRequest() - malformed request (won't fix itself)
-	// - Custom "key not found" errors - configuration problem
-
-	return false
+// Retryable errors include network issues, timeouts, rate limiting, and temporary server problems.
+// Permanent errors include validation failures, authorization issues, and malformed requests.
+func isRetryable(err error) bool {
+	return apierrors.IsTimeout(err) ||
+		apierrors.IsServerTimeout(err) ||
+		apierrors.IsTooManyRequests(err) ||
+		apierrors.IsServiceUnavailable(err) ||
+		apierrors.IsInternalError(err) ||
+		apierrors.IsConflict(err) ||
+		apierrors.IsResourceExpired(err)
 }

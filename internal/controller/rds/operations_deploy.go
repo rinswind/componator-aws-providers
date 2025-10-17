@@ -14,7 +14,7 @@ import (
 
 // Deploy handles all RDS-specific deployment operations using pre-parsed configuration
 // Implements ComponentOperations.Deploy interface method.
-func (r *RdsOperations) Deploy(ctx context.Context) (*controller.OperationResult, error) {
+func (r *RdsOperations) Deploy(ctx context.Context) (*controller.ActionResult, error) {
 	instanceID := r.config.InstanceID
 
 	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)
@@ -24,7 +24,9 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*controller.OperationResult
 	// Check if the instance exists
 	instance, err := r.getInstanceData(ctx, instanceID)
 	if err != nil {
-		return r.errorResult(ctx, "failed to check RDS instance existence", err)
+		checkErr := fmt.Errorf("failed to check RDS instance existence: %w", err)
+		log.Error(checkErr, "Failed to check if RDS instance exists")
+		return r.newActionResultForError(checkErr)
 	}
 
 	if instance == nil {
@@ -38,7 +40,7 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*controller.OperationResult
 
 // CheckDeployment verifies the current deployment status using pre-parsed configuration
 // Implements ComponentOperations.CheckDeployment interface method.
-func (r *RdsOperations) CheckDeployment(ctx context.Context) (*controller.OperationResult, error) {
+func (r *RdsOperations) CheckDeployment(ctx context.Context) (*controller.CheckResult, error) {
 	instanceID := r.config.InstanceID
 
 	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)
@@ -48,12 +50,15 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context) (*controller.Operat
 	// Query RDS instance status
 	instance, err := r.getInstanceData(ctx, instanceID)
 	if err != nil {
-		return r.errorResult(ctx, "failed to describe RDS instance", err)
+		describeErr := fmt.Errorf("failed to describe RDS instance: %w", err)
+		log.Error(describeErr, "Failed to check RDS instance status")
+		return r.newCheckResultForError(describeErr)
 	}
 
 	if instance == nil {
 		notFoundErr := fmt.Errorf("RDS instance %s not found during deployment check", instanceID)
-		return r.errorResult(ctx, "instance not found", notFoundErr)
+		log.Error(notFoundErr, "RDS instance not found")
+		return r.checkFailureResult(notFoundErr)
 	}
 
 	// Update status with current instance information
@@ -68,27 +73,28 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context) (*controller.Operat
 			"endpoint", r.status.Endpoint,
 			"port", r.status.Port)
 
-		return r.successResult()
+		return r.checkCompleteResult()
 
 	case "creating", "backing-up", "modifying":
 		// Still in progress
 		log.Info("RDS instance deployment in progress")
-		return r.pendingResult()
+		return r.checkInProgressResult()
 
 	case "failed", "incompatible-restore", "incompatible-network":
 		// Failed states
 		failureErr := fmt.Errorf("RDS instance deployment failed with status: %s", r.status.InstanceStatus)
-		return r.errorResult(ctx, "deployment failed", failureErr)
+		log.Error(failureErr, "RDS instance deployment failed")
+		return r.checkFailureResult(failureErr)
 
 	default:
 		// Unknown status - log and continue checking
 		log.Info("RDS instance in unknown status, continuing to monitor")
-		return r.pendingResult()
+		return r.checkInProgressResult()
 	}
 }
 
 // createInstance handles RDS instance creation using pre-parsed configuration
-func (r *RdsOperations) createInstance(ctx context.Context) (*controller.OperationResult, error) {
+func (r *RdsOperations) createInstance(ctx context.Context) (*controller.ActionResult, error) {
 	config := r.config
 	instanceID := config.InstanceID
 
@@ -143,7 +149,9 @@ func (r *RdsOperations) createInstance(ctx context.Context) (*controller.Operati
 
 	result, err := r.rdsClient.CreateDBInstance(ctx, createInput)
 	if err != nil {
-		return r.errorResult(ctx, "failed to create RDS instance", err)
+		createErr := fmt.Errorf("failed to create RDS instance: %w", err)
+		log.Error(createErr, "Failed to create RDS instance")
+		return r.newActionResultForError(createErr)
 	}
 
 	// Update status with deployment information
@@ -151,11 +159,11 @@ func (r *RdsOperations) createInstance(ctx context.Context) (*controller.Operati
 
 	log.Info("RDS instance creation initiated successfully", "status", r.status.InstanceStatus)
 
-	return r.pendingResult() // Still creating, need to check status
+	return r.actionSuccessResult()
 }
 
 // modifyInstance handles RDS instance modification using pre-parsed configuration
-func (r *RdsOperations) modifyInstance(ctx context.Context) (*controller.OperationResult, error) {
+func (r *RdsOperations) modifyInstance(ctx context.Context) (*controller.ActionResult, error) {
 	config := r.config
 	instanceID := r.config.InstanceID
 
@@ -182,7 +190,9 @@ func (r *RdsOperations) modifyInstance(ctx context.Context) (*controller.Operati
 
 	result, err := r.rdsClient.ModifyDBInstance(ctx, input)
 	if err != nil {
-		return r.errorResult(ctx, "failed to modify RDS instance", err)
+		modifyErr := fmt.Errorf("failed to modify RDS instance: %w", err)
+		log.Error(modifyErr, "Failed to modify RDS instance")
+		return r.newActionResultForError(modifyErr)
 	}
 
 	// Update status with modification information
@@ -190,5 +200,5 @@ func (r *RdsOperations) modifyInstance(ctx context.Context) (*controller.Operati
 
 	log.Info("RDS instance modification initiated successfully", "status", r.status.InstanceStatus)
 
-	return r.pendingResult() // Still modifying, need to check status
+	return r.actionSuccessResult()
 }

@@ -19,7 +19,7 @@ const (
 )
 
 // Deploy initiates the deployment by applying all manifests to the cluster.
-func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.OperationResult, error) {
+func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.ActionResult, error) {
 	log := logf.FromContext(ctx).WithValues("manifestCount", len(m.config.Manifests))
 	log.Info("Deploying manifests")
 
@@ -46,7 +46,7 @@ func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.OperationR
 		if err != nil {
 			// REST mapper resolution failure - treat as permanent error
 			log.Error(err, "Failed to resolve resource")
-			return m.errorResult(ctx, err)
+			return m.actionFailureResult(err)
 		}
 
 		// Apply using server-side apply
@@ -54,7 +54,7 @@ func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.OperationR
 		_, err = resourceClient.Apply(ctx, obj.GetName(), obj, applyOptions(fieldManager))
 		if err != nil {
 			// Kubernetes API I/O error - return for retry
-			return nil, fmt.Errorf("failed to apply manifest %s %s/%s: %w", gvk.String(), obj.GetNamespace(), obj.GetName(), err)
+			return m.newActionResultForError(fmt.Errorf("failed to apply manifest %s %s/%s: %w", gvk.String(), obj.GetNamespace(), obj.GetName(), err))
 		}
 
 		// Record applied resource reference
@@ -71,18 +71,18 @@ func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.OperationR
 	log.Info("All manifests applied successfully", "appliedCount", len(m.status.AppliedResources))
 
 	// Return pending - need to check status separately
-	return m.pendingResult(ctx)
+	return m.actionSuccessResult()
 }
 
 // CheckDeployment verifies the readiness of all applied resources using kstatus.
-func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.OperationResult, error) {
+func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.CheckResult, error) {
 	log := logf.FromContext(ctx).WithValues("appliedCount", len(m.status.AppliedResources))
 	log.V(1).Info("Checking deployment status")
 
 	// If no resources were applied, consider it ready (edge case)
 	if len(m.status.AppliedResources) == 0 {
 		log.Info("No applied resources to check, considering ready")
-		return m.successResult(ctx)
+		return m.checkCompleteResult()
 	}
 
 	// Check status of each applied resource
@@ -101,14 +101,14 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.O
 		if err != nil {
 			// REST mapper resolution failure - treat as permanent error
 			log.Error(err, "Failed to resolve resource")
-			return m.errorResult(ctx, err)
+			return m.checkFailureResult(err)
 		}
 
 		// Get current resource from API server
 		obj, err := resourceClient.Get(ctx, ref.Name, getOptions())
 		if err != nil {
 			// Kubernetes API I/O error - return for retry
-			return nil, fmt.Errorf("failed to get resource %s %s/%s: %w", ref.Kind, ref.Namespace, ref.Name, err)
+			return m.newCheckResultForError(fmt.Errorf("failed to get resource %s %s/%s: %w", ref.Kind, ref.Namespace, ref.Name, err))
 		}
 
 		// Compute status using kstatus
@@ -138,19 +138,19 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.O
 			// Resource has failed
 			err := resourceErrorf(ref, "failed: %s", statusResult.Message)
 			log.Error(err, "Resource failed")
-			return m.errorResult(ctx, err)
+			return m.checkFailureResult(err)
 
 		case status.TerminatingStatus:
 			// Resource is being deleted (unexpected during deployment)
 			err := resourceErrorf(ref, "is terminating")
 			log.Error(err, "Resource terminating")
-			return m.errorResult(ctx, err)
+			return m.checkFailureResult(err)
 
 		case status.NotFoundStatus:
 			// Resource disappeared
 			err := resourceErrorf(ref, "not found")
 			log.Error(err, "Resource disappeared")
-			return m.errorResult(ctx, err)
+			return m.checkFailureResult(err)
 
 		default:
 			// Unknown status
@@ -161,9 +161,9 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.O
 
 	if allReady {
 		log.Info("All resources are ready")
-		return m.successResult(ctx)
+		return m.checkCompleteResult()
 	}
 
 	log.Info("Some resources not ready yet")
-	return m.pendingResult(ctx)
+	return m.checkInProgressResult()
 }

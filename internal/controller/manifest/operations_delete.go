@@ -12,14 +12,14 @@ import (
 )
 
 // Delete initiates cleanup by deleting all applied resources in reverse order.
-func (m *ManifestOperations) Delete(ctx context.Context) (*controller.OperationResult, error) {
+func (m *ManifestOperations) Delete(ctx context.Context) (*controller.ActionResult, error) {
 	log := logf.FromContext(ctx).WithValues("appliedCount", len(m.status.AppliedResources))
 	log.Info("Deleting manifests")
 
 	// If no resources were applied, consider it complete
 	if len(m.status.AppliedResources) == 0 {
 		log.Info("No applied resources to delete")
-		return m.successResult(ctx)
+		return m.actionSuccessResult()
 	}
 
 	// Delete resources in reverse order (helps with dependencies)
@@ -60,20 +60,20 @@ func (m *ManifestOperations) Delete(ctx context.Context) (*controller.OperationR
 
 	// Return success immediately - deletion is complete
 	// (Kubernetes handles finalizers and cascading deletion)
-	return m.successResult(ctx)
+	return m.actionSuccessResult()
 }
 
 // CheckDeletion verifies that all resources have been deleted.
 // Since we use foreground deletion and don't set finalizers on applied resources,
 // this should complete immediately after Delete() returns.
-func (m *ManifestOperations) CheckDeletion(ctx context.Context) (*controller.OperationResult, error) {
+func (m *ManifestOperations) CheckDeletion(ctx context.Context) (*controller.CheckResult, error) {
 	log := logf.FromContext(ctx).WithValues("appliedCount", len(m.status.AppliedResources))
 	log.V(1).Info("Checking deletion status")
 
 	// If no resources were applied, consider it complete
 	if len(m.status.AppliedResources) == 0 {
 		log.Info("No applied resources, deletion complete")
-		return m.successResult(ctx)
+		return m.checkCompleteResult()
 	}
 
 	// Check if any resources still exist
@@ -114,9 +114,9 @@ func (m *ManifestOperations) CheckDeletion(ctx context.Context) (*controller.Ope
 
 	if anyExist {
 		log.Info("Some resources still exist, waiting for deletion")
-		return m.pendingResult(ctx)
+		return m.checkInProgressResult()
 	}
 
 	log.Info("All resources deleted")
-	return m.successResult(ctx)
+	return m.checkCompleteResult()
 }
