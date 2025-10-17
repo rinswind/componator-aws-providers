@@ -32,9 +32,6 @@ type IamPolicyConfig struct {
 
 	// Tags are optional key-value pairs to tag the IAM policy
 	Tags map[string]string `json:"tags,omitempty"`
-
-	// Region is the AWS region for IAM operations (IAM is global but API endpoints are regional)
-	Region string `json:"region,omitempty"`
 }
 
 // IamPolicyStatus contains handler-specific status data for IAM policy deployments.
@@ -83,7 +80,6 @@ func resolveIamPolicyConfig(ctx context.Context, rawConfig json.RawMessage) (*Ia
 	log.V(1).Info("Resolved iam-policy config",
 		"policyName", config.PolicyName,
 		"path", config.Path,
-		"region", config.Region,
 		"hasDescription", config.Description != "",
 		"tagCount", len(config.Tags))
 
@@ -110,11 +106,6 @@ func applyIamPolicyConfigDefaults(config *IamPolicyConfig) error {
 	// Default path to root if not specified
 	if config.Path == "" {
 		config.Path = "/"
-	}
-
-	// Default region to us-east-1 (IAM is global but uses regional endpoints)
-	if config.Region == "" {
-		config.Region = "us-east-1"
 	}
 
 	return nil

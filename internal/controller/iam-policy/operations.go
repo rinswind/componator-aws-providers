@@ -6,13 +6,14 @@ package iampolicy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/rinswind/deployment-operator/componentkit/controller"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -39,7 +40,9 @@ type IamPolicyOperationsFactory struct{}
 //
 // The returned IamPolicyOperations instance maintains the parsed configuration and status and can be used
 // throughout the reconciliation loop without re-parsing the same configuration multiple times.
-func (f *IamPolicyOperationsFactory) NewOperations(ctx context.Context, config json.RawMessage, currentStatus json.RawMessage) (controller.ComponentOperations, error) {
+func (f *IamPolicyOperationsFactory) NewOperations(
+	ctx context.Context, config json.RawMessage, currentStatus json.RawMessage) (controller.ComponentOperations, error) {
+
 	log := logf.FromContext(ctx)
 
 	// Parse configuration once for this reconciliation loop
@@ -54,21 +57,19 @@ func (f *IamPolicyOperationsFactory) NewOperations(ctx context.Context, config j
 		return nil, fmt.Errorf("failed to parse iam-policy status: %w", err)
 	}
 
-	// Initialize AWS configuration for the specified region
+	// Initialize AWS configuration using default config chain
 	// Disable AWS SDK retries since we handle retries via controller requeue
 	awsConfig, err := awsconfig.LoadDefaultConfig(ctx,
-		awsconfig.WithRegion(iamConfig.Region),
 		awsconfig.WithRetryMaxAttempts(1), // Disable retries - controller handles requeue
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS configuration for region %s: %w", iamConfig.Region, err)
+		return nil, fmt.Errorf("failed to load AWS configuration: %w", err)
 	}
 
-	// Create IAM client with the configured region
+	// Create IAM client (IAM is global, uses region from config chain)
 	iamClient := iam.NewFromConfig(awsConfig)
 
 	log.V(1).Info("Created IAM policy operations with AWS client",
-		"region", iamConfig.Region,
 		"policyName", iamConfig.PolicyName,
 		"path", iamConfig.Path)
 
@@ -104,37 +105,24 @@ func NewIamPolicyOperationsFactory() *IamPolicyOperationsFactory {
 	return &IamPolicyOperationsFactory{}
 }
 
-// NewIamPolicyOperationsConfig creates a ComponentReconcilerConfig for IAM policy with appropriate settings
-func NewIamPolicyOperationsConfig() controller.ComponentReconcilerConfig {
-	config := controller.DefaultComponentReconcilerConfig(HandlerName)
-
-	// IAM operations are typically fast but may have API throttling
-	// Adjust timeouts appropriately
-	config.DefaultRequeue = 15 * time.Second     // IAM operations are generally fast
-	config.StatusCheckRequeue = 10 * time.Second // Check policy status frequently
-	config.ErrorRequeue = 30 * time.Second       // Give more time for transient errors like throttling
-
-	return config
-}
-
-// Deploy implements the deployment operation - stub for Phase 1
-func (op *IamPolicyOperations) Deploy(ctx context.Context) (*controller.ActionResult, error) {
-	return controller.ActionFailure(op.status, fmt.Errorf("not implemented"))
-}
-
-// CheckDeployment checks if deployment is complete and ready - stub for Phase 1
-func (op *IamPolicyOperations) CheckDeployment(ctx context.Context) (*controller.CheckResult, error) {
-	return controller.CheckFailure(op.status, fmt.Errorf("not implemented"))
-}
-
-// Delete implements deletion operations - stub for Phase 1
+// Delete implements deletion operations - stub for Phase 3
 func (op *IamPolicyOperations) Delete(ctx context.Context) (*controller.ActionResult, error) {
-	return controller.ActionFailure(op.status, fmt.Errorf("not implemented"))
+	return controller.ActionResultForError(op.status, fmt.Errorf("not implemented"), iamErrorClassifier)
 }
 
-// CheckDeletion verifies deletion is complete - stub for Phase 1
+// CheckDeletion verifies deletion is complete - stub for Phase 3
 func (op *IamPolicyOperations) CheckDeletion(ctx context.Context) (*controller.CheckResult, error) {
-	return controller.CheckFailure(op.status, fmt.Errorf("not implemented"))
+	return controller.CheckResultForError(op.status, fmt.Errorf("not implemented"), iamErrorClassifier)
+}
+
+// isNotFoundError checks if error indicates policy not found
+func isNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Check for IAM NoSuchEntity error
+	var notFoundErr *types.NoSuchEntityException
+	return errors.As(err, &notFoundErr)
 }
 
 // isRetryable determines if an error is retryable.
