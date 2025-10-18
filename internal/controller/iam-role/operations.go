@@ -122,6 +122,55 @@ func (op *IamRoleOperations) getRoleByName(ctx context.Context) (*types.Role, er
 	return nil, fmt.Errorf("failed to get role: %w", err)
 }
 
+// listAttachedPolicies retrieves all managed policies currently attached to the role
+func (op *IamRoleOperations) listAttachedPolicies(ctx context.Context) ([]string, error) {
+	input := &iam.ListAttachedRolePoliciesInput{
+		RoleName: aws.String(op.config.RoleName),
+	}
+
+	output, err := op.iamClient.ListAttachedRolePolicies(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list attached policies: %w", err)
+	}
+
+	arns := make([]string, 0, len(output.AttachedPolicies))
+	for i := range output.AttachedPolicies {
+		arns = append(arns, aws.ToString(output.AttachedPolicies[i].PolicyArn))
+	}
+
+	return arns, nil
+}
+
+// attachPolicy attaches a managed policy to the role
+func (op *IamRoleOperations) attachPolicy(ctx context.Context, policyArn string) error {
+	input := &iam.AttachRolePolicyInput{
+		RoleName:  aws.String(op.config.RoleName),
+		PolicyArn: aws.String(policyArn),
+	}
+
+	_, err := op.iamClient.AttachRolePolicy(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to attach policy: %w", err)
+	}
+
+	return nil
+}
+
+// detachPolicy detaches a managed policy from the role
+func (op *IamRoleOperations) detachPolicy(ctx context.Context, policyArn string) error {
+	input := &iam.DetachRolePolicyInput{
+		RoleName:  aws.String(op.config.RoleName),
+		PolicyArn: aws.String(policyArn),
+	}
+
+	_, err := op.iamClient.DetachRolePolicy(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to detach policy: %w", err)
+	}
+
+	return nil
+}
+
 // isNotFoundError checks if error indicates role not found
 func isNotFoundError(err error) bool {
 	if err == nil {

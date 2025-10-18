@@ -230,25 +230,6 @@ func (op *IamRoleOperations) updateTrustPolicy(ctx context.Context) error {
 	return nil
 }
 
-// listAttachedPolicies retrieves all managed policies currently attached to the role
-func (op *IamRoleOperations) listAttachedPolicies(ctx context.Context) ([]string, error) {
-	input := &iam.ListAttachedRolePoliciesInput{
-		RoleName: aws.String(op.config.RoleName),
-	}
-
-	output, err := op.iamClient.ListAttachedRolePolicies(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list attached policies: %w", err)
-	}
-
-	arns := make([]string, 0, len(output.AttachedPolicies))
-	for i := range output.AttachedPolicies {
-		arns = append(arns, aws.ToString(output.AttachedPolicies[i].PolicyArn))
-	}
-
-	return arns, nil
-}
-
 // reconcilePolicyAttachments ensures the role has exactly the desired managed policies attached.
 // Returns the actual list of attached policies after reconciliation (which may be partial on failure).
 // This allows status to reflect reality even when reconciliation fails partway through.
@@ -321,34 +302,4 @@ func (op *IamRoleOperations) reconcilePolicyAttachments(ctx context.Context) ([]
 	log.Info("Policy attachments reconciled", "attached", len(toAttach), "detached", len(toDetach))
 
 	return slices.Sorted(maps.Keys(actuallyAttached)), nil
-}
-
-// attachPolicy attaches a managed policy to the role
-func (op *IamRoleOperations) attachPolicy(ctx context.Context, policyArn string) error {
-	input := &iam.AttachRolePolicyInput{
-		RoleName:  aws.String(op.config.RoleName),
-		PolicyArn: aws.String(policyArn),
-	}
-
-	_, err := op.iamClient.AttachRolePolicy(ctx, input)
-	if err != nil {
-		return fmt.Errorf("failed to attach policy: %w", err)
-	}
-
-	return nil
-}
-
-// detachPolicy detaches a managed policy from the role
-func (op *IamRoleOperations) detachPolicy(ctx context.Context, policyArn string) error {
-	input := &iam.DetachRolePolicyInput{
-		RoleName:  aws.String(op.config.RoleName),
-		PolicyArn: aws.String(policyArn),
-	}
-
-	_, err := op.iamClient.DetachRolePolicy(ctx, input)
-	if err != nil {
-		return fmt.Errorf("failed to detach policy: %w", err)
-	}
-
-	return nil
 }
