@@ -45,7 +45,13 @@ func (op *IamPolicyOperations) Delete(ctx context.Context) (*controller.ActionRe
 	}
 
 	// Delete the policy itself
-	return op.deletePolicy(ctx)
+	if err := op.deletePolicy(ctx, op.status.PolicyArn); err != nil {
+		return controller.ActionResultForError(
+			op.status, fmt.Errorf("failed to delete policy: %w", err), iamErrorClassifier)
+	}
+
+	log.Info("Successfully initiated policy deletion", "policyArn", op.status.PolicyArn)
+	return controller.ActionSuccess(op.status)
 }
 
 // CheckDeletion verifies deletion is complete
@@ -75,29 +81,27 @@ func (op *IamPolicyOperations) CheckDeletion(ctx context.Context) (*controller.C
 	return controller.CheckComplete(op.status)
 }
 
-func (op *IamPolicyOperations) deletePolicy(ctx context.Context) (*controller.ActionResult, error) {
-	log := logf.FromContext(ctx).WithValues("policyName", op.config.PolicyName)
+// deletePolicy deletes an IAM policy by ARN
+func (op *IamPolicyOperations) deletePolicy(ctx context.Context, policyArn string) error {
+	log := logf.FromContext(ctx).WithValues("policyArn", policyArn)
 
 	deleteInput := &iam.DeletePolicyInput{
-		PolicyArn: aws.String(op.status.PolicyArn),
+		PolicyArn: aws.String(policyArn),
 	}
 
 	_, err := op.iamClient.DeletePolicy(ctx, deleteInput)
 	if err == nil {
-		log.Info("Successfully deleted IAM policy", "policyArn", op.status.PolicyArn)
-		return controller.ActionSuccess(op.status)
+		log.Info("Successfully deleted IAM policy", "policyArn", policyArn)
+		return nil
 	}
 
 	// If policy not found, deletion already complete
 	if isNotFoundError(err) {
-		log.Info("Policy not found during deletion, already deleted", "policyArn", op.status.PolicyArn)
-		return controller.ActionSuccess(op.status)
+		log.Info("Policy not found during deletion, already deleted", "policyArn", policyArn)
+		return nil
 	}
 
-	return controller.ActionResultForError(
-		op.status,
-		fmt.Errorf("failed to delete policy: %w", err),
-		iamErrorClassifier)
+	return fmt.Errorf("failed to delete policy: %w", err)
 }
 
 // deletePolicyAllVersions deletes all non-default versions of a policy

@@ -103,13 +103,13 @@ func NewIamPolicyOperationsFactory() *IamPolicyOperationsFactory {
 }
 
 // getPolicyByName retrieves policy by name (searches by path and name)
-func (op *IamPolicyOperations) getPolicyByName(ctx context.Context) (*types.Policy, error) {
+func (op *IamPolicyOperations) getPolicyByName(ctx context.Context, policyName, path string) (*types.Policy, error) {
 	// Construct expected ARN from account and policy name
 	// We need to get the policy using GetPolicy with constructed ARN
 	// First, try to list policies to find a match
 	input := &iam.ListPoliciesInput{
 		Scope:      types.PolicyScopeTypeLocal,
-		PathPrefix: aws.String(op.config.Path),
+		PathPrefix: aws.String(path),
 	}
 
 	output, err := op.iamClient.ListPolicies(ctx, input)
@@ -120,7 +120,7 @@ func (op *IamPolicyOperations) getPolicyByName(ctx context.Context) (*types.Poli
 	// Find policy with matching name
 	for i := range output.Policies {
 		policy := &output.Policies[i]
-		if aws.ToString(policy.PolicyName) == op.config.PolicyName {
+		if aws.ToString(policy.PolicyName) == policyName {
 			return policy, nil
 		}
 	}

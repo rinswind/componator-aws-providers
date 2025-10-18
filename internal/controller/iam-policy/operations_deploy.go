@@ -27,7 +27,7 @@ func (op *IamPolicyOperations) Deploy(ctx context.Context) (*controller.ActionRe
 	log.Info("Starting IAM policy deployment")
 
 	// Check if policy already exists
-	existingPolicy, err := op.getPolicyByName(ctx)
+	existingPolicy, err := op.getPolicyByName(ctx, op.config.PolicyName, op.config.Path)
 	if err != nil {
 		return controller.ActionResultForError(
 			op.status, fmt.Errorf("failed to check if policy exists: %w", err), iamErrorClassifier)
@@ -35,17 +35,45 @@ func (op *IamPolicyOperations) Deploy(ctx context.Context) (*controller.ActionRe
 
 	if existingPolicy == nil {
 		// Policy doesn't exist - create it
-		return op.createPolicy(ctx)
+		policy, err := op.createPolicy(ctx,
+			op.config.PolicyName,
+			op.config.PolicyDocument,
+			op.config.Path,
+			op.config.Description,
+			op.config.Tags)
+		if err != nil {
+			return controller.ActionResultForError(
+				op.status, fmt.Errorf("failed to create policy: %w", err), iamErrorClassifier)
+		}
+
+		// Update status with created policy info
+		op.status.PolicyArn = aws.ToString(policy.Arn)
+		op.status.PolicyId = aws.ToString(policy.PolicyId)
+		op.status.PolicyName = aws.ToString(policy.PolicyName)
+		op.status.CurrentVersionId = aws.ToString(policy.DefaultVersionId)
+
+		log.Info("Successfully deployed new policy", "policyArn", op.status.PolicyArn)
+		return controller.ActionSuccess(op.status)
 	}
 
-	// Policy exists - update status and create new version
+	// Policy exists - update status and create new version if needed
 	op.status.PolicyArn = aws.ToString(existingPolicy.Arn)
 	op.status.PolicyId = aws.ToString(existingPolicy.PolicyId)
 	op.status.PolicyName = aws.ToString(existingPolicy.PolicyName)
 
-	log.Info("Policy already exists, will update via versioning", "policyArn", op.status.PolicyArn)
+	log.Info("Policy already exists, checking for updates", "policyArn", op.status.PolicyArn)
 
-	return op.createPolicyVersion(ctx, op.status.PolicyArn)
+	versionId, err := op.createPolicyVersion(ctx, op.status.PolicyArn, op.config.PolicyDocument)
+	if err != nil {
+		return controller.ActionResultForError(
+			op.status, fmt.Errorf("failed to update policy version: %w", err), iamErrorClassifier)
+	}
+
+	// Update status with current version
+	op.status.CurrentVersionId = versionId
+
+	log.Info("Successfully reconciled policy", "policyArn", op.status.PolicyArn, "versionId", versionId)
+	return controller.ActionSuccess(op.status)
 }
 
 // CheckDeployment verifies policy exists and is ready
@@ -81,47 +109,39 @@ func (op *IamPolicyOperations) CheckDeployment(ctx context.Context) (*controller
 	return controller.CheckComplete(op.status)
 }
 
-// createPolicy creates a new IAM policy
-func (op *IamPolicyOperations) createPolicy(ctx context.Context) (*controller.ActionResult, error) {
-	log := logf.FromContext(ctx).WithValues("policyName", op.config.PolicyName)
+// createPolicy creates a new IAM policy and returns the created policy
+func (op *IamPolicyOperations) createPolicy(
+	ctx context.Context, policyName, policyDocument, path, description string, tags map[string]string) (*types.Policy, error) {
+
+	log := logf.FromContext(ctx).WithValues("policyName", policyName)
 
 	log.Info("Creating new IAM policy")
 
 	input := &iam.CreatePolicyInput{
-		PolicyName:     aws.String(op.config.PolicyName),
-		PolicyDocument: aws.String(op.config.PolicyDocument),
-		Path:           aws.String(op.config.Path),
-	}
-
-	if op.config.Description != "" {
-		input.Description = aws.String(op.config.Description)
-	}
-
-	if len(op.config.Tags) > 0 {
-		input.Tags = toIAMTags(op.config.Tags)
+		PolicyName:     aws.String(policyName),
+		PolicyDocument: aws.String(policyDocument),
+		Path:           aws.String(path),
+		Description:    aws.String(description),
+		Tags:           toIAMTags(tags),
 	}
 
 	output, err := op.iamClient.CreatePolicy(ctx, input)
 	if err != nil {
-		return controller.ActionResultForError(op.status,
-			fmt.Errorf("failed to create policy: %w", err), iamErrorClassifier)
+		return nil, fmt.Errorf("failed to create policy: %w", err)
 	}
 
-	// Update status with created policy info
-	op.status.PolicyArn = aws.ToString(output.Policy.Arn)
-	op.status.PolicyId = aws.ToString(output.Policy.PolicyId)
-	op.status.PolicyName = aws.ToString(output.Policy.PolicyName)
-	op.status.CurrentVersionId = aws.ToString(output.Policy.DefaultVersionId)
-
 	log.Info("Successfully created IAM policy",
-		"policyArn", op.status.PolicyArn,
-		"versionId", op.status.CurrentVersionId)
+		"policyArn", aws.ToString(output.Policy.Arn),
+		"versionId", aws.ToString(output.Policy.DefaultVersionId))
 
-	return controller.ActionSuccess(op.status)
+	return output.Policy, nil
 }
 
-// createPolicyVersion creates a new version of an existing policy
-func (op *IamPolicyOperations) createPolicyVersion(ctx context.Context, policyArn string) (*controller.ActionResult, error) {
+// createPolicyVersion creates a new version of an existing policy and returns the version ID.
+// Returns the current version ID if policy document is unchanged (no new version created).
+func (op *IamPolicyOperations) createPolicyVersion(
+	ctx context.Context, policyArn, desiredDocument string) (string, error) {
+
 	log := logf.FromContext(ctx).WithValues("policyArn", policyArn)
 
 	log.Info("Checking if policy update needed")
@@ -129,44 +149,39 @@ func (op *IamPolicyOperations) createPolicyVersion(ctx context.Context, policyAr
 	// Get current default version to check for drift
 	currentDocument, versionId, err := op.getCurrentPolicyDocument(ctx, policyArn)
 	if err != nil {
-		return controller.ActionResultForError(
-			op.status, fmt.Errorf("failed to get current policy document: %w", err), iamErrorClassifier)
+		return "", fmt.Errorf("failed to get current policy document: %w", err)
 	}
 
 	// Compare documents using semantic equality (handles whitespace, key ordering)
-	if jsonEquals(currentDocument, op.config.PolicyDocument) {
-		// No changes detected - update status and return success
-		op.status.CurrentVersionId = versionId
+	if jsonEquals(currentDocument, desiredDocument) {
 		log.Info("Policy document unchanged, skipping version creation", "versionId", versionId)
-		return controller.ActionSuccess(op.status)
+		return versionId, nil
 	}
 
 	log.Info("Policy document changed, creating new version")
 
 	// Check current version count and cleanup if needed
 	if err := op.deleteOldestPolicyVersion(ctx, policyArn); err != nil {
-		return controller.ActionResultForError(
-			op.status, fmt.Errorf("failed to cleanup old versions: %w", err), iamErrorClassifier)
+		return "", fmt.Errorf("failed to cleanup old versions: %w", err)
 	}
 
 	// Create new version
 	input := &iam.CreatePolicyVersionInput{
 		PolicyArn:      aws.String(policyArn),
-		PolicyDocument: aws.String(op.config.PolicyDocument),
+		PolicyDocument: aws.String(desiredDocument),
 		SetAsDefault:   true, // Set new version as default
 	}
 
 	output, err := op.iamClient.CreatePolicyVersion(ctx, input)
 	if err != nil {
-		return controller.ActionResultForError(
-			op.status, fmt.Errorf("failed to create policy version: %w", err), iamErrorClassifier)
+		return "", fmt.Errorf("failed to create policy version: %w", err)
 	}
 
-	op.status.CurrentVersionId = aws.ToString(output.PolicyVersion.VersionId)
+	newVersionId := aws.ToString(output.PolicyVersion.VersionId)
 
-	log.Info("Successfully created policy version", "versionId", op.status.CurrentVersionId)
+	log.Info("Successfully created policy version", "versionId", newVersionId)
 
-	return controller.ActionSuccess(op.status)
+	return newVersionId, nil
 }
 
 // deleteOldestPolicyVersion removes oldest non-default version if at 5 version limit
