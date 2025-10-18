@@ -24,7 +24,7 @@ func (op *IamRoleOperations) Delete(ctx context.Context) (*controller.ActionResu
 	log.Info("Starting IAM role deletion")
 
 	// Check if role exists - if not, deletion is already complete
-	role, err := op.getRoleByName(ctx)
+	role, err := op.getRoleByName(ctx, op.config.RoleName)
 	if err != nil {
 		return controller.ActionResultForError(
 			op.status, fmt.Errorf("failed to check if role exists: %w", err), iamErrorClassifier)
@@ -36,7 +36,7 @@ func (op *IamRoleOperations) Delete(ctx context.Context) (*controller.ActionResu
 	}
 
 	// List all attached managed policies
-	attachedPolicies, err := op.listAttachedPolicies(ctx)
+	attachedPolicies, err := op.listAttachedPolicies(ctx, op.config.RoleName)
 	if err != nil {
 		return controller.ActionResultForError(
 			op.status, fmt.Errorf("failed to list attached policies: %w", err), iamErrorClassifier)
@@ -47,7 +47,7 @@ func (op *IamRoleOperations) Delete(ctx context.Context) (*controller.ActionResu
 		log.Info("Detaching managed policies before deletion", "count", len(attachedPolicies))
 		for _, policyArn := range attachedPolicies {
 			log.V(1).Info("Detaching policy", "policyArn", policyArn)
-			if err := op.detachPolicy(ctx, policyArn); err != nil {
+			if err := op.detachPolicy(ctx, op.config.RoleName, policyArn); err != nil {
 				return controller.ActionResultForError(
 					op.status, fmt.Errorf("failed to detach policy %s: %w", policyArn, err), iamErrorClassifier)
 			}
@@ -56,7 +56,7 @@ func (op *IamRoleOperations) Delete(ctx context.Context) (*controller.ActionResu
 	}
 
 	// Delete the role
-	if err := op.deleteRole(ctx); err != nil {
+	if err := op.deleteRole(ctx, op.config.RoleName); err != nil {
 		return controller.ActionResultForError(
 			op.status, fmt.Errorf("failed to delete role: %w", err), iamErrorClassifier)
 	}
@@ -70,7 +70,7 @@ func (op *IamRoleOperations) CheckDeletion(ctx context.Context) (*controller.Che
 	log := logf.FromContext(ctx).WithValues("roleName", op.config.RoleName)
 
 	// Check if role still exists
-	role, err := op.getRoleByName(ctx)
+	role, err := op.getRoleByName(ctx, op.config.RoleName)
 	if err != nil {
 		return controller.CheckResultForError(
 			op.status, fmt.Errorf("failed to check role deletion status: %w", err), iamErrorClassifier)
@@ -86,9 +86,9 @@ func (op *IamRoleOperations) CheckDeletion(ctx context.Context) (*controller.Che
 }
 
 // deleteRole deletes the IAM role
-func (op *IamRoleOperations) deleteRole(ctx context.Context) error {
+func (op *IamRoleOperations) deleteRole(ctx context.Context, roleName string) error {
 	input := &iam.DeleteRoleInput{
-		RoleName: aws.String(op.config.RoleName),
+		RoleName: aws.String(roleName),
 	}
 
 	_, err := op.iamClient.DeleteRole(ctx, input)

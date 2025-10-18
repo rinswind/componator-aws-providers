@@ -104,9 +104,9 @@ func NewIamRoleOperationsFactory() *IamRoleOperationsFactory {
 }
 
 // getRoleByName retrieves role by name
-func (op *IamRoleOperations) getRoleByName(ctx context.Context) (*types.Role, error) {
+func (op *IamRoleOperations) getRoleByName(ctx context.Context, roleName string) (*types.Role, error) {
 	input := &iam.GetRoleInput{
-		RoleName: aws.String(op.config.RoleName),
+		RoleName: aws.String(roleName),
 	}
 
 	output, err := op.iamClient.GetRole(ctx, input)
@@ -123,9 +123,9 @@ func (op *IamRoleOperations) getRoleByName(ctx context.Context) (*types.Role, er
 }
 
 // listAttachedPolicies retrieves all managed policies currently attached to the role
-func (op *IamRoleOperations) listAttachedPolicies(ctx context.Context) ([]string, error) {
+func (op *IamRoleOperations) listAttachedPolicies(ctx context.Context, roleName string) ([]string, error) {
 	input := &iam.ListAttachedRolePoliciesInput{
-		RoleName: aws.String(op.config.RoleName),
+		RoleName: aws.String(roleName),
 	}
 
 	output, err := op.iamClient.ListAttachedRolePolicies(ctx, input)
@@ -142,9 +142,9 @@ func (op *IamRoleOperations) listAttachedPolicies(ctx context.Context) ([]string
 }
 
 // attachPolicy attaches a managed policy to the role
-func (op *IamRoleOperations) attachPolicy(ctx context.Context, policyArn string) error {
+func (op *IamRoleOperations) attachPolicy(ctx context.Context, roleName, policyArn string) error {
 	input := &iam.AttachRolePolicyInput{
-		RoleName:  aws.String(op.config.RoleName),
+		RoleName:  aws.String(roleName),
 		PolicyArn: aws.String(policyArn),
 	}
 
@@ -157,9 +157,9 @@ func (op *IamRoleOperations) attachPolicy(ctx context.Context, policyArn string)
 }
 
 // detachPolicy detaches a managed policy from the role
-func (op *IamRoleOperations) detachPolicy(ctx context.Context, policyArn string) error {
+func (op *IamRoleOperations) detachPolicy(ctx context.Context, roleName, policyArn string) error {
 	input := &iam.DetachRolePolicyInput{
-		RoleName:  aws.String(op.config.RoleName),
+		RoleName:  aws.String(roleName),
 		PolicyArn: aws.String(policyArn),
 	}
 
