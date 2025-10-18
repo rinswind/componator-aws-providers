@@ -17,6 +17,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
+const (
+	// HandlerName is the identifier for this config-reader handler
+	HandlerName = "config-reader"
+)
+
 //+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components/finalizers,verbs=update
@@ -100,8 +105,7 @@ func (r *ComponentReconciler) mapConfigMapToComponents(ctx context.Context, obj 
 
 // componentReferencesConfigMap checks if a Component's config references the specified ConfigMap.
 func (r *ComponentReconciler) componentReferencesConfigMap(
-	component *deploymentsv1alpha1.Component,
-	configMapNamespace, configMapName string) bool {
+	component *deploymentsv1alpha1.Component, configMapNamespace, configMapName string) bool {
 
 	// Parse config to check sources
 	var config ConfigReaderConfig

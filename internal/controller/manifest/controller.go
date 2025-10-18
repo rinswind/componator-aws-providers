@@ -9,6 +9,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
+const (
+	// HandlerName is the identifier for this manifest handler
+	HandlerName = "manifest"
+)
+
 //+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components/finalizers,verbs=update
@@ -37,7 +42,7 @@ func NewComponentReconciler(mgr ctrl.Manager) (*ComponentReconciler, error) {
 	restMapper := mgr.GetRESTMapper()
 
 	operationsFactory := NewManifestOperationsFactory(dynamicClient, restMapper)
-	config := controller.DefaultComponentReconcilerConfig("manifest")
+	config := controller.DefaultComponentReconcilerConfig(HandlerName)
 
 	return &ComponentReconciler{controller.NewComponentReconciler(operationsFactory, config)}, nil
 }

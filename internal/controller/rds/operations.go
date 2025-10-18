@@ -23,8 +23,6 @@ import (
 const (
 	// HandlerName is the identifier for this RDS handler
 	HandlerName = "rds"
-
-	ControllerName = "rds-component"
 )
 
 // rdsErrorClassifier wraps the AWS SDK retry logic for use with result builder utilities.

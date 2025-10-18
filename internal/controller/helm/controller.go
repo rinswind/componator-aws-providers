@@ -15,12 +15,16 @@ import (
 )
 
 const (
+	HandlerName = "helm"
+
 	// Configuration values for Helm chart source
-	helmBasePath         = "/helm"
+	helmBasePath = "/helm"
+
 	indexCacheSize       = 10
 	indexCacheTTL        = 1 * time.Hour
 	indexRefreshInterval = 5 * time.Minute
-	fileLockTimeout      = 30 * time.Second
+
+	fileLockTimeout = 30 * time.Second
 )
 
 //+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
@@ -65,7 +69,7 @@ func NewComponentReconciler(k8sClient client.Client) (*ComponentReconciler, erro
 
 	operationsFactory := NewHelmOperationsFactory(registry)
 
-	config := controller.DefaultComponentReconcilerConfig("helm")
+	config := controller.DefaultComponentReconcilerConfig(HandlerName)
 
 	return &ComponentReconciler{controller.NewComponentReconciler(operationsFactory, config)}, nil
 }
