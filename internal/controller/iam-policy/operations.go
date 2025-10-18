@@ -105,14 +105,49 @@ func NewIamPolicyOperationsFactory() *IamPolicyOperationsFactory {
 	return &IamPolicyOperationsFactory{}
 }
 
-// Delete implements deletion operations - stub for Phase 3
-func (op *IamPolicyOperations) Delete(ctx context.Context) (*controller.ActionResult, error) {
-	return controller.ActionResultForError(op.status, fmt.Errorf("not implemented"), iamErrorClassifier)
+// getPolicyByName retrieves policy by name (searches by path and name)
+func (op *IamPolicyOperations) getPolicyByName(ctx context.Context) (*types.Policy, error) {
+	// Construct expected ARN from account and policy name
+	// We need to get the policy using GetPolicy with constructed ARN
+	// First, try to list policies to find a match
+	input := &iam.ListPoliciesInput{
+		Scope:      types.PolicyScopeTypeLocal,
+		PathPrefix: aws.String(op.config.Path),
+	}
+
+	output, err := op.iamClient.ListPolicies(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list policies: %w", err)
+	}
+
+	// Find policy with matching name
+	for i := range output.Policies {
+		policy := &output.Policies[i]
+		if aws.ToString(policy.PolicyName) == op.config.PolicyName {
+			return policy, nil
+		}
+	}
+
+	return nil, nil // Not found
 }
 
-// CheckDeletion verifies deletion is complete - stub for Phase 3
-func (op *IamPolicyOperations) CheckDeletion(ctx context.Context) (*controller.CheckResult, error) {
-	return controller.CheckResultForError(op.status, fmt.Errorf("not implemented"), iamErrorClassifier)
+// getPolicyByArn retrieves policy by ARN
+func (op *IamPolicyOperations) getPolicyByArn(ctx context.Context, arn string) (*types.Policy, error) {
+	input := &iam.GetPolicyInput{
+		PolicyArn: aws.String(arn),
+	}
+
+	output, err := op.iamClient.GetPolicy(ctx, input)
+	if err == nil {
+		return output.Policy, nil
+	}
+
+	// Check if policy not found
+	if isNotFoundError(err) {
+		return nil, nil
+	}
+
+	return nil, fmt.Errorf("failed to get policy: %w", err)
 }
 
 // isNotFoundError checks if error indicates policy not found
