@@ -29,7 +29,8 @@ func (op *IamPolicyOperations) Deploy(ctx context.Context) (*controller.ActionRe
 	// Check if policy already exists
 	existingPolicy, err := op.getPolicyByName(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check if policy exists: %w", err)
+		return controller.ActionResultForError(
+			op.status, fmt.Errorf("failed to check if policy exists: %w", err), iamErrorClassifier)
 	}
 
 	if existingPolicy == nil {

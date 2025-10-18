@@ -21,9 +21,6 @@ import (
 const (
 	// HandlerName is the identifier for this IAM policy handler
 	HandlerName = "iam-policy"
-
-	// ControllerName is the name used for controller registration
-	ControllerName = "iam-policy-component"
 )
 
 // iamErrorClassifier wraps the AWS SDK retry logic for use with result builder utilities.
