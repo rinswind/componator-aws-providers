@@ -182,6 +182,7 @@ Design decisions:
 **External Integration:**
 
 (Not part of RDS handler testing, but validates end-to-end flow)
+
 - External Secrets Operator consuming ARN from Component status
 - Kubernetes workloads accessing synced credentials
 
@@ -205,11 +206,11 @@ Design decisions:
 **Phase 3: Testing and Documentation** 🔄 **IN PROGRESS**
 
 - ✅ Add unit tests for configuration validation and status parsing
+- ✅ Update RDS handler README with managed password documentation
 - ⏳ Add integration tests for managed password lifecycle (requires real AWS)
-- ⏳ Update RDS handler README with managed password documentation
-- **Validation**: Unit tests pass, integration tests and documentation pending
+- **Validation**: Unit tests pass, documentation updated, integration tests pending real AWS environment
 
-**Phase 4: Example Manifests and Migration**
+### Phase 4: Example Manifests and Migration
 
 - Update all example Component manifests to remove explicit passwords
 - Document integration pattern with External Secrets Operator

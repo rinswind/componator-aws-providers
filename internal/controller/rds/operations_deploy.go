@@ -29,13 +29,13 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*controller.ActionResult, e
 		return controller.ActionResultForError(r.status, checkErr, rdsErrorClassifier)
 	}
 
-	if instance == nil {
-		log.Info("RDS instance does not exist, creating new instance")
-		return r.createInstance(ctx)
-	} else {
+	if instance != nil {
 		log.Info("RDS instance exists, modifying existing instance")
 		return r.modifyInstance(ctx)
 	}
+
+	log.Info("RDS instance does not exist, creating new instance")
+	return r.createInstance(ctx)
 }
 
 // CheckDeployment verifies the current deployment status using pre-parsed configuration
@@ -160,16 +160,10 @@ func (r *RdsOperations) createInstance(ctx context.Context) (*controller.ActionR
 	// Update status with deployment information
 	r.updateStatus(result.DBInstance)
 
-	// Capture managed password secret ARN
-	if result.DBInstance.MasterUserSecret != nil && result.DBInstance.MasterUserSecret.SecretArn != nil {
-		r.status.MasterUserSecretArn = *result.DBInstance.MasterUserSecret.SecretArn
-		log.Info("Captured RDS managed password secret ARN",
-			"secretArn", r.status.MasterUserSecretArn)
-	} else {
-		// This should never happen with managed passwords enabled
-		return controller.ActionFailure(r.status,
-			fmt.Errorf("RDS instance created but MasterUserSecret.SecretArn is missing - this indicates an RDS API issue"))
-	}
+	// Capture managed password secret ARN from RDS response
+	// AWS RDS guarantees this is present when ManageMasterUserPassword=true
+	r.status.MasterUserSecretArn = *result.DBInstance.MasterUserSecret.SecretArn
+	log.Info("Captured RDS managed password secret ARN", "secretArn", r.status.MasterUserSecretArn)
 
 	log.Info("RDS instance creation initiated successfully", "status", r.status.InstanceStatus)
 

@@ -1,91 +1,264 @@
-# RDS Controller
+# RDS Handler
 
-This package contains the Kubernetes controller responsible for handling `Component` resources with `spec.handler: "rds"`.
+Component handler for managing AWS RDS database instances with managed passwords and automated credential management.
 
 ## Purpose
 
-The RDS controller manages the deployment and lifecycle of AWS RDS instances based on Component specifications. It implements the component handler interface for RDS-based database deployments using the generic controller base architecture.
-
-## Architecture
-
-The RDS controller uses the generic controller base architecture with RDS-specific operations:
-
-- **`controller.go`** - Main controller setup using generic base controller  
-- **`operations.go`** - RDS operations interface implementation and configuration
-- **`operations_deploy.go`** - RDS database deployment and status checking operations
-- **`operations_delete.go`** - RDS database deletion and cleanup operations
-- **`*_test.go`** - Test suites for controller functionality
-
-## Controller Logic
-
-- **Filtering**: Only processes Components where `spec.handler == "rds"`
-- **Protocol Compliance**: Uses generic base controller for claiming, status transitions, and finalizer management
-- **Operations**: Implements RDS-specific deployment, upgrade, and deletion operations via AWS RDS SDK
-- **Status Reporting**: Reports database status back to Component resource with detailed conditions
-- **Enhanced Orchestration**: Supports timeout compliance, TerminationFailed state handling, and handler status coordination
-
-## Implementation Status
-
-**Current State**: This controller uses the generic base controller architecture but RDS operations contain placeholder implementations.
-
-**TODO Items**:
-
-- Complete AWS RDS SDK integration for database operations
-- Add RDS configuration parsing and validation  
-- Implement actual deployment, upgrade, and deletion operations
-- Add comprehensive error handling for AWS API interactions
-- Implement proper credential management and region selection
-- Add timeout compliance for Component-configured deployment and termination timeouts
-- Implement TerminationFailed state handling for permanent cleanup failures
-- Add handler status coordination for RDS instance metadata persistence
+Create and manage RDS database instances with secure, AWS-managed master passwords stored in Secrets Manager. Instances are modified in place to preserve endpoints and connection strings across configuration updates.
 
 ## Configuration
 
-Component configuration for RDS deployments is passed through the `spec.config` field. The exact schema is being designed but will include:
+### Required Fields
 
-- **Engine**: Database engine (postgres, mysql, etc.)
-- **Instance Class**: RDS instance size and type
-- **Storage**: Storage configuration and sizing
-- **Networking**: VPC, subnet, security group settings
-- **Backup**: Backup and maintenance window settings
-- **Credentials**: Database username and password configuration
+- **instanceID**: RDS instance identifier (must be unique within AWS region)
+- **databaseEngine**: Database engine (postgres, mysql, mariadb, etc.)
+- **engineVersion**: Database engine version
+- **instanceClass**: RDS instance size (e.g., db.t3.micro, db.r5.large)
+- **databaseName**: Initial database name to create
+- **region**: AWS region for deployment
+- **allocatedStorage**: Storage size in GB (minimum 20 for most engines)
+- **masterUsername**: Database master username
 
-**Note**: Timeout behavior will be controlled by Component-level timeout fields (`spec.deploymentTimeout` and `spec.terminationTimeout`) rather than RDS-specific configuration.
+### Managed Password Configuration
 
-## Dependencies
+AWS RDS automatically generates secure passwords and stores them in Secrets Manager. This is enforced for security compliance.
 
-- Generic base controller (`github.com/rinswind/deployment-operator/componentkit/controller`) - **Currently Used**
-- AWS SDK for Go (v2) - **To Be Added**
-- AWS RDS service client - **To Be Added**
-- `sigs.k8s.io/controller-runtime` - Controller framework
-- Component CRD from `deployment-operator`
+- **manageMasterUserPassword**: Must be `true` (default, enforced)
+- **masterUserSecretKmsKeyId**: Optional KMS key ARN for secret encryption
 
-## Implementation Details
+**Note**: Explicit password configuration is not supported. AWS manages password generation, storage, and optional rotation.
 
-The controller implements the three core protocols through the generic base controller:
+### Optional Fields
 
-1. **Claiming Protocol** - Uses handler-specific finalizers for atomic resource discovery
-2. **Creation Protocol** - Immediate resource creation with status-driven progression  
-3. **Deletion Protocol** - Finalizer-based deletion coordination with proper cleanup
+**Storage Configuration:**
 
-All RDS operations are designed to be non-blocking and idempotent, with comprehensive status reporting and error handling once the AWS SDK integration is complete.
+- **storageType**: Storage type (defaults to "gp2" - General Purpose SSD)
+- **storageEncrypted**: Enable storage encryption (defaults to true)
+- **kmsKeyId**: KMS key ARN for storage encryption
 
-### Enhanced Orchestration Features (To Be Implemented)
+**Network Configuration:**
 
-**Timeout Compliance:**
+- **vpcSecurityGroupIds**: List of security group IDs
+- **subnetGroupName**: DB subnet group name for VPC placement
+- **publiclyAccessible**: Allow public access (defaults to false)
+- **port**: Database port (defaults to engine-specific port)
 
-- Must respect Component-configured `deploymentTimeout` for RDS instance creation operations
-- Must respect Component-configured `terminationTimeout` for RDS instance deletion operations
-- Monitor operation duration and fail appropriately when timeouts are exceeded
+**Backup Configuration:**
 
-**TerminationFailed State Handling:**
+- **backupRetentionPeriod**: Backup retention in days (defaults to 7)
+- **preferredBackupWindow**: Backup window in UTC (e.g., "03:00-04:00")
 
-- Handle permanent cleanup failures (e.g., RDS deletion constraints, dependency issues)
-- Support retry annotation mechanism for failed deletion operations
-- Transition to TerminationFailed state when cleanup cannot be completed
+**Maintenance Configuration:**
 
-**Handler Status Coordination:**
+- **preferredMaintenanceWindow**: Maintenance window (e.g., "sun:04:00-sun:05:00")
+- **autoMinorVersionUpgrade**: Enable automatic minor version upgrades (defaults to true)
 
-- Use `status.handlerStatus` field to persist RDS instance metadata across reconciliation cycles
-- Store instance IDs, connection endpoints, and configuration hashes
-- Maintain deployment context for complex RDS operations and monitoring
+**Performance Configuration:**
+
+- **multiAZ**: Enable Multi-AZ deployment (defaults to false)
+- **performanceInsightsEnabled**: Enable Performance Insights (defaults to false)
+- **monitoringInterval**: Enhanced monitoring interval in seconds (defaults to 0/disabled)
+
+**Protection Configuration:**
+
+- **deletionProtection**: Prevent accidental deletion (defaults to true)
+- **skipFinalSnapshot**: Skip final snapshot on deletion (defaults to false)
+- **finalDBSnapshotIdentifier**: Final snapshot name (required if skipFinalSnapshot is false)
+
+## Usage Examples
+
+### Basic PostgreSQL Database
+
+```yaml
+apiVersion: deployments.deployment-orchestrator.io/v1alpha1
+kind: Component
+metadata:
+  name: app-database
+spec:
+  handler: rds
+  dependsOn:
+    - vpc-config
+  config:
+    instanceID: "myapp-db"
+    databaseEngine: "postgres"
+    engineVersion: "15.4"
+    instanceClass: "db.t3.micro"
+    databaseName: "myapp"
+    region: "us-west-2"
+    allocatedStorage: 20
+    masterUsername: "dbadmin"
+    vpcSecurityGroupIds:
+      - "{{ .vpc-config.handlerStatus.dbSecurityGroupId }}"
+    subnetGroupName: "{{ .vpc-config.handlerStatus.dbSubnetGroupName }}"
+```
+
+### Production Database with Encryption and Backups
+
+```yaml
+apiVersion: deployments.deployment-orchestrator.io/v1alpha1
+kind: Component
+metadata:
+  name: prod-database
+spec:
+  handler: rds
+  dependsOn:
+    - vpc-config
+    - kms-key
+  config:
+    instanceID: "prod-db"
+    databaseEngine: "postgres"
+    engineVersion: "15.4"
+    instanceClass: "db.r5.xlarge"
+    databaseName: "production"
+    region: "us-west-2"
+    allocatedStorage: 100
+    masterUsername: "dbadmin"
+    
+    # Security
+    vpcSecurityGroupIds:
+      - "{{ .vpc-config.handlerStatus.dbSecurityGroupId }}"
+    subnetGroupName: "{{ .vpc-config.handlerStatus.dbSubnetGroupName }}"
+    storageEncrypted: true
+    kmsKeyId: "{{ .kms-key.handlerStatus.keyArn }}"
+    masterUserSecretKmsKeyId: "{{ .kms-key.handlerStatus.keyArn }}"
+    
+    # High Availability
+    multiAZ: true
+    
+    # Backups
+    backupRetentionPeriod: 30
+    preferredBackupWindow: "03:00-04:00"
+    
+    # Maintenance
+    preferredMaintenanceWindow: "sun:04:00-sun:05:00"
+    autoMinorVersionUpgrade: true
+    
+    # Monitoring
+    performanceInsightsEnabled: true
+    monitoringInterval: 60
+```
+
+### MySQL Database with Custom Configuration
+
+```yaml
+apiVersion: deployments.deployment-orchestrator.io/v1alpha1
+kind: Component
+metadata:
+  name: mysql-database
+spec:
+  handler: rds
+  config:
+    instanceID: "mysql-db"
+    databaseEngine: "mysql"
+    engineVersion: "8.0.35"
+    instanceClass: "db.t3.small"
+    databaseName: "wordpress"
+    region: "us-east-1"
+    allocatedStorage: 50
+    masterUsername: "admin"
+    port: 3306
+    
+    # Storage
+    storageType: "gp3"
+    storageEncrypted: true
+    
+    # Network
+    publiclyAccessible: false
+    
+    # Backups
+    backupRetentionPeriod: 14
+    skipFinalSnapshot: false
+    finalDBSnapshotIdentifier: "mysql-db-final-snapshot"
+```
+
+### Accessing Database Credentials with External Secrets Operator
+
+```yaml
+apiVersion: deployments.deployment-orchestrator.io/v1alpha1
+kind: Component
+metadata:
+  name: db-secret-sync
+spec:
+  handler: manifest
+  dependsOn:
+    - app-database
+    - eso-role
+  config:
+    manifests:
+      - |
+        apiVersion: external-secrets.io/v1beta1
+        kind: SecretStore
+        metadata:
+          name: aws-secrets
+          namespace: default
+        spec:
+          provider:
+            aws:
+              service: SecretsManager
+              region: us-west-2
+              auth:
+                jwt:
+                  serviceAccountRef:
+                    name: external-secrets
+      - |
+        apiVersion: external-secrets.io/v1beta1
+        kind: ExternalSecret
+        metadata:
+          name: database-credentials
+          namespace: default
+        spec:
+          refreshInterval: 1h
+          secretStoreRef:
+            name: aws-secrets
+            kind: SecretStore
+          target:
+            name: database-credentials
+            creationPolicy: Owner
+          dataFrom:
+            - extract:
+                key: "{{ .app-database.handlerStatus.masterUserSecretArn }}"
+```
+
+The External Secrets Operator syncs the RDS password from Secrets Manager into a Kubernetes Secret.
+
+## Handler Status
+
+The handler reports database information in `status.handlerStatus`:
+
+- **instanceStatus**: Current RDS instance status (creating, available, modifying, failed, etc.)
+- **instanceARN**: AWS ARN for the RDS instance
+- **endpoint**: Database connection endpoint hostname
+- **port**: Database connection port number
+- **availabilityZone**: AWS availability zone where instance is deployed
+- **masterUserSecretArn**: AWS Secrets Manager ARN containing the master password
+
+## Database Updates
+
+- Instances are modified in place via AWS RDS versioning (endpoint remains constant)
+- Configuration changes are applied immediately (ApplyImmediately=true)
+- Some changes may require instance restart (controlled by AWS RDS)
+- Major version upgrades require explicit engineVersion changes
+
+## AWS Permissions Required
+
+Minimum required IAM actions:
+
+```json
+[
+    "rds:CreateDBInstance",
+    "rds:DescribeDBInstances",
+    "rds:ModifyDBInstance",
+    "rds:DeleteDBInstance",
+    "rds:AddTagsToResource",
+    "rds:ListTagsForResource"
+]
+```
+
+Additional permissions for KMS-encrypted instances:
+
+```json
+[
+    "kms:CreateGrant",
+    "kms:DescribeKey"
+]
+```
