@@ -37,8 +37,9 @@ type RdsConfig struct {
 	KmsKeyId         string `json:"kmsKeyId,omitempty"`
 
 	// Database Credentials
-	MasterUsername string `json:"masterUsername"`
-	MasterPassword string `json:"masterPassword"`
+	MasterUsername           string `json:"masterUsername"`
+	ManageMasterUserPassword *bool  `json:"manageMasterUserPassword,omitempty"`
+	MasterUserSecretKmsKeyId string `json:"masterUserSecretKmsKeyId,omitempty"`
 
 	// Networking Configuration
 	VpcSecurityGroupIds []string `json:"vpcSecurityGroupIds,omitempty"`
@@ -76,6 +77,9 @@ type RdsStatus struct {
 	Endpoint         string `json:"endpoint,omitempty"`
 	Port             int32  `json:"port,omitempty"`
 	AvailabilityZone string `json:"availabilityZone,omitempty"`
+
+	// Credentials information
+	MasterUserSecretArn string `json:"masterUserSecretArn,omitempty"`
 }
 
 // resolveRdsConfig unmarshals Component.Spec.Config into RdsConfig struct
@@ -123,6 +127,20 @@ func resolveRdsStatus(ctx context.Context, rawStatus json.RawMessage) (*RdsStatu
 
 // applyRdsConfigDefaults sets sensible defaults for optional RDS configuration fields
 func applyRdsConfigDefaults(config *RdsConfig) error {
+	// Validate required credentials fields
+	if config.MasterUsername == "" {
+		return fmt.Errorf("masterUsername is required and cannot be empty")
+	}
+
+	// Always use RDS-managed passwords - enforce this policy
+	if config.ManageMasterUserPassword == nil {
+		defaultManaged := true
+		config.ManageMasterUserPassword = &defaultManaged
+	}
+	if !*config.ManageMasterUserPassword {
+		return fmt.Errorf("manageMasterUserPassword must be true - explicit password management is not supported. AWS RDS will generate secure passwords automatically")
+	}
+
 	// Storage defaults
 	if config.StorageType == "" {
 		config.StorageType = "gp2" // General Purpose SSD

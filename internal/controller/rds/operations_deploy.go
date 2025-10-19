@@ -116,8 +116,11 @@ func (r *RdsOperations) createInstance(ctx context.Context) (*controller.ActionR
 		EngineVersion:        stringPtr(config.EngineVersion),
 		AllocatedStorage:     int32Ptr(config.AllocatedStorage),
 		MasterUsername:       stringPtr(config.MasterUsername),
-		MasterUserPassword:   stringPtr(config.MasterPassword),
 		DBName:               stringPtr(config.DatabaseName),
+
+		// Managed password configuration
+		ManageMasterUserPassword: passthroughBoolPtr(config.ManageMasterUserPassword),
+		MasterUserSecretKmsKeyId: optionalStringPtr(config.MasterUserSecretKmsKeyId),
 
 		// Optional storage configuration
 		StorageType:      optionalStringPtr(config.StorageType),
@@ -156,6 +159,17 @@ func (r *RdsOperations) createInstance(ctx context.Context) (*controller.ActionR
 
 	// Update status with deployment information
 	r.updateStatus(result.DBInstance)
+
+	// Capture managed password secret ARN
+	if result.DBInstance.MasterUserSecret != nil && result.DBInstance.MasterUserSecret.SecretArn != nil {
+		r.status.MasterUserSecretArn = *result.DBInstance.MasterUserSecret.SecretArn
+		log.Info("Captured RDS managed password secret ARN",
+			"secretArn", r.status.MasterUserSecretArn)
+	} else {
+		// This should never happen with managed passwords enabled
+		return controller.ActionFailure(r.status,
+			fmt.Errorf("RDS instance created but MasterUserSecret.SecretArn is missing - this indicates an RDS API issue"))
+	}
 
 	log.Info("RDS instance creation initiated successfully", "status", r.status.InstanceStatus)
 

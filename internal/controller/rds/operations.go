@@ -127,6 +127,13 @@ func (r *RdsOperations) updateStatus(instance *types.DBInstance) {
 	r.status.Endpoint = endpointAddress(instance.Endpoint)
 	r.status.Port = endpointPort(instance.Endpoint)
 	r.status.AvailabilityZone = stringValue(instance.AvailabilityZone)
+
+	// Preserve or update managed password secret ARN
+	// The ARN is immutable once created, but may be present in DescribeDBInstances response
+	if instance.MasterUserSecret != nil && instance.MasterUserSecret.SecretArn != nil {
+		r.status.MasterUserSecretArn = *instance.MasterUserSecret.SecretArn
+	}
+	// If not present in response but already in status, keep existing value (ARN doesn't change)
 }
 
 // getInstanceData retrieves RDS instance data, handling not-found cases consistently
