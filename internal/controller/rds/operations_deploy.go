@@ -120,7 +120,6 @@ func (r *RdsOperations) createInstance(ctx context.Context) (*controller.ActionR
 
 		// Managed password configuration
 		ManageMasterUserPassword: passthroughBoolPtr(config.ManageMasterUserPassword),
-		MasterUserSecretKmsKeyId: optionalStringPtr(config.MasterUserSecretKmsKeyId),
 
 		// Optional storage configuration
 		StorageType:      optionalStringPtr(config.StorageType),
@@ -148,6 +147,11 @@ func (r *RdsOperations) createInstance(ctx context.Context) (*controller.ActionR
 
 		// Deletion protection
 		DeletionProtection: passthroughBoolPtr(config.DeletionProtection),
+	}
+
+	// AWS doesn't ignore a nil KMS ID for this arg, so we must set it only if provided
+	if config.MasterUserSecretKmsKeyId != "" {
+		createInput.MasterUserSecretKmsKeyId = stringPtr(config.MasterUserSecretKmsKeyId)
 	}
 
 	result, err := r.rdsClient.CreateDBInstance(ctx, createInput)
