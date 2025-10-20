@@ -94,7 +94,7 @@ spec:
 
 ## Status Tracking
 
-The handler maintains status in `Component.Status.HandlerStatus`:
+The handler maintains status in `Component.Status.ProviderStatus`:
 
 ```json
 {

@@ -67,7 +67,7 @@ type RdsConfig struct {
 }
 
 // RdsStatus contains handler-specific status data for RDS deployments.
-// This data is persisted across reconciliation loops in Component.Status.HandlerStatus.
+// This data is persisted across reconciliation loops in Component.Status.ProviderStatus.
 type RdsStatus struct {
 	// Instance identification and state
 	InstanceStatus string `json:"instanceStatus,omitempty"`

@@ -69,7 +69,7 @@ type ManifestConfig struct {
 }
 
 // ManifestStatus contains handler-specific status data for Manifest deployments.
-// This data is persisted across reconciliation loops in Component.Status.HandlerStatus.
+// This data is persisted across reconciliation loops in Component.Status.ProviderStatus.
 type ManifestStatus struct {
 	// AppliedResources tracks the resources that have been applied to the cluster.
 	// This list is used during deletion to clean up all created resources.
@@ -109,7 +109,7 @@ func resolveManifestConfig(ctx context.Context, rawConfig json.RawMessage) (*Man
 	return &config, nil
 }
 
-// resolveManifestStatus unmarshals Component.Status.HandlerStatus into ManifestStatus struct.
+// resolveManifestStatus unmarshals Component.Status.ProviderStatus into ManifestStatus struct.
 func resolveManifestStatus(ctx context.Context, rawStatus json.RawMessage) (*ManifestStatus, error) {
 	status := &ManifestStatus{}
 	if len(rawStatus) == 0 {

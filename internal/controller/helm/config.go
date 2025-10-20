@@ -45,7 +45,7 @@ type HelmConfig struct {
 }
 
 // HelmStatus contains handler-specific status data for Helm deployments.
-// This data is persisted across reconciliation loops in Component.Status.HandlerStatus.
+// This data is persisted across reconciliation loops in Component.Status.ProviderStatus.
 // After initial deployment, operations use the persisted values rather than spec values
 // to ensure consistency with what was actually deployed.
 type HelmStatus struct {

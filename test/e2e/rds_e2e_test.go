@@ -1,21 +1,8 @@
 //go:build e2e
 // +build e2e
 
-/*
-Copyright 2025.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+// Copyright 2025.
+// SPDX-License-Identifier: Apache-2.0
 
 package e2e
 
@@ -106,7 +93,7 @@ var _ = Describe("RDS Handler E2E", Ordered, func() {
 		componentList := &deploymentsv1alpha1.ComponentList{}
 		if err := rdsK8sClient.List(rdsCtx, componentList, client.InNamespace("default")); err == nil {
 			for i := range componentList.Items {
-				if componentList.Items[i].Spec.Handler == "rds" {
+				if componentList.Items[i].Spec.Type == "rds" {
 					_ = rdsK8sClient.Delete(rdsCtx, &componentList.Items[i])
 				}
 			}
@@ -233,11 +220,11 @@ var _ = Describe("RDS Handler E2E", Ordered, func() {
 				g.Expect(component.Status.Phase).To(Equal(deploymentsv1alpha1.ComponentPhaseReady), "Component should reach Ready phase")
 
 				// Verify status contains database endpoint information
-				g.Expect(component.Status.HandlerStatus).NotTo(BeNil(), "HandlerStatus should be populated")
+				g.Expect(Component.Status.ProviderStatus).NotTo(BeNil(), "HandlerStatus should be populated")
 
 				// Parse handler status to verify RDS-specific information
 				var rdsStatus map[string]interface{}
-				err = json.Unmarshal(component.Status.HandlerStatus.Raw, &rdsStatus)
+				err = json.Unmarshal(Component.Status.ProviderStatus.Raw, &rdsStatus)
 				g.Expect(err).NotTo(HaveOccurred(), "Should be able to parse RDS status")
 				g.Expect(rdsStatus).To(HaveKey("endpoint"), "RDS status should include endpoint")
 				g.Expect(rdsStatus).To(HaveKey("instanceStatus"), "RDS status should include instance status")
@@ -256,7 +243,7 @@ var _ = Describe("RDS Handler E2E", Ordered, func() {
 			Expect(finalComponent.Status.Phase).To(Equal(deploymentsv1alpha1.ComponentPhaseReady), "Component should be in Ready phase")
 
 			// Verify handler status contains RDS information
-			Expect(finalComponent.Status.HandlerStatus).NotTo(BeNil(), "HandlerStatus should be populated")
+			Expect(finalComponent.Status.ProviderStatus).NotTo(BeNil(), "HandlerStatus should be populated")
 
 			By("cleaning up the test component")
 			Expect(rdsK8sClient.Delete(rdsCtx, mysqlComponent)).To(Succeed(), "Failed to delete test component")

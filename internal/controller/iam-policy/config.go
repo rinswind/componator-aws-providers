@@ -35,7 +35,7 @@ type IamPolicyConfig struct {
 }
 
 // IamPolicyStatus contains handler-specific status data for IAM policy deployments.
-// This data is persisted across reconciliation loops in Component.Status.HandlerStatus.
+// This data is persisted across reconciliation loops in Component.Status.ProviderStatus.
 type IamPolicyStatus struct {
 	// PolicyArn is the AWS ARN of the created IAM policy
 	PolicyArn string `json:"policyArn,omitempty"`

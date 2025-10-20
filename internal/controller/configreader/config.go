@@ -47,7 +47,7 @@ type ExportMapping struct {
 }
 
 // ConfigReaderStatus contains handler-specific status data for config-reader components.
-// This is a simple map of exported values that gets persisted in Component.Status.HandlerStatus.
+// This is a simple map of exported values that gets persisted in Component.Status.ProviderStatus.
 type ConfigReaderStatus map[string]string
 
 // resolveConfigReaderConfig unmarshals and validates Component.Spec.Config into ConfigReaderConfig struct.
@@ -70,7 +70,7 @@ func resolveConfigReaderConfig(ctx context.Context, rawConfig json.RawMessage) (
 	return &config, nil
 }
 
-// resolveConfigReaderStatus unmarshals Component.Status.HandlerStatus into ConfigReaderStatus.
+// resolveConfigReaderStatus unmarshals Component.Status.ProviderStatus into ConfigReaderStatus.
 func resolveConfigReaderStatus(ctx context.Context, rawStatus json.RawMessage) (ConfigReaderStatus, error) {
 	status := make(ConfigReaderStatus)
 	if len(rawStatus) == 0 {

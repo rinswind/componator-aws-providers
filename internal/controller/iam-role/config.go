@@ -41,7 +41,7 @@ type IamRoleConfig struct {
 }
 
 // IamRoleStatus contains handler-specific status data for IAM role deployments.
-// This data is persisted across reconciliation loops in Component.Status.HandlerStatus.
+// This data is persisted across reconciliation loops in Component.Status.ProviderStatus.
 type IamRoleStatus struct {
 	// RoleArn is the AWS ARN of the created IAM role
 	RoleArn string `json:"roleArn,omitempty"`

@@ -176,7 +176,7 @@ func main() {
 		"spec.handler",
 		func(obj client.Object) []string {
 			component := obj.(*corev1alpha1.Component)
-			return []string{component.Spec.Handler}
+			return []string{component.Spec.Type}
 		},
 	); err != nil {
 		setupLog.Error(err, "unable to setup field indexer for Components")
