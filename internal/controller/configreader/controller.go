@@ -49,7 +49,7 @@ func NewComponentReconciler(mgr ctrl.Manager) *ComponentReconciler {
 
 // SetupWithManager sets up the controller with the Manager and adds ConfigMap watch.
 func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return r.ComponentReconciler.NewDefaultController(mgr).
+	return r.ComponentReconciler.NewComponentController(mgr).
 		Watches(
 			&corev1.ConfigMap{},
 			handler.EnqueueRequestsFromMapFunc(r.mapConfigMapToComponents),
