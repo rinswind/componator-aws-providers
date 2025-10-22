@@ -27,9 +27,6 @@ type RdsConfig struct {
 	InstanceClass  string `json:"instanceClass"`
 	DatabaseName   string `json:"databaseName"`
 
-	// AWS Configuration
-	Region string `json:"region"`
-
 	// Storage Configuration
 	AllocatedStorage int32  `json:"allocatedStorage"`
 	StorageType      string `json:"storageType,omitempty"`
@@ -103,7 +100,6 @@ func resolveRdsConfig(ctx context.Context, rawConfig json.RawMessage) (*RdsConfi
 	log := logf.FromContext(ctx)
 	log.V(1).Info("Resolved rds config",
 		"instanceIdentifier", config.InstanceID,
-		"region", config.Region,
 		"databaseEngine", config.DatabaseEngine,
 		"instanceClass", config.InstanceClass,
 		"databaseName", config.DatabaseName)

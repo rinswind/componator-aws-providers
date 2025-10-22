@@ -32,13 +32,15 @@ var rdsErrorClassifier = controller.ErrorClassifier(isRetryable)
 // RdsOperationsFactory implements the ComponentOperationsFactory interface for RDS deployments.
 // This factory creates stateful RdsOperations instances with pre-parsed configuration,
 // eliminating repeated configuration parsing during reconciliation loops.
-type RdsOperationsFactory struct{}
+// It maintains a single AWS RDS client created at factory initialization.
+type RdsOperationsFactory struct {
+	rdsClient *rds.Client
+	awsConfig aws.Config
+}
 
 // NewOperations creates a new stateful RdsOperations instance with pre-parsed configuration and status.
 // This method is called once per reconciliation loop to eliminate repeated configuration parsing.
-//
-// The returned RdsOperations instance maintains the parsed configuration and status and can be used
-// throughout the reconciliation loop without re-parsing the same configuration multiple times.
+// Uses the pre-initialized AWS client from the factory.
 func (f *RdsOperationsFactory) NewOperations(ctx context.Context, config json.RawMessage, currentStatus json.RawMessage) (controller.ComponentOperations, error) {
 	log := logf.FromContext(ctx)
 
@@ -54,21 +56,8 @@ func (f *RdsOperationsFactory) NewOperations(ctx context.Context, config json.Ra
 		return nil, fmt.Errorf("failed to parse rds status: %w", err)
 	}
 
-	// Initialize AWS configuration for the specified region
-	// Disable AWS SDK retries since we handle retries via controller requeue
-	awsConfig, err := awsconfig.LoadDefaultConfig(ctx,
-		awsconfig.WithRegion(rdsConfig.Region),
-		awsconfig.WithRetryMaxAttempts(1), // Disable retries - controller handles requeue
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS configuration for region %s: %w", rdsConfig.Region, err)
-	}
-
-	// Create RDS client with the configured region
-	rdsClient := rds.NewFromConfig(awsConfig)
-
-	log.V(1).Info("Created RDS operations with AWS client",
-		"region", rdsConfig.Region,
+	log.V(1).Info("Created RDS operations",
+		"region", f.awsConfig.Region,
 		"databaseEngine", rdsConfig.DatabaseEngine,
 		"instanceClass", rdsConfig.InstanceClass)
 
@@ -76,8 +65,8 @@ func (f *RdsOperationsFactory) NewOperations(ctx context.Context, config json.Ra
 	return &RdsOperations{
 		config:    rdsConfig,
 		status:    status,
-		rdsClient: rdsClient,
-		awsConfig: awsConfig,
+		rdsClient: f.rdsClient,
+		awsConfig: f.awsConfig,
 	}, nil
 }
 
@@ -100,8 +89,38 @@ type RdsOperations struct {
 }
 
 // NewRdsOperationsFactory creates a new RdsOperationsFactory instance
+// with a pre-initialized AWS RDS client.
+// This is called once during controller setup, not during reconciliation.
 func NewRdsOperationsFactory() *RdsOperationsFactory {
-	return &RdsOperationsFactory{}
+	// Use background context for AWS SDK initialization during controller setup
+	// This is safe because:
+	// 1. Controller setup happens once at startup, not during reconciliation
+	// 2. AWS SDK uses context for credential loading and metadata calls
+	// 3. These operations complete quickly during initialization
+	ctx := context.Background()
+
+	// Load AWS config with default chain (uses AWS_REGION, EC2 metadata, etc.)
+	// Disable retries - controller handles requeue
+	cfg, err := awsconfig.LoadDefaultConfig(ctx,
+		awsconfig.WithRetryMaxAttempts(1),
+	)
+	if err != nil {
+		// Fatal error - controller cannot function without AWS credentials
+		panic(fmt.Sprintf("failed to load AWS configuration: %v", err))
+	}
+
+	// Create RDS client once
+	rdsClient := rds.NewFromConfig(cfg)
+
+	// Log client initialization (using background context logger)
+	log := logf.Log.WithName("rds-factory")
+	log.Info("Initialized AWS RDS client",
+		"region", cfg.Region)
+
+	return &RdsOperationsFactory{
+		rdsClient: rdsClient,
+		awsConfig: cfg,
+	}
 }
 
 // NewRdsOperationsConfig creates a ComponentHandlerConfig for RDS with appropriate settings

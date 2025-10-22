@@ -104,8 +104,7 @@ func (r *RdsOperations) createInstance(ctx context.Context) (*controller.ActionR
 		"instanceID", instanceID,
 		"databaseName", config.DatabaseName,
 		"instanceClass", config.InstanceClass,
-		"databaseEngine", config.DatabaseEngine,
-		"region", config.Region)
+		"databaseEngine", config.DatabaseEngine)
 
 	// Create RDS instance
 	createInput := &rds.CreateDBInstanceInput{

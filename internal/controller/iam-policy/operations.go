@@ -30,13 +30,15 @@ var iamErrorClassifier = controller.ErrorClassifier(isRetryable)
 // IamPolicyOperationsFactory implements the ComponentOperationsFactory interface for IAM policy deployments.
 // This factory creates stateful IamPolicyOperations instances with pre-parsed configuration,
 // eliminating repeated configuration parsing during reconciliation loops.
-type IamPolicyOperationsFactory struct{}
+// It maintains a single AWS IAM client created at factory initialization.
+type IamPolicyOperationsFactory struct {
+	iamClient *iam.Client
+	awsConfig aws.Config
+}
 
 // NewOperations creates a new stateful IamPolicyOperations instance with pre-parsed configuration and status.
 // This method is called once per reconciliation loop to eliminate repeated configuration parsing.
-//
-// The returned IamPolicyOperations instance maintains the parsed configuration and status and can be used
-// throughout the reconciliation loop without re-parsing the same configuration multiple times.
+// Uses the pre-initialized AWS client from the factory.
 func (f *IamPolicyOperationsFactory) NewOperations(
 	ctx context.Context, config json.RawMessage, currentStatus json.RawMessage) (controller.ComponentOperations, error) {
 
@@ -54,19 +56,7 @@ func (f *IamPolicyOperationsFactory) NewOperations(
 		return nil, fmt.Errorf("failed to parse iam-policy status: %w", err)
 	}
 
-	// Initialize AWS configuration using default config chain
-	// Disable AWS SDK retries since we handle retries via controller requeue
-	awsConfig, err := awsconfig.LoadDefaultConfig(ctx,
-		awsconfig.WithRetryMaxAttempts(1), // Disable retries - controller handles requeue
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS configuration: %w", err)
-	}
-
-	// Create IAM client (IAM is global, uses region from config chain)
-	iamClient := iam.NewFromConfig(awsConfig)
-
-	log.V(1).Info("Created IAM policy operations with AWS client",
+	log.V(1).Info("Created IAM policy operations",
 		"policyName", iamConfig.PolicyName,
 		"path", iamConfig.Path)
 
@@ -74,8 +64,8 @@ func (f *IamPolicyOperationsFactory) NewOperations(
 	return &IamPolicyOperations{
 		config:    iamConfig,
 		status:    status,
-		iamClient: iamClient,
-		awsConfig: awsConfig,
+		iamClient: f.iamClient,
+		awsConfig: f.awsConfig,
 	}, nil
 }
 
@@ -98,8 +88,38 @@ type IamPolicyOperations struct {
 }
 
 // NewIamPolicyOperationsFactory creates a new IamPolicyOperationsFactory instance
+// with a pre-initialized AWS IAM client.
+// This is called once during controller setup, not during reconciliation.
 func NewIamPolicyOperationsFactory() *IamPolicyOperationsFactory {
-	return &IamPolicyOperationsFactory{}
+	// Use background context for AWS SDK initialization during controller setup
+	// This is safe because:
+	// 1. Controller setup happens once at startup, not during reconciliation
+	// 2. AWS SDK uses context for credential loading and metadata calls
+	// 3. These operations complete quickly during initialization
+	ctx := context.Background()
+
+	// Load AWS config with default chain (uses AWS_REGION, EC2 metadata, etc.)
+	// Disable retries - controller handles requeue
+	cfg, err := awsconfig.LoadDefaultConfig(ctx,
+		awsconfig.WithRetryMaxAttempts(1),
+	)
+	if err != nil {
+		// Fatal error - controller cannot function without AWS credentials
+		panic(fmt.Sprintf("failed to load AWS configuration: %v", err))
+	}
+
+	// Create IAM client once (IAM is global, uses region from config chain)
+	iamClient := iam.NewFromConfig(cfg)
+
+	// Log client initialization (using background context logger)
+	log := logf.Log.WithName("iam-policy-factory")
+	log.Info("Initialized AWS IAM client",
+		"region", cfg.Region)
+
+	return &IamPolicyOperationsFactory{
+		iamClient: iamClient,
+		awsConfig: cfg,
+	}
 }
 
 // getPolicyByName retrieves policy by name (searches by path and name)
