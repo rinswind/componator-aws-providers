@@ -117,7 +117,7 @@ log_info "Image tags: ${IMG_TAGS[*]}"
 
 # Image prefixes
 MINIKUBE_PREFIX="rinswind/${IMG_NAME}"
-ECR_PREFIX="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${IMG_NAME}"
+ECR_PREFIX="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/rinswind/${IMG_NAME}"
 
 # Phase 1: Build image once with "latest" tag
 echo ""

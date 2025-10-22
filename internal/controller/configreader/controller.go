@@ -109,7 +109,7 @@ func (r *ComponentReconciler) componentReferencesConfigMap(
 
 	// Parse config to check sources
 	var config ConfigReaderConfig
-	if err := json.Unmarshal(component.Spec.Config.Raw, &config); err != nil {
+	if err := json.Unmarshal(component.Spec.ProviderSpec.Raw, &config); err != nil {
 		// Skip components with invalid config (they'll fail separately)
 		return false
 	}
