@@ -77,6 +77,10 @@ type SecretPushOperations struct {
 	// status holds the pre-parsed secret-push status for this reconciliation loop
 	status *SecretPushStatus
 
+	// Field counts from latest buildSecretData call
+	generatedCount int
+	staticCount    int
+
 	// AWS SDK clients for Secrets Manager operations
 	smClient  *secretsmanager.Client
 	awsConfig aws.Config

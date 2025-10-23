@@ -24,7 +24,7 @@ func (op *SecretPushOperations) Deploy(ctx context.Context) (*controller.ActionR
 	log.Info("Starting secret-push deployment")
 
 	// Build secret data: generate passwords and combine with static fields
-	secretData, err := op.buildSecretData(ctx)
+	secretData, generatedCount, staticCount, err := op.buildSecretData(ctx)
 	if err != nil {
 		return controller.ActionResultForError(
 			op.status, fmt.Errorf("failed to build secret data: %w", err), awsErrorClassifier)
@@ -46,7 +46,7 @@ func (op *SecretPushOperations) Deploy(ctx context.Context) (*controller.ActionR
 		var notFoundErr *types.ResourceNotFoundException
 		if errors.As(err, &notFoundErr) {
 			// Create new secret
-			return op.createSecret(ctx, secretJSON)
+			return op.createSecret(ctx, secretJSON, generatedCount, staticCount)
 		}
 		return controller.ActionResultForError(
 			op.status, fmt.Errorf("failed to check secret existence: %w", err), awsErrorClassifier)
@@ -55,16 +55,19 @@ func (op *SecretPushOperations) Deploy(ctx context.Context) (*controller.ActionR
 	// Secret exists - check update policy
 	if op.config.UpdatePolicy == UpdatePolicyIfNotExists {
 		log.Info("Secret exists and updatePolicy is IfNotExists, skipping update")
+
 		op.status.SecretArn = aws.ToString(describeOutput.ARN)
 		op.status.SecretName = aws.ToString(describeOutput.Name)
 		op.status.SecretPath = aws.ToString(describeOutput.Name)
 		op.status.Region = op.awsConfig.Region
 		op.status.FieldCount = len(op.config.Fields)
-		return controller.ActionSuccess(op.status)
+
+		details := fmt.Sprintf("Secret %s exists, update skipped (IfNotExists policy)", op.config.SecretName)
+		return controller.ActionSuccessWithDetails(op.status, details)
 	}
 
 	// Update existing secret
-	return op.updateSecret(ctx, secretJSON)
+	return op.updateSecret(ctx, secretJSON, generatedCount, staticCount)
 }
 
 // CheckDeployment verifies secret exists and is ready
@@ -100,19 +103,22 @@ func (op *SecretPushOperations) CheckDeployment(ctx context.Context) (*controlle
 		"secretArn", op.status.SecretArn,
 		"fieldCount", op.status.FieldCount)
 
-	return controller.CheckComplete(op.status)
+	details := fmt.Sprintf("Secret %s ready with %d fields", op.status.SecretName, op.status.FieldCount)
+	return controller.CheckCompleteWithDetails(op.status, details)
 }
 
 // buildSecretData generates passwords and combines with static fields
-// Returns a flat map suitable for JSON marshaling
-func (op *SecretPushOperations) buildSecretData(ctx context.Context) (map[string]interface{}, error) {
+// Returns a flat map suitable for JSON marshaling, plus counts of generated and static fields
+func (op *SecretPushOperations) buildSecretData(ctx context.Context) (map[string]interface{}, int, int, error) {
 	log := logf.FromContext(ctx)
 	secretData := make(map[string]interface{})
+	var generatedCount, staticCount int
 
 	for fieldName, fieldSpec := range op.config.Fields {
 		if fieldSpec.Value != "" {
 			// Static value (already resolved by cross-component templating)
 			secretData[fieldName] = fieldSpec.Value
+			staticCount++
 			log.V(1).Info("Added static field", "field", fieldName)
 		} else if fieldSpec.Generator != nil {
 			// Generate via AWS GetRandomPassword
@@ -127,19 +133,20 @@ func (op *SecretPushOperations) buildSecretData(ctx context.Context) (map[string
 				ExcludeCharacters:       aws.String(fieldSpec.Generator.ExcludeCharacters),
 			})
 			if err != nil {
-				return nil, fmt.Errorf("failed to generate password for field %s: %w", fieldName, err)
+				return nil, 0, 0, fmt.Errorf("failed to generate password for field %s: %w", fieldName, err)
 			}
 			secretData[fieldName] = aws.ToString(result.RandomPassword)
+			generatedCount++
 			log.V(1).Info("Generated random password", "field", fieldName, "length", fieldSpec.Generator.PasswordLength)
 		}
 	}
 
-	log.Info("Built secret data", "totalFields", len(secretData))
-	return secretData, nil
+	log.Info("Built secret data", "totalFields", len(secretData), "generated", generatedCount, "static", staticCount)
+	return secretData, generatedCount, staticCount, nil
 }
 
 // createSecret creates a new secret in AWS Secrets Manager
-func (op *SecretPushOperations) createSecret(ctx context.Context, secretJSON []byte) (*controller.ActionResult, error) {
+func (op *SecretPushOperations) createSecret(ctx context.Context, secretJSON []byte, generatedCount, staticCount int) (*controller.ActionResult, error) {
 	log := logf.FromContext(ctx)
 
 	createInput := &secretsmanager.CreateSecretInput{
@@ -175,11 +182,13 @@ func (op *SecretPushOperations) createSecret(ctx context.Context, secretJSON []b
 		"versionId", op.status.VersionId,
 		"fieldCount", op.status.FieldCount)
 
-	return controller.ActionSuccess(op.status)
+	details := fmt.Sprintf("Created secret %s with %d fields (%d generated, %d static)",
+		op.config.SecretName, generatedCount+staticCount, generatedCount, staticCount)
+	return controller.ActionSuccessWithDetails(op.status, details)
 }
 
 // updateSecret updates an existing secret in AWS Secrets Manager
-func (op *SecretPushOperations) updateSecret(ctx context.Context, secretJSON []byte) (*controller.ActionResult, error) {
+func (op *SecretPushOperations) updateSecret(ctx context.Context, secretJSON []byte, generatedCount, staticCount int) (*controller.ActionResult, error) {
 	log := logf.FromContext(ctx)
 
 	updateOutput, err := op.smClient.UpdateSecret(ctx, &secretsmanager.UpdateSecretInput{
@@ -203,5 +212,7 @@ func (op *SecretPushOperations) updateSecret(ctx context.Context, secretJSON []b
 		"versionId", aws.ToString(updateOutput.VersionId),
 		"fieldCount", op.status.FieldCount)
 
-	return controller.ActionSuccess(op.status)
+	details := fmt.Sprintf("Updated secret %s with %d fields (%d generated, %d static)",
+		op.config.SecretName, generatedCount+staticCount, generatedCount, staticCount)
+	return controller.ActionSuccessWithDetails(op.status, details)
 }

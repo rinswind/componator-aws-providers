@@ -28,7 +28,8 @@ func (op *SecretPushOperations) Delete(ctx context.Context) (*controller.ActionR
 	// Check deletion policy
 	if op.config.DeletionPolicy == DeletionPolicyRetain {
 		log.Info("DeletionPolicy is Retain, skipping secret deletion", "secretArn", op.status.SecretArn)
-		return controller.ActionSuccess(op.status)
+		details := fmt.Sprintf("Secret %s retained (Retain policy)", op.config.SecretName)
+		return controller.ActionSuccessWithDetails(op.status, details)
 	}
 
 	log.Info("Starting secret deletion")
@@ -51,7 +52,8 @@ func (op *SecretPushOperations) Delete(ctx context.Context) (*controller.ActionR
 	}
 
 	log.Info("Successfully initiated secret deletion", "secretArn", op.status.SecretArn)
-	return controller.ActionSuccess(op.status)
+	details := fmt.Sprintf("Deleting secret %s", op.config.SecretName)
+	return controller.ActionSuccessWithDetails(op.status, details)
 }
 
 // CheckDeletion verifies deletion is complete
@@ -73,12 +75,14 @@ func (op *SecretPushOperations) CheckDeletion(ctx context.Context) (*controller.
 		var notFoundErr *types.ResourceNotFoundException
 		if errors.As(err, &notFoundErr) {
 			log.Info("Secret deletion verified", "secretArn", op.status.SecretArn)
-			return controller.CheckComplete(op.status)
+			details := fmt.Sprintf("Secret %s deleted", op.config.SecretName)
+			return controller.CheckCompleteWithDetails(op.status, details)
 		}
 		return nil, fmt.Errorf("failed to check deletion status: %w", err)
 	}
 
 	// Secret still exists - deletion in progress
 	log.V(1).Info("Secret still exists, deletion in progress", "secretArn", op.status.SecretArn)
-	return controller.CheckInProgress(op.status)
+	details := fmt.Sprintf("Waiting for secret %s deletion", op.config.SecretName)
+	return controller.CheckInProgressWithDetails(op.status, details)
 }
