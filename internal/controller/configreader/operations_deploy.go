@@ -73,7 +73,8 @@ func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.Action
 
 	log.Info("Successfully read all ConfigMaps", "exportCount", len(o.status))
 
-	return controller.ActionSuccess(o.status)
+	details := fmt.Sprintf("Read %d values from %d ConfigMaps", len(o.status), len(o.config.Sources))
+	return controller.ActionSuccessWithDetails(o.status, details)
 }
 
 // CheckDeployment always returns success immediately since Deploy completes synchronously.
