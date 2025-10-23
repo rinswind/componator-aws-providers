@@ -34,7 +34,21 @@ func (op *SecretPushOperations) Delete(ctx context.Context) (*controller.ActionR
 
 	log.Info("Starting secret deletion")
 
-	// Delete secret (with force to skip recovery window for cleaner deletion)
+	// Delete secret from AWS
+	err := op.deleteSecretInAWS(ctx)
+	if err != nil {
+		return controller.ActionResultForError(op.status, err, awsErrorClassifier)
+	}
+
+	// Status remains unchanged (no update needed for deletion)
+	details := fmt.Sprintf("Deleting secret %s", op.config.SecretName)
+	return controller.ActionSuccessWithDetails(op.status, details)
+}
+
+// deleteSecretInAWS deletes the secret from AWS Secrets Manager
+func (op *SecretPushOperations) deleteSecretInAWS(ctx context.Context) error {
+	log := logf.FromContext(ctx)
+
 	deleteInput := &secretsmanager.DeleteSecretInput{
 		SecretId:                   aws.String(op.status.SecretArn),
 		ForceDeleteWithoutRecovery: aws.Bool(true),
@@ -45,15 +59,13 @@ func (op *SecretPushOperations) Delete(ctx context.Context) (*controller.ActionR
 		var notFoundErr *types.ResourceNotFoundException
 		if errors.As(err, &notFoundErr) {
 			log.Info("Secret already deleted", "secretArn", op.status.SecretArn)
-			return controller.ActionSuccess(op.status)
+			return nil
 		}
-		return controller.ActionResultForError(
-			op.status, fmt.Errorf("failed to delete secret: %w", err), awsErrorClassifier)
+		return fmt.Errorf("failed to delete secret: %w", err)
 	}
 
 	log.Info("Successfully initiated secret deletion", "secretArn", op.status.SecretArn)
-	details := fmt.Sprintf("Deleting secret %s", op.config.SecretName)
-	return controller.ActionSuccessWithDetails(op.status, details)
+	return nil
 }
 
 // CheckDeletion verifies deletion is complete
@@ -66,7 +78,26 @@ func (op *SecretPushOperations) CheckDeletion(ctx context.Context) (*controller.
 		return controller.CheckComplete(op.status)
 	}
 
-	// Verify secret no longer exists
+	// Check if secret still exists
+	stillExists, err := op.secretStillExists(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if stillExists {
+		log.V(1).Info("Secret still exists, deletion in progress", "secretArn", op.status.SecretArn)
+		details := fmt.Sprintf("Waiting for secret %s deletion", op.config.SecretName)
+		return controller.CheckInProgressWithDetails(op.status, details)
+	}
+
+	log.Info("Secret deletion verified", "secretArn", op.status.SecretArn)
+	details := fmt.Sprintf("Secret %s deleted", op.config.SecretName)
+	return controller.CheckCompleteWithDetails(op.status, details)
+}
+
+// secretStillExists checks if the secret still exists during deletion
+// Returns: exists, error
+func (op *SecretPushOperations) secretStillExists(ctx context.Context) (bool, error) {
 	_, err := op.smClient.DescribeSecret(ctx, &secretsmanager.DescribeSecretInput{
 		SecretId: aws.String(op.status.SecretArn),
 	})
@@ -74,15 +105,10 @@ func (op *SecretPushOperations) CheckDeletion(ctx context.Context) (*controller.
 	if err != nil {
 		var notFoundErr *types.ResourceNotFoundException
 		if errors.As(err, &notFoundErr) {
-			log.Info("Secret deletion verified", "secretArn", op.status.SecretArn)
-			details := fmt.Sprintf("Secret %s deleted", op.config.SecretName)
-			return controller.CheckCompleteWithDetails(op.status, details)
+			return false, nil
 		}
-		return nil, fmt.Errorf("failed to check deletion status: %w", err)
+		return false, fmt.Errorf("failed to check deletion status: %w", err)
 	}
 
-	// Secret still exists - deletion in progress
-	log.V(1).Info("Secret still exists, deletion in progress", "secretArn", op.status.SecretArn)
-	details := fmt.Sprintf("Waiting for secret %s deletion", op.config.SecretName)
-	return controller.CheckInProgressWithDetails(op.status, details)
+	return true, nil
 }
