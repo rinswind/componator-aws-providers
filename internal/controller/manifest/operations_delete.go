@@ -5,6 +5,7 @@ package manifest
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/rinswind/deployment-operator/componentkit/controller"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -60,7 +61,8 @@ func (m *ManifestOperations) Delete(ctx context.Context) (*controller.ActionResu
 
 	// Return success immediately - deletion is complete
 	// (Kubernetes handles finalizers and cascading deletion)
-	return controller.ActionSuccess(m.status)
+	details := fmt.Sprintf("Deleting %d resources", len(m.status.AppliedResources))
+	return controller.ActionSuccessWithDetails(m.status, details)
 }
 
 // CheckDeletion verifies that all resources have been deleted.
@@ -77,7 +79,7 @@ func (m *ManifestOperations) CheckDeletion(ctx context.Context) (*controller.Che
 	}
 
 	// Check if any resources still exist
-	anyExist := false
+	deletedCount := 0
 	for i, ref := range m.status.AppliedResources {
 		log := log.WithValues(
 			"resourceIndex", i,
@@ -101,6 +103,7 @@ func (m *ManifestOperations) CheckDeletion(ctx context.Context) (*controller.Che
 			if errors.IsNotFound(err) {
 				// Resource deleted - this is what we want
 				log.V(1).Info("Resource deleted")
+				deletedCount++
 			} else {
 				// Error checking - log but continue
 				log.Error(err, "Failed to check resource status")
@@ -108,15 +111,18 @@ func (m *ManifestOperations) CheckDeletion(ctx context.Context) (*controller.Che
 		} else {
 			// Resource still exists
 			log.Info("Resource still exists")
-			anyExist = true
 		}
 	}
 
-	if anyExist {
-		log.Info("Some resources still exist, waiting for deletion")
-		return controller.CheckInProgress(m.status)
+	totalCount := len(m.status.AppliedResources)
+
+	if deletedCount < totalCount {
+		log.Info("Some resources still exist, waiting for deletion", "deletedCount", deletedCount, "totalCount", totalCount)
+		details := fmt.Sprintf("Deleted %d of %d resources", deletedCount, totalCount)
+		return controller.CheckInProgressWithDetails(m.status, details)
 	}
 
 	log.Info("All resources deleted")
-	return controller.CheckComplete(m.status)
+	details := fmt.Sprintf("All %d resources deleted", totalCount)
+	return controller.CheckCompleteWithDetails(m.status, details)
 }

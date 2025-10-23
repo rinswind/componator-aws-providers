@@ -74,7 +74,8 @@ func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.ActionResu
 	log.Info("All manifests applied successfully", "appliedCount", len(m.status.AppliedResources))
 
 	// Return pending - need to check status separately
-	return controller.ActionSuccess(m.status)
+	details := fmt.Sprintf("Applied %d resources", len(m.status.AppliedResources))
+	return controller.ActionSuccessWithDetails(m.status, details)
 }
 
 // CheckDeployment verifies the readiness of all applied resources using kstatus.
@@ -89,7 +90,7 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.C
 	}
 
 	// Check status of each applied resource
-	allReady := true
+	readyCount := 0
 	for i, ref := range m.status.AppliedResources {
 		log := log.WithValues(
 			"resourceIndex", i,
@@ -122,7 +123,6 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.C
 		if err != nil {
 			log.Error(err, "Failed to compute status")
 			// If we can't compute status, keep checking
-			allReady = false
 			continue
 		}
 
@@ -133,12 +133,11 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.C
 		case status.CurrentStatus:
 			// Resource is ready
 			log.V(1).Info("Resource is ready")
-			continue
+			readyCount++
 
 		case status.InProgressStatus, status.UnknownStatus:
 			// Still progressing or unknown - not ready yet
 			log.Info("Resource not ready yet", "status", statusResult.Status, "message", statusResult.Message)
-			allReady = false
 
 		case status.FailedStatus:
 			// Resource has failed
@@ -161,15 +160,18 @@ func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.C
 		default:
 			// Unknown status
 			log.Info("Resource has unknown status", "status", statusResult.Status)
-			allReady = false
 		}
 	}
 
-	if allReady {
+	totalCount := len(m.status.AppliedResources)
+
+	if readyCount == totalCount {
 		log.Info("All resources are ready")
-		return controller.CheckComplete(m.status)
+		details := fmt.Sprintf("All %d resources ready", totalCount)
+		return controller.CheckCompleteWithDetails(m.status, details)
 	}
 
-	log.Info("Some resources not ready yet")
-	return controller.CheckInProgress(m.status)
+	log.Info("Some resources not ready yet", "readyCount", readyCount, "totalCount", totalCount)
+	details := fmt.Sprintf("%d of %d resources ready", readyCount, totalCount)
+	return controller.CheckInProgressWithDetails(m.status, details)
 }
