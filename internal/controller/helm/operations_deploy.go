@@ -119,7 +119,8 @@ func (h *HelmOperations) install(ctx context.Context, chart *chart.Chart) (*cont
 	h.status.ChartVersion = rel.Chart.Metadata.Version
 	h.status.LastDeployTime = time.Now().Format(time.RFC3339)
 
-	return controller.ActionSuccess(h.status)
+	details := fmt.Sprintf("Installing chart %s:%s", chart.Metadata.Name, chart.Metadata.Version)
+	return controller.ActionSuccessWithDetails(h.status, details)
 }
 
 // startHelmReleaseUpgrade handles upgrading an existing Helm release using pre-parsed configuration
@@ -158,7 +159,8 @@ func (h *HelmOperations) upgrade(ctx context.Context, chart *chart.Chart) (*cont
 	h.status.ChartVersion = rel.Chart.Metadata.Version
 	h.status.LastDeployTime = time.Now().Format(time.RFC3339)
 
-	return controller.ActionSuccess(h.status)
+	details := fmt.Sprintf("Upgrading chart %s:%s", chart.Metadata.Name, chart.Metadata.Version)
+	return controller.ActionSuccessWithDetails(h.status, details)
 }
 
 // checkReleaseDeployed verifies if a Helm release and all its resources are ready using pre-parsed configuration
@@ -183,7 +185,7 @@ func (h *HelmOperations) CheckDeployment(ctx context.Context) (*controller.Check
 	}
 
 	// Use non-blocking readiness check
-	ready, err := h.checkResourcesReady(ctx, resourceList)
+	notReadyCount, err := h.checkResourcesReady(ctx, resourceList)
 	if err != nil {
 		return controller.CheckResultForError(
 			h.status,
@@ -191,31 +193,34 @@ func (h *HelmOperations) CheckDeployment(ctx context.Context) (*controller.Check
 			controller.AlwaysRetryOnError)
 	}
 
-	if ready {
-		return controller.CheckComplete(h.status)
+	if notReadyCount == 0 {
+		details := fmt.Sprintf("Release %s ready with %d resources", h.status.ReleaseName, len(resourceList))
+		return controller.CheckCompleteWithDetails(h.status, details)
 	}
 
-	return controller.CheckInProgress(h.status)
+	details := fmt.Sprintf("Waiting for %d of %d resources to be ready", notReadyCount, len(resourceList))
+	return controller.CheckInProgressWithDetails(h.status, details)
 }
 
-// checkResourcesReady performs non-blocking readiness checks on Kubernetes resources
-func (h *HelmOperations) checkResourcesReady(ctx context.Context, resourceList kube.ResourceList) (bool, error) {
+// checkResourcesReady performs non-blocking readiness checks on Kubernetes resources.
+// Returns the count of not-ready resources (0 means all ready) and any error encountered.
+func (h *HelmOperations) checkResourcesReady(ctx context.Context, resourceList kube.ResourceList) (int, error) {
 	log := logf.FromContext(ctx).WithValues("releaseName", h.status.ReleaseName)
 
 	if len(resourceList) == 0 {
 		log.Info("No resources to check, treating as ready")
-		return true, nil
+		return 0, nil
 	}
 
 	// Create Kubernetes client for ReadyChecker using action config's REST client
 	restConfig, err := h.actionConfig.RESTClientGetter.ToRESTConfig()
 	if err != nil {
-		return false, fmt.Errorf("failed to get REST config: %w", err)
+		return 0, fmt.Errorf("failed to get REST config: %w", err)
 	}
 
 	kubernetesClient, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
-		return false, fmt.Errorf("failed to create kubernetes client: %w", err)
+		return 0, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
 
 	// Create ReadyChecker - this is Helm's non-blocking readiness checker
@@ -235,7 +240,7 @@ func (h *HelmOperations) checkResourcesReady(ctx context.Context, resourceList k
 				"kind", resource.Mapping.GroupVersionKind.Kind,
 				"namespace", resource.Namespace)
 
-			return false, fmt.Errorf("failed to check readiness of %s/%s: %w",
+			return 0, fmt.Errorf("failed to check readiness of %s/%s: %w",
 				resource.Mapping.GroupVersionKind.Kind, resource.Name, err)
 		}
 
@@ -248,12 +253,11 @@ func (h *HelmOperations) checkResourcesReady(ctx context.Context, resourceList k
 		}
 	}
 
-	allReady := (notReadyCount == 0)
-	if allReady {
+	if notReadyCount == 0 {
 		log.Info("All resources ready", "total", len(resourceList))
 	} else {
 		log.Info("Some resources not ready", "notReady", notReadyCount, "total", len(resourceList))
 	}
 
-	return allReady, nil
+	return notReadyCount, nil
 }

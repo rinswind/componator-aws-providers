@@ -63,7 +63,8 @@ func (h *HelmOperations) Delete(ctx context.Context) (*controller.ActionResult, 
 		}
 	}
 
-	return controller.ActionSuccess(h.status)
+	details := fmt.Sprintf("Deleting release %s", releaseName)
+	return controller.ActionSuccessWithDetails(h.status, details)
 }
 
 // checkDeletion verifies if a Helm release and all its resources have been deleted using pre-parsed configuration
@@ -97,7 +98,7 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context) (*controller.CheckRe
 	}
 
 	// Check if all resources from manifest are deleted
-	allDeleted, err := checkResourcesDeleted(ctx, resourceList)
+	remainingCount, err := checkResourcesDeleted(ctx, resourceList)
 	if err != nil {
 		return controller.CheckResultForError(
 			h.status,
@@ -105,9 +106,10 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context) (*controller.CheckRe
 			controller.AlwaysRetryOnError)
 	}
 
-	if !allDeleted {
+	if remainingCount > 0 {
 		log.Info("Some release resources still exist, deletion in progress")
-		return controller.CheckInProgress(h.status)
+		details := fmt.Sprintf("Waiting for %d of %d resources to be deleted", remainingCount, len(resourceList))
+		return controller.CheckInProgressWithDetails(h.status, details)
 	}
 
 	log.Info("All release resources deleted")
@@ -115,7 +117,8 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context) (*controller.CheckRe
 	// Are we managing the namespace too?
 	if !*h.config.ManageNamespace {
 		log.Info("Deletion complete")
-		return controller.CheckComplete(h.status)
+		details := fmt.Sprintf("Release %s deleted", h.status.ReleaseName)
+		return controller.CheckCompleteWithDetails(h.status, details)
 	}
 
 	exists, err := h.namespaceExists(ctx)
@@ -128,21 +131,23 @@ func (h *HelmOperations) CheckDeletion(ctx context.Context) (*controller.CheckRe
 
 	if exists {
 		log.Info("Managed namespace still exists, deletion in progress")
-		return controller.CheckInProgress(h.status)
+		details := fmt.Sprintf("Waiting for namespace %s deletion", h.config.ReleaseNamespace)
+		return controller.CheckInProgressWithDetails(h.status, details)
 	}
 
 	log.Info("Deletion complete")
-	return controller.CheckComplete(h.status)
+	details := fmt.Sprintf("Release %s deleted", h.status.ReleaseName)
+	return controller.CheckCompleteWithDetails(h.status, details)
 }
 
-// checkResourcesDeleted performs non-blocking deletion checks on Kubernetes resources
-// Returns true when all resources from the list no longer exist in the cluster
-func checkResourcesDeleted(ctx context.Context, resourceList kube.ResourceList) (bool, error) {
+// checkResourcesDeleted performs non-blocking deletion checks on Kubernetes resources.
+// Returns the count of resources still existing (0 means all deleted) and any error encountered.
+func checkResourcesDeleted(ctx context.Context, resourceList kube.ResourceList) (int, error) {
 	log := logf.FromContext(ctx).WithValues("totalResources", len(resourceList))
 
 	if len(resourceList) == 0 {
 		log.Info("No resources to check for deletion, treating as deleted")
-		return true, nil
+		return 0, nil
 	}
 
 	existsCount := 0
@@ -156,7 +161,7 @@ func checkResourcesDeleted(ctx context.Context, resourceList kube.ResourceList) 
 				"resource", resource.Name,
 				"kind", resource.Mapping.GroupVersionKind.Kind,
 				"namespace", resource.Namespace)
-			return false, fmt.Errorf("failed to check existence of %s/%s: %w",
+			return 0, fmt.Errorf("failed to check existence of %s/%s: %w",
 				resource.Mapping.GroupVersionKind.Kind, resource.Name, err)
 		}
 
@@ -169,14 +174,13 @@ func checkResourcesDeleted(ctx context.Context, resourceList kube.ResourceList) 
 		}
 	}
 
-	allDeleted := (existsCount == 0)
-	if !allDeleted {
-		log.Info("Some resources still exist", "stillExist", existsCount, "total", len(resourceList))
-	} else {
+	if existsCount == 0 {
 		log.Info("All resources deleted", "total", len(resourceList))
+	} else {
+		log.Info("Some resources still exist", "stillExist", existsCount, "total", len(resourceList))
 	}
 
-	return allDeleted, nil
+	return existsCount, nil
 }
 
 // resourceExists checks if a specific Kubernetes resource still exists in the cluster
