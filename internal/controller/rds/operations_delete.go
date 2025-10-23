@@ -57,7 +57,8 @@ func (r *RdsOperations) Delete(ctx context.Context) (*controller.ActionResult, e
 	// Update status with AWS response data
 	r.updateStatus(result.DBInstance)
 
-	return controller.ActionSuccess(r.status)
+	details := fmt.Sprintf("Deleting RDS instance %s", instanceID)
+	return controller.ActionSuccessWithDetails(r.status, details)
 }
 
 // CheckDeletion verifies the current deletion status using pre-parsed configuration
@@ -79,7 +80,8 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context) (*controller.CheckRes
 
 	if instance == nil {
 		log.Info("RDS instance successfully deleted")
-		return controller.CheckComplete(r.status)
+		details := fmt.Sprintf("Instance %s deleted", instanceID)
+		return controller.CheckCompleteWithDetails(r.status, details)
 	}
 	status := stringValue(instance.DBInstanceStatus)
 
@@ -94,7 +96,8 @@ func (r *RdsOperations) CheckDeletion(ctx context.Context) (*controller.CheckRes
 	case "deleting":
 		// Still deleting - continue waiting
 		log.Info("RDS instance deletion in progress")
-		return controller.CheckInProgress(r.status)
+		details := fmt.Sprintf("Waiting for instance %s deletion", instanceID)
+		return controller.CheckInProgressWithDetails(r.status, details)
 
 	case "failed":
 		// Deletion failed, but don't block cleanup

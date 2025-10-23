@@ -73,12 +73,14 @@ func (r *RdsOperations) CheckDeployment(ctx context.Context) (*controller.CheckR
 			"endpoint", r.status.Endpoint,
 			"port", r.status.Port)
 
-		return controller.CheckComplete(r.status)
+		details := fmt.Sprintf("Instance %s available at %s:%d", instanceID, r.status.Endpoint, r.status.Port)
+		return controller.CheckCompleteWithDetails(r.status, details)
 
 	case "creating", "backing-up", "modifying":
 		// Still in progress
 		log.Info("RDS instance deployment in progress")
-		return controller.CheckInProgress(r.status)
+		details := fmt.Sprintf("Instance %s status: %s", instanceID, r.status.InstanceStatus)
+		return controller.CheckInProgressWithDetails(r.status, details)
 
 	case "failed", "incompatible-restore", "incompatible-network":
 		// Failed states
@@ -170,7 +172,8 @@ func (r *RdsOperations) createInstance(ctx context.Context) (*controller.ActionR
 
 	log.Info("RDS instance creation initiated successfully", "status", r.status.InstanceStatus)
 
-	return controller.ActionSuccess(r.status)
+	details := fmt.Sprintf("Creating RDS instance %s (%s)", instanceID, config.InstanceClass)
+	return controller.ActionSuccessWithDetails(r.status, details)
 }
 
 // modifyInstance handles RDS instance modification using pre-parsed configuration
@@ -211,5 +214,6 @@ func (r *RdsOperations) modifyInstance(ctx context.Context) (*controller.ActionR
 
 	log.Info("RDS instance modification initiated successfully", "status", r.status.InstanceStatus)
 
-	return controller.ActionSuccess(r.status)
+	details := fmt.Sprintf("Modifying RDS instance %s (%s)", instanceID, config.InstanceClass)
+	return controller.ActionSuccessWithDetails(r.status, details)
 }
