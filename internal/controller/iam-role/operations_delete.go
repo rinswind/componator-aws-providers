@@ -42,6 +42,7 @@ func (op *IamRoleOperations) Delete(ctx context.Context) (*controller.ActionResu
 			op.status, fmt.Errorf("failed to list attached policies: %w", err), iamErrorClassifier)
 	}
 
+	detachedCount := 0
 	// Detach all managed policies
 	if len(attachedPolicies) > 0 {
 		log.Info("Detaching managed policies before deletion", "count", len(attachedPolicies))
@@ -51,6 +52,7 @@ func (op *IamRoleOperations) Delete(ctx context.Context) (*controller.ActionResu
 				return controller.ActionResultForError(
 					op.status, fmt.Errorf("failed to detach policy %s: %w", policyArn, err), iamErrorClassifier)
 			}
+			detachedCount++
 		}
 		log.Info("Successfully detached all policies")
 	}
@@ -62,7 +64,8 @@ func (op *IamRoleOperations) Delete(ctx context.Context) (*controller.ActionResu
 	}
 
 	log.Info("Successfully deleted IAM role")
-	return controller.ActionSuccess(op.status)
+	details := fmt.Sprintf("Deleting role %s (detached %d policies)", op.config.RoleName, detachedCount)
+	return controller.ActionSuccessWithDetails(op.status, details)
 }
 
 // CheckDeletion verifies the IAM role has been successfully deleted.
@@ -78,11 +81,13 @@ func (op *IamRoleOperations) CheckDeletion(ctx context.Context) (*controller.Che
 
 	if role == nil {
 		log.Info("Role deletion confirmed")
-		return controller.CheckComplete(op.status)
+		details := fmt.Sprintf("Role %s deleted", op.config.RoleName)
+		return controller.CheckCompleteWithDetails(op.status, details)
 	}
 
 	log.V(1).Info("Role still exists, deletion in progress")
-	return controller.CheckInProgress(op.status)
+	details := fmt.Sprintf("Waiting for role %s deletion", op.config.RoleName)
+	return controller.CheckInProgressWithDetails(op.status, details)
 }
 
 // deleteRole deletes the IAM role

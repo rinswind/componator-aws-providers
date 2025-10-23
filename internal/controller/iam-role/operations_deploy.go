@@ -57,10 +57,12 @@ func (op *IamRoleOperations) Deploy(ctx context.Context) (*controller.ActionResu
 
 		// Attach all managed policies
 		log.Info("Attaching managed policies to new role", "count", len(op.config.ManagedPolicyArns))
-		attachedPolicies, err := op.reconcilePolicyAttachments(ctx, op.config.RoleName, op.config.ManagedPolicyArns)
+		result, err := op.reconcilePolicyAttachments(ctx, op.config.RoleName, op.config.ManagedPolicyArns)
 
 		// Always update status with actual attached policies (even on partial failure)
-		op.status.AttachedPolicies = attachedPolicies
+		if result != nil {
+			op.status.AttachedPolicies = result.AttachedPolicies
+		}
 
 		if err != nil {
 			return controller.ActionResultForError(
@@ -68,7 +70,8 @@ func (op *IamRoleOperations) Deploy(ctx context.Context) (*controller.ActionResu
 		}
 
 		log.Info("Successfully deployed new role", "roleArn", op.status.RoleArn)
-		return controller.ActionSuccess(op.status)
+		details := fmt.Sprintf("Created role %s with %d policies", op.status.RoleName, len(result.AttachedPolicies))
+		return controller.ActionSuccessWithDetails(op.status, details)
 	}
 
 	// Role exists - update status and reconcile configuration
@@ -86,10 +89,12 @@ func (op *IamRoleOperations) Deploy(ctx context.Context) (*controller.ActionResu
 	}
 
 	// Reconcile policy attachments
-	attachedPolicies, err := op.reconcilePolicyAttachments(ctx, op.config.RoleName, op.config.ManagedPolicyArns)
+	result, err := op.reconcilePolicyAttachments(ctx, op.config.RoleName, op.config.ManagedPolicyArns)
 
 	// Always update status with actual attached policies (even on partial failure)
-	op.status.AttachedPolicies = attachedPolicies
+	if result != nil {
+		op.status.AttachedPolicies = result.AttachedPolicies
+	}
 
 	if err != nil {
 		return controller.ActionResultForError(
@@ -97,7 +102,16 @@ func (op *IamRoleOperations) Deploy(ctx context.Context) (*controller.ActionResu
 	}
 
 	log.Info("Successfully reconciled role", "roleArn", op.status.RoleArn)
-	return controller.ActionSuccess(op.status)
+
+	// Build detailed message about changes
+	var details string
+	if result.AttachedCount > 0 || result.DetachedCount > 0 {
+		details = fmt.Sprintf("Updated role %s: attached %d, detached %d, total %d policies",
+			op.status.RoleName, result.AttachedCount, result.DetachedCount, len(result.AttachedPolicies))
+	} else {
+		details = fmt.Sprintf("Role %s unchanged with %d policies", op.status.RoleName, len(result.AttachedPolicies))
+	}
+	return controller.ActionSuccessWithDetails(op.status, details)
 }
 
 // CheckDeployment verifies if the IAM role exists and is in the desired state.
@@ -129,7 +143,8 @@ func (op *IamRoleOperations) CheckDeployment(ctx context.Context) (*controller.C
 
 	log.Info("Role deployment complete", "roleArn", op.status.RoleArn, "roleId", op.status.RoleId)
 
-	return controller.CheckComplete(op.status)
+	details := fmt.Sprintf("Role %s ready with %d policies", op.status.RoleName, len(op.status.AttachedPolicies))
+	return controller.CheckCompleteWithDetails(op.status, details)
 }
 
 // jsonEquals compares two policy documents for semantic equality.
@@ -225,10 +240,17 @@ func (op *IamRoleOperations) updateTrustPolicy(ctx context.Context, roleName, cu
 	return nil
 }
 
+// PolicyReconciliationResult contains the outcome of policy attachment reconciliation
+type PolicyReconciliationResult struct {
+	AttachedPolicies []string // Final list of attached policies
+	AttachedCount    int      // Number of policies attached during this operation
+	DetachedCount    int      // Number of policies detached during this operation
+}
+
 // reconcilePolicyAttachments ensures the role has exactly the desired managed policies attached.
 // Returns the actual list of attached policies after reconciliation (which may be partial on failure).
 // This allows status to reflect reality even when reconciliation fails partway through.
-func (op *IamRoleOperations) reconcilePolicyAttachments(ctx context.Context, roleName string, desiredPolicies []string) ([]string, error) {
+func (op *IamRoleOperations) reconcilePolicyAttachments(ctx context.Context, roleName string, desiredPolicies []string) (*PolicyReconciliationResult, error) {
 	log := logf.FromContext(ctx).WithValues("roleName", roleName)
 
 	// Get currently attached policies
@@ -271,7 +293,11 @@ func (op *IamRoleOperations) reconcilePolicyAttachments(ctx context.Context, rol
 	// Check whether we have any changes to make
 	if len(toAttach) == 0 && len(toDetach) == 0 {
 		log.V(1).Info("Policy attachments already in desired state")
-		return slices.Sorted(maps.Keys(actuallyAttached)), nil
+		return &PolicyReconciliationResult{
+			AttachedPolicies: slices.Sorted(maps.Keys(actuallyAttached)),
+			AttachedCount:    0,
+			DetachedCount:    0,
+		}, nil
 	}
 
 	// Detach removed policies first (cleanup before adding)
@@ -279,22 +305,36 @@ func (op *IamRoleOperations) reconcilePolicyAttachments(ctx context.Context, rol
 		log.Info("Detaching policy", "policyArn", arn)
 		if err := op.detachPolicy(ctx, roleName, arn); err != nil {
 			// Return current actual state even on failure
-			return slices.Sorted(maps.Keys(actuallyAttached)), fmt.Errorf("failed to detach policy %s: %w", arn, err)
+			return &PolicyReconciliationResult{
+				AttachedPolicies: slices.Sorted(maps.Keys(actuallyAttached)),
+				AttachedCount:    0,
+				DetachedCount:    len(toDetach) - len(actuallyAttached) + len(currentPolicies),
+			}, fmt.Errorf("failed to detach policy %s: %w", arn, err)
 		}
 		delete(actuallyAttached, arn)
 	}
 
 	// Attach missing policies
+	attachedInThisOp := 0
 	for _, arn := range toAttach {
 		log.Info("Attaching policy", "policyArn", arn)
 		if err := op.attachPolicy(ctx, roleName, arn); err != nil {
 			// Return partial progress - what we actually have attached
-			return slices.Sorted(maps.Keys(actuallyAttached)), fmt.Errorf("failed to attach policy %s: %w", arn, err)
+			return &PolicyReconciliationResult{
+				AttachedPolicies: slices.Sorted(maps.Keys(actuallyAttached)),
+				AttachedCount:    attachedInThisOp,
+				DetachedCount:    len(toDetach),
+			}, fmt.Errorf("failed to attach policy %s: %w", arn, err)
 		}
 		actuallyAttached[arn] = true
+		attachedInThisOp++
 	}
 
 	log.Info("Policy attachments reconciled", "attached", len(toAttach), "detached", len(toDetach))
 
-	return slices.Sorted(maps.Keys(actuallyAttached)), nil
+	return &PolicyReconciliationResult{
+		AttachedPolicies: slices.Sorted(maps.Keys(actuallyAttached)),
+		AttachedCount:    len(toAttach),
+		DetachedCount:    len(toDetach),
+	}, nil
 }
