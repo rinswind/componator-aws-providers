@@ -37,7 +37,7 @@ func (op *SecretPushOperations) Deploy(ctx context.Context) (*controller.ActionR
 	}
 
 	// Check if secret exists
-	existingSecretArn, err := op.secretExists(ctx)
+	existingArn, _, err := op.findSecret(ctx, op.config.SecretName)
 	if err != nil {
 		return controller.ActionResultForError(op.status, err, awsErrorClassifier)
 	}
@@ -45,7 +45,7 @@ func (op *SecretPushOperations) Deploy(ctx context.Context) (*controller.ActionR
 	var secretArn, versionId string
 	var details string
 
-	if existingSecretArn == "" {
+	if existingArn == "" {
 		// Create new secret
 		secretArn, versionId, err = op.createSecret(ctx, secretJSON)
 		if err != nil {
@@ -57,7 +57,7 @@ func (op *SecretPushOperations) Deploy(ctx context.Context) (*controller.ActionR
 	} else if op.config.UpdatePolicy == UpdatePolicyIfNotExists {
 		// Secret exists and update policy is IfNotExists - skip update
 		log.Info("Secret exists and updatePolicy is IfNotExists, skipping update")
-		secretArn = existingSecretArn
+		secretArn = existingArn
 
 		// Keep existing versionId empty - we're not modifying the secret
 		details = fmt.Sprintf("Secret %s exists, update skipped (IfNotExists policy)", op.config.SecretName)
@@ -75,7 +75,6 @@ func (op *SecretPushOperations) Deploy(ctx context.Context) (*controller.ActionR
 	// Update status once at the end
 	op.status.SecretArn = secretArn
 	op.status.SecretName = op.config.SecretName
-	op.status.SecretPath = op.config.SecretName
 	op.status.VersionId = versionId
 	op.status.Region = op.awsConfig.Region
 	op.status.FieldCount = len(op.config.Fields)
@@ -94,23 +93,20 @@ func (op *SecretPushOperations) CheckDeployment(ctx context.Context) (*controlle
 	}
 
 	// Verify secret exists
-	describeOutput, err := op.smClient.DescribeSecret(ctx, &secretsmanager.DescribeSecretInput{
-		SecretId: aws.String(op.status.SecretArn),
-	})
+	arn, name, err := op.findSecret(ctx, op.status.SecretArn)
 
 	if err != nil {
-		var notFoundErr *types.ResourceNotFoundException
-		if errors.As(err, &notFoundErr) {
-			return controller.CheckResultForError(op.status,
-				fmt.Errorf("secret not found at ARN %s", op.status.SecretArn), awsErrorClassifier)
-		}
 		return nil, fmt.Errorf("failed to check secret status: %w", err)
 	}
 
+	if arn == "" {
+		return controller.CheckResultForError(op.status,
+			fmt.Errorf("secret not found at ARN %s", op.status.SecretArn), awsErrorClassifier)
+	}
+
 	// Update status with current secret info
-	op.status.SecretArn = aws.ToString(describeOutput.ARN)
-	op.status.SecretName = aws.ToString(describeOutput.Name)
-	op.status.SecretPath = aws.ToString(describeOutput.Name)
+	op.status.SecretArn = arn
+	op.status.SecretName = name
 
 	log.Info("Secret deployment complete",
 		"secretArn", op.status.SecretArn,
@@ -160,23 +156,23 @@ func (op *SecretPushOperations) buildSecretData(ctx context.Context) (map[string
 	return secretData, generatedCount, staticCount, nil
 }
 
-// secretExists checks if the secret exists in AWS Secrets Manager
-// Returns: secretArn (empty string if not found), error
-func (op *SecretPushOperations) secretExists(ctx context.Context) (string, error) {
+// findSecret checks if the secret exists in AWS Secrets Manager
+// Returns: arn, name (empty strings if not found), error
+func (op *SecretPushOperations) findSecret(ctx context.Context, secretId string) (string, string, error) {
 	describeOutput, err := op.smClient.DescribeSecret(ctx, &secretsmanager.DescribeSecretInput{
-		SecretId: aws.String(op.config.SecretName),
+		SecretId: aws.String(secretId),
 	})
 
 	if err == nil {
-		return aws.ToString(describeOutput.ARN), nil
+		return aws.ToString(describeOutput.ARN), aws.ToString(describeOutput.Name), nil
 	}
 
 	var notFoundErr *types.ResourceNotFoundException
 	if errors.As(err, &notFoundErr) {
-		return "", nil
+		return "", "", nil
 	}
 
-	return "", fmt.Errorf("failed to check secret existence: %w", err)
+	return "", "", fmt.Errorf("failed to check secret existence: %w", err)
 }
 
 // createSecret creates a new secret in AWS Secrets Manager

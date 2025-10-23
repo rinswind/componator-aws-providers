@@ -80,9 +80,6 @@ type SecretPushStatus struct {
 	// SecretName is the name/path in AWS Secrets Manager
 	SecretName string `json:"secretName,omitempty"`
 
-	// SecretPath is the path for ESO ExternalSecret references
-	SecretPath string `json:"secretPath,omitempty"`
-
 	// VersionId is the current secret version
 	VersionId string `json:"versionId,omitempty"`
 

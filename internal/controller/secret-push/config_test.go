@@ -226,7 +226,6 @@ func TestResolveSecretPushStatus(t *testing.T) {
 			statusJSON: `{
 				"secretArn": "arn:aws:secretsmanager:us-east-1:123456:secret:test-AbCdEf",
 				"secretName": "test-secret",
-				"secretPath": "test-secret",
 				"versionId": "uuid-123",
 				"region": "us-east-1",
 				"fieldCount": 3
