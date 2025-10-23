@@ -44,17 +44,20 @@ func (m *ManifestOperations) Delete(ctx context.Context) (*controller.ActionResu
 
 		// Delete the resource
 		err = resourceClient.Delete(ctx, ref.Name, deleteOptions())
-		if err != nil {
-			if errors.IsNotFound(err) {
-				// Resource already deleted - this is fine
-				log.V(1).Info("Resource already deleted")
-			} else {
-				// Log warning but continue with best-effort cleanup
-				log.Error(err, "Failed to delete resource, continuing")
-			}
-		} else {
+		if err == nil {
 			log.Info("Successfully deleted resource")
+			continue
 		}
+
+		if errors.IsNotFound(err) {
+			// Resource already deleted - this is fine
+			log.V(1).Info("Resource already deleted")
+			continue
+		}
+
+		// Log warning but continue with best-effort cleanup
+		// TODO: Return this in the details? Gather errors somehow?
+		log.Error(err, "Failed to delete resource, continuing")
 	}
 
 	log.Info("Deletion initiated for all resources")
