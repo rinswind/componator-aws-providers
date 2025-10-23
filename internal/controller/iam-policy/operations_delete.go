@@ -51,7 +51,8 @@ func (op *IamPolicyOperations) Delete(ctx context.Context) (*controller.ActionRe
 	}
 
 	log.Info("Successfully initiated policy deletion", "policyArn", op.status.PolicyArn)
-	return controller.ActionSuccess(op.status)
+	details := fmt.Sprintf("Deleting policy %s", op.status.PolicyName)
+	return controller.ActionSuccessWithDetails(op.status, details)
 }
 
 // CheckDeletion verifies deletion is complete
@@ -73,12 +74,14 @@ func (op *IamPolicyOperations) CheckDeletion(ctx context.Context) (*controller.C
 	// Policy still exists - deletion in progress
 	if policy != nil {
 		log.V(1).Info("Policy still exists, deletion in progress", "policyArn", op.status.PolicyArn)
-		return controller.CheckInProgress(op.status)
+		details := fmt.Sprintf("Waiting for policy %s deletion", op.status.PolicyName)
+		return controller.CheckInProgressWithDetails(op.status, details)
 	}
 
 	log.Info("Policy deletion verified", "policyArn", op.status.PolicyArn)
 
-	return controller.CheckComplete(op.status)
+	details := fmt.Sprintf("Policy %s deleted", op.status.PolicyName)
+	return controller.CheckCompleteWithDetails(op.status, details)
 }
 
 // deletePolicy deletes an IAM policy by ARN

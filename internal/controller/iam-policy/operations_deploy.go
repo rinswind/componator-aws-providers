@@ -53,7 +53,8 @@ func (op *IamPolicyOperations) Deploy(ctx context.Context) (*controller.ActionRe
 		op.status.CurrentVersionId = aws.ToString(policy.DefaultVersionId)
 
 		log.Info("Successfully deployed new policy", "policyArn", op.status.PolicyArn)
-		return controller.ActionSuccess(op.status)
+		details := fmt.Sprintf("Created policy %s", op.status.PolicyName)
+		return controller.ActionSuccessWithDetails(op.status, details)
 	}
 
 	// Policy exists - update status and create new version if needed
@@ -73,7 +74,8 @@ func (op *IamPolicyOperations) Deploy(ctx context.Context) (*controller.ActionRe
 	op.status.CurrentVersionId = versionId
 
 	log.Info("Successfully reconciled policy", "policyArn", op.status.PolicyArn, "versionId", versionId)
-	return controller.ActionSuccess(op.status)
+	details := fmt.Sprintf("Updated policy %s to version %s", op.status.PolicyName, versionId)
+	return controller.ActionSuccessWithDetails(op.status, details)
 }
 
 // CheckDeployment verifies policy exists and is ready
@@ -106,7 +108,8 @@ func (op *IamPolicyOperations) CheckDeployment(ctx context.Context) (*controller
 		"policyArn", op.status.PolicyArn,
 		"policyId", op.status.PolicyId)
 
-	return controller.CheckComplete(op.status)
+	details := fmt.Sprintf("Policy %s ready (version %s)", op.status.PolicyName, op.status.CurrentVersionId)
+	return controller.CheckCompleteWithDetails(op.status, details)
 }
 
 // createPolicy creates a new IAM policy and returns the created policy
