@@ -13,7 +13,7 @@ require (
 	github.com/gofrs/flock v0.12.1
 	github.com/onsi/ginkgo/v2 v2.25.3
 	github.com/onsi/gomega v1.38.2
-	github.com/rinswind/deployment-operator v0.0.15
+	github.com/rinswind/deployment-operator v0.0.17
 	github.com/stretchr/testify v1.11.1
 	helm.sh/helm/v3 v3.19.0
 	k8s.io/api v0.34.0
@@ -25,7 +25,7 @@ require (
 	sigs.k8s.io/controller-runtime v0.21.0
 )
 
-replace github.com/rinswind/deployment-operator => ../deployment-operator
+//replace github.com/rinswind/deployment-operator => ../deployment-operator
 
 require (
 	cel.dev/expr v0.24.0 // indirect
