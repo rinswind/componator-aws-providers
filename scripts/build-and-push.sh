@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build and push deployment-operator container to minikube and AWS ECR
+# Build and push componator-providers container to minikube and AWS ECR
 set -e
 
 # Change to repository root (script is in scripts/ subdirectory)
