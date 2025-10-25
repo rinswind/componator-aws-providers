@@ -23,8 +23,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	helmcontroller "github.com/rinswind/deployment-operator-handlers/internal/controller/helm"
-	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/core/v1alpha1"
+	helmcontroller "github.com/rinswind/componator-providers/internal/controller/helm"
+	deploymentsv1alpha1 "github.com/rinswind/componator/api/core/v1alpha1"
 )
 
 var _ = Describe("Helm Handler E2E", Ordered, func() {

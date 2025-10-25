@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources"
+	"github.com/rinswind/componator-providers/internal/controller/helm/sources"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"helm.sh/helm/v3/pkg/cli"

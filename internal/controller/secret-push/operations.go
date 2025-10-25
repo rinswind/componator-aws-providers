@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
-	"github.com/rinswind/deployment-operator/componentkit/controller"
+	"github.com/rinswind/componator/componentkit/controller"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 

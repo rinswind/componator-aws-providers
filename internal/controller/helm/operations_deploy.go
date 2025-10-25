@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rinswind/deployment-operator/componentkit/controller"
+	"github.com/rinswind/componator/componentkit/controller"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"

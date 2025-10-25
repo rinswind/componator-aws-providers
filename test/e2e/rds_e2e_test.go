@@ -24,8 +24,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	rdscontroller "github.com/rinswind/deployment-operator-handlers/internal/controller/rds"
-	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/core/v1alpha1"
+	rdscontroller "github.com/rinswind/componator-providers/internal/controller/rds"
+	deploymentsv1alpha1 "github.com/rinswind/componator/api/core/v1alpha1"
 )
 
 var _ = Describe("RDS Handler E2E", Ordered, func() {

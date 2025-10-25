@@ -3,16 +3,16 @@
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
 cliVersion: 4.8.0
-domain: deployment-orchestrator.io
+domain: componator.io
 layout:
 - go.kubebuilder.io/v4
 plugins:
   helm.kubebuilder.io/v1-alpha: {}
-projectName: deployment-handlers
-repo: github.com/rinswind/deployment-handlers
+projectName: componator-providers
+repo: github.com/rinswind/componator-providers
 resources:
 - controller: true
-  domain: deployment-orchestrator.io
+  domain: componator.io
   group: deployments
   kind: Component
   version: v1alpha1

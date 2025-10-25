@@ -6,7 +6,7 @@ package configreader
 import (
 	"context"
 
-	"github.com/rinswind/deployment-operator/componentkit/controller"
+	"github.com/rinswind/componator/componentkit/controller"
 )
 
 // Delete is a no-op for config-reader - no resources to clean up.

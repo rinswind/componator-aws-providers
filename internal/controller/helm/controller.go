@@ -6,10 +6,10 @@ package helm
 import (
 	"time"
 
-	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources/composite"
-	httpsource "github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources/http"
-	ocisource "github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources/oci"
-	"github.com/rinswind/deployment-operator/componentkit/controller"
+	"github.com/rinswind/componator-providers/internal/controller/helm/sources/composite"
+	httpsource "github.com/rinswind/componator-providers/internal/controller/helm/sources/http"
+	ocisource "github.com/rinswind/componator-providers/internal/controller/helm/sources/oci"
+	"github.com/rinswind/componator/componentkit/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )

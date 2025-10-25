@@ -25,8 +25,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	manifestcontroller "github.com/rinswind/deployment-operator-handlers/internal/controller/manifest"
-	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/core/v1alpha1"
+	manifestcontroller "github.com/rinswind/componator-providers/internal/controller/manifest"
+	deploymentsv1alpha1 "github.com/rinswind/componator/api/core/v1alpha1"
 )
 
 var _ = Describe("Manifest Handler E2E", Ordered, func() {

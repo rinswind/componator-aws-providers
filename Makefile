@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= rinswind/deployment-operator-handlers:$(shell git tag --list | sort -V | tail -1)
+IMG ?= rinswind/componator-providers:$(shell git tag --list | sort -V | tail -1)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))

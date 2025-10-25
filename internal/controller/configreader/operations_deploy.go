@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/rinswind/deployment-operator/componentkit/controller"
+	"github.com/rinswind/componator/componentkit/controller"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"

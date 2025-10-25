@@ -104,7 +104,7 @@ log_success "AWS Account: $AWS_ACCOUNT_ID"
 log_success "AWS Region: $AWS_REGION"
 
 # Image configuration
-IMG_NAME="deployment-operator-handlers"
+IMG_NAME="componator-providers"
 LATEST_GIT_TAG=$(git tag --list | sort -V | tail -1)
 
 # Build list of tags: latest + git tag (if exists)

@@ -26,14 +26,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/rinswind/deployment-operator-handlers/internal/controller/configreader"
-	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm"
-	iampolicy "github.com/rinswind/deployment-operator-handlers/internal/controller/iam-policy"
-	iamrole "github.com/rinswind/deployment-operator-handlers/internal/controller/iam-role"
-	"github.com/rinswind/deployment-operator-handlers/internal/controller/manifest"
-	"github.com/rinswind/deployment-operator-handlers/internal/controller/rds"
-	secretpush "github.com/rinswind/deployment-operator-handlers/internal/controller/secret-push"
-	corev1alpha1 "github.com/rinswind/deployment-operator/api/core/v1alpha1"
+	"github.com/rinswind/componator-providers/internal/controller/configreader"
+	"github.com/rinswind/componator-providers/internal/controller/helm"
+	iampolicy "github.com/rinswind/componator-providers/internal/controller/iam-policy"
+	iamrole "github.com/rinswind/componator-providers/internal/controller/iam-role"
+	"github.com/rinswind/componator-providers/internal/controller/manifest"
+	"github.com/rinswind/componator-providers/internal/controller/rds"
+	secretpush "github.com/rinswind/componator-providers/internal/controller/secret-push"
+	corev1alpha1 "github.com/rinswind/componator/api/core/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 

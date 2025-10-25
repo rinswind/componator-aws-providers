@@ -10,7 +10,7 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources"
+	"github.com/rinswind/componator-providers/internal/controller/helm/sources"
 	"helm.sh/helm/v3/pkg/cli"
 )
 

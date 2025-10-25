@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources/filelock"
+	"github.com/rinswind/componator-providers/internal/controller/helm/sources/filelock"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/downloader"
 	"helm.sh/helm/v3/pkg/getter"

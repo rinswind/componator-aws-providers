@@ -9,8 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/rinswind/deployment-operator-handlers/internal/controller/helm/sources"
-	"github.com/rinswind/deployment-operator/componentkit/controller"
+	"github.com/rinswind/componator-providers/internal/controller/helm/sources"
+	"github.com/rinswind/componator/componentkit/controller"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/kube"

@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rinswind/deployment-operator/componentkit/controller"
+	"github.com/rinswind/componator/componentkit/controller"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/cli-utils/pkg/kstatus/status"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"

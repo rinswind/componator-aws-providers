@@ -77,8 +77,8 @@ This project depends on the CRD definitions from `deployment-operator`. The depe
 
 ```go
 // In go.mod
-require github.com/rinswind/deployment-operator v0.0.0
-replace github.com/rinswind/deployment-operator => ../deployment-operator
+require github.com/rinswind/componator v0.0.0
+replace github.com/rinswind/componator => ../deployment-operator
 ```
 
 ## Adding New Handlers

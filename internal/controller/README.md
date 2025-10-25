@@ -6,7 +6,7 @@ This directory contains Component handler controllers that implement specific de
 
 The controller architecture separates generic protocol logic from handler-specific operations:
 
-- **Generic Base Controller**: Available from `github.com/rinswind/deployment-operator/componentkit/controller` - handles all protocol state machine logic, finalizer management, and status transitions
+- **Generic Base Controller**: Available from `github.com/rinswind/componator/componentkit/controller` - handles all protocol state machine logic, finalizer management, and status transitions
 - **ComponentOperations Interface**: Defines the contract for handler-specific deployment operations  
 - **Handler-Specific Implementations**: Each handler (Helm, RDS, etc.) implements the operations interface and uses the generic base
 - **Enhanced Orchestration**: Supports TerminationFailed state handling, timeout compliance, and handler status coordination
@@ -39,8 +39,8 @@ import (
     "encoding/json"
     "fmt"
     "time"
-    "github.com/rinswind/deployment-operator/componentkit/controller"
-    v1alpha1 "github.com/rinswind/deployment-operator/api/core/v1alpha1"
+    "github.com/rinswind/componator/componentkit/controller"
+    v1alpha1 "github.com/rinswind/componator/api/core/v1alpha1"
 )
 
 const (
@@ -129,7 +129,7 @@ func (op *HandlerOperations) CheckDeletion(ctx context.Context) (*controller.Ope
 package handlername
 
 import (
-    "github.com/rinswind/deployment-operator/componentkit/controller"
+    "github.com/rinswind/componator/componentkit/controller"
 )
 
 //+kubebuilder:rbac:groups=deployments.deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete

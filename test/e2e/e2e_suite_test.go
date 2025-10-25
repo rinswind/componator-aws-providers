@@ -18,7 +18,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	deploymentsv1alpha1 "github.com/rinswind/deployment-operator/api/core/v1alpha1"
+	deploymentsv1alpha1 "github.com/rinswind/componator/api/core/v1alpha1"
 )
 
 // Shared variables for all e2e tests

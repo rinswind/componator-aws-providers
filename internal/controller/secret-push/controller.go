@@ -6,7 +6,7 @@ package secretpush
 import (
 	"time"
 
-	"github.com/rinswind/deployment-operator/componentkit/controller"
+	"github.com/rinswind/componator/componentkit/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
