@@ -2,18 +2,16 @@
 # This file is used to track the info used to scaffold your project
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
+#
+# NOTE: This is a consumer-only controller project. It does not own any CRDs.
+# It implements controllers for Component resources defined in github.com/rinswind/componator.
+# The domain and resources list are intentionally minimal as this project only consumes external APIs.
 cliVersion: 4.8.0
-domain: componator.io
+domain: componator-providers.io
 layout:
 - go.kubebuilder.io/v4
 plugins:
   helm.kubebuilder.io/v1-alpha: {}
 projectName: componator-providers
 repo: github.com/rinswind/componator-providers
-resources:
-- controller: true
-  domain: componator.io
-  group: deployments
-  kind: Component
-  version: v1alpha1
 version: "3"
