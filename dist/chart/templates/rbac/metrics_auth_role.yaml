@@ -4,7 +4,7 @@ kind: ClusterRole
 metadata:
   labels:
     {{- include "chart.labels" . | nindent 4 }}
-  name: deployment-handlers-metrics-auth-role
+  name: componator-providers-metrics-auth-role
 rules:
 - apiGroups:
   - authentication.k8s.io

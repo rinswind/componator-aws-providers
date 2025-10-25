@@ -5,10 +5,10 @@
   {{- else if .Values.nameOverride }}
     {{ .Values.nameOverride | trunc 63 | trimSuffix "-" }}
   {{- else }}
-    deployment-handlers
+    componator-providers
   {{- end }}
 {{- else }}
-  deployment-handlers
+  componator-providers
 {{- end }}
 {{- end }}
 

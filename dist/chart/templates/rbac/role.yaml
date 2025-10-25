@@ -5,7 +5,7 @@ kind: ClusterRole
 metadata:
   labels:
     {{- include "chart.labels" . | nindent 4 }}
-  name: deployment-handlers-manager-role
+  name: componator-providers-manager-role
 rules:
 - apiGroups:
   - '*'
@@ -14,7 +14,7 @@ rules:
   verbs:
   - '*'
 - apiGroups:
-  - core.deployment-orchestrator.io
+  - core.componator.io
   resources:
   - components
   verbs:
@@ -26,13 +26,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - core.deployment-orchestrator.io
+  - core.componator.io
   resources:
   - components/finalizers
   verbs:
   - update
 - apiGroups:
-  - core.deployment-orchestrator.io
+  - core.componator.io
   resources:
   - components/status
   verbs:

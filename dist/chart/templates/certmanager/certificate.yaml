@@ -25,9 +25,9 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   dnsNames:
-    - deployment-handlers.{{ .Release.Namespace }}.svc
-    - deployment-handlers.{{ .Release.Namespace }}.svc.cluster.local
-    - deployment-handlers-metrics-service.{{ .Release.Namespace }}.svc
+    - componator-providers.{{ .Release.Namespace }}.svc
+    - componator-providers.{{ .Release.Namespace }}.svc.cluster.local
+    - componator-providers-metrics-service.{{ .Release.Namespace }}.svc
   issuerRef:
     kind: Issuer
     name: selfsigned-issuer
