@@ -16,9 +16,9 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// Deploy reads all ConfigMaps specified in config and exports values to handlerStatus.
+// Apply reads all ConfigMaps specified in config and exports values to handlerStatus.
 // This operation completes synchronously - there are no async operations for config-reader.
-func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.ActionResult, error) {
+func (o *ConfigReaderOperations) Apply(ctx context.Context) (*controller.ActionResult, error) {
 	log := logf.FromContext(ctx)
 
 	// Reset status to start fresh
@@ -77,8 +77,8 @@ func (o *ConfigReaderOperations) Deploy(ctx context.Context) (*controller.Action
 	return controller.ActionSuccessWithDetails(o.status, details)
 }
 
-// CheckDeployment always returns success immediately since Deploy completes synchronously.
+// CheckDeployed always returns success immediately since Deploy completes synchronously.
 // Config-reader has no async operations to wait for.
-func (o *ConfigReaderOperations) CheckDeployment(ctx context.Context) (*controller.CheckResult, error) {
+func (o *ConfigReaderOperations) CheckApplied(ctx context.Context) (*controller.CheckResult, error) {
 	return controller.CheckComplete(o.status)
 }

@@ -69,7 +69,7 @@ func (h *HelmOperations) Delete(ctx context.Context) (*controller.ActionResult, 
 
 // checkDeletion verifies if a Helm release and all its resources have been deleted using pre-parsed configuration
 // Returns OperationResult with Success indicating deletion completion status
-func (h *HelmOperations) CheckDeletion(ctx context.Context) (*controller.CheckResult, error) {
+func (h *HelmOperations) CheckDeleted(ctx context.Context) (*controller.CheckResult, error) {
 	log := logf.FromContext(ctx).WithValues("releaseName", h.status.ReleaseName)
 
 	// Try to get the current release

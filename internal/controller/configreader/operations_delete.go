@@ -15,8 +15,8 @@ func (o *ConfigReaderOperations) Delete(ctx context.Context) (*controller.Action
 	return controller.ActionSuccess(o.status)
 }
 
-// CheckDeletion always returns success immediately since there's nothing to clean up.
+// CheckDeleted always returns success immediately since there's nothing to clean up.
 // Config-reader has no resources to wait for deletion.
-func (o *ConfigReaderOperations) CheckDeletion(ctx context.Context) (*controller.CheckResult, error) {
+func (o *ConfigReaderOperations) CheckDeleted(ctx context.Context) (*controller.CheckResult, error) {
 	return controller.CheckComplete(o.status)
 }

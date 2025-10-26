@@ -64,7 +64,7 @@ var _ = Describe("Operations Integration", func() {
 			}
 
 			// Execute Deploy
-			result, err := operations.Deploy(ctx)
+			result, err := operations.Apply(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.PermanentFailure).NotTo(HaveOccurred())
@@ -104,7 +104,7 @@ var _ = Describe("Operations Integration", func() {
 			}
 
 			// Execute Deploy
-			result, err := operations.Deploy(ctx)
+			result, err := operations.Apply(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.PermanentFailure).NotTo(HaveOccurred())
 			Expect(operations.status["short"]).To(Equal("value1"))
@@ -162,7 +162,7 @@ var _ = Describe("Operations Integration", func() {
 			}
 
 			// Execute Deploy
-			result, err := operations.Deploy(ctx)
+			result, err := operations.Apply(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.PermanentFailure).NotTo(HaveOccurred())
 			Expect(operations.status).To(HaveLen(3))
@@ -191,7 +191,7 @@ var _ = Describe("Operations Integration", func() {
 			}
 
 			// Execute Deploy
-			result, err := operations.Deploy(ctx)
+			result, err := operations.Apply(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.PermanentFailure).To(HaveOccurred())
@@ -230,7 +230,7 @@ var _ = Describe("Operations Integration", func() {
 			}
 
 			// Execute Deploy
-			result, err := operations.Deploy(ctx)
+			result, err := operations.Apply(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.PermanentFailure).To(HaveOccurred())
 			Expect(result.PermanentFailure.Error()).To(ContainSubstring("key \"missingKey\" not found"))
@@ -271,7 +271,7 @@ var _ = Describe("Operations Integration", func() {
 			}
 
 			// Execute Deploy
-			result, err := operations.Deploy(ctx)
+			result, err := operations.Apply(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.PermanentFailure).NotTo(HaveOccurred())
 
@@ -290,7 +290,7 @@ var _ = Describe("Operations Integration", func() {
 				status: make(ConfigReaderStatus),
 			}
 
-			result, err := operations.CheckDeployment(ctx)
+			result, err := operations.CheckApplied(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Complete).To(BeTrue())
 		})
@@ -316,7 +316,7 @@ var _ = Describe("Operations Integration", func() {
 				status: make(ConfigReaderStatus),
 			}
 
-			result, err := operations.CheckDeletion(ctx)
+			result, err := operations.CheckDeleted(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Complete).To(BeTrue())
 		})

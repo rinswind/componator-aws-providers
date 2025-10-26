@@ -61,9 +61,9 @@ func (r *RdsOperations) Delete(ctx context.Context) (*controller.ActionResult, e
 	return controller.ActionSuccessWithDetails(r.status, details)
 }
 
-// CheckDeletion verifies the current deletion status using pre-parsed configuration
-// Implements ComponentOperations.CheckDeletion interface method.
-func (r *RdsOperations) CheckDeletion(ctx context.Context) (*controller.CheckResult, error) {
+// CheckDeleted verifies the current deletion status using pre-parsed configuration
+// Implements ComponentOperations.CheckDeleted interface method.
+func (r *RdsOperations) CheckDeleted(ctx context.Context) (*controller.CheckResult, error) {
 	instanceID := r.config.InstanceID
 
 	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)

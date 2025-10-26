@@ -17,13 +17,13 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// Deploy handles all Helm-specific deployment operations using pre-parsed configuration
-// Implements ComponentOperations.Deploy interface method.
+// Apply handles all Helm-specific deployment operations using pre-parsed configuration
+// Implements ComponentOperations.Apply interface method.
 //
 // For initial deployments, uses config.ReleaseName from the Component spec.
 // After successful deployment, persists the actual release name to status so that
 // all subsequent operations use the deployed name for consistency.
-func (h *HelmOperations) Deploy(ctx context.Context) (*controller.ActionResult, error) {
+func (h *HelmOperations) Apply(ctx context.Context) (*controller.ActionResult, error) {
 	releaseName := h.config.ReleaseName
 	log := logf.FromContext(ctx).WithValues("releaseName", releaseName)
 
@@ -163,9 +163,9 @@ func (h *HelmOperations) upgrade(ctx context.Context, chart *chart.Chart) (*cont
 	return controller.ActionSuccessWithDetails(h.status, details)
 }
 
-// checkReleaseDeployed verifies if a Helm release and all its resources are ready using pre-parsed configuration
+// checkReleaseApplied verifies if a Helm release and all its resources are ready using pre-parsed configuration
 // Returns OperationResult with Success indicating readiness status
-func (h *HelmOperations) CheckDeployment(ctx context.Context) (*controller.CheckResult, error) {
+func (h *HelmOperations) CheckApplied(ctx context.Context) (*controller.CheckResult, error) {
 	// Get the current release
 	rel, err := h.getHelmRelease(h.status.ReleaseName)
 	if err != nil {

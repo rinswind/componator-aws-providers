@@ -12,9 +12,9 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// Deploy handles all RDS-specific deployment operations using pre-parsed configuration
-// Implements ComponentOperations.Deploy interface method.
-func (r *RdsOperations) Deploy(ctx context.Context) (*controller.ActionResult, error) {
+// Apply handles all RDS-specific deployment operations using pre-parsed configuration
+// Implements ComponentOperations.Apply interface method.
+func (r *RdsOperations) Apply(ctx context.Context) (*controller.ActionResult, error) {
 	instanceID := r.config.InstanceID
 
 	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)
@@ -38,9 +38,9 @@ func (r *RdsOperations) Deploy(ctx context.Context) (*controller.ActionResult, e
 	return r.createInstance(ctx)
 }
 
-// CheckDeployment verifies the current deployment status using pre-parsed configuration
-// Implements ComponentOperations.CheckDeployment interface method.
-func (r *RdsOperations) CheckDeployment(ctx context.Context) (*controller.CheckResult, error) {
+// CheckDeployed verifies the current deployment status using pre-parsed configuration
+// Implements ComponentOperations.CheckDeployed interface method.
+func (r *RdsOperations) CheckApplied(ctx context.Context) (*controller.CheckResult, error) {
 	instanceID := r.config.InstanceID
 
 	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)

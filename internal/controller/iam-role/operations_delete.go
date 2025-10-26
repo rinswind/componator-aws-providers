@@ -68,8 +68,8 @@ func (op *IamRoleOperations) Delete(ctx context.Context) (*controller.ActionResu
 	return controller.ActionSuccessWithDetails(op.status, details)
 }
 
-// CheckDeletion verifies the IAM role has been successfully deleted.
-func (op *IamRoleOperations) CheckDeletion(ctx context.Context) (*controller.CheckResult, error) {
+// CheckDeleted verifies the IAM role has been successfully deleted.
+func (op *IamRoleOperations) CheckDeleted(ctx context.Context) (*controller.CheckResult, error) {
 	log := logf.FromContext(ctx).WithValues("roleName", op.config.RoleName)
 
 	// Check if role still exists

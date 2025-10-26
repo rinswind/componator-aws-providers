@@ -16,8 +16,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// Deploy initiates secret generation and push to AWS Secrets Manager
-func (op *SecretPushOperations) Deploy(ctx context.Context) (*controller.ActionResult, error) {
+// Apply initiates secret generation and push to AWS Secrets Manager
+func (op *SecretPushOperations) Apply(ctx context.Context) (*controller.ActionResult, error) {
 	log := logf.FromContext(ctx).WithValues("secretName", op.config.SecretName)
 
 	log.Info("Starting secret-push deployment")
@@ -82,8 +82,8 @@ func (op *SecretPushOperations) Deploy(ctx context.Context) (*controller.ActionR
 	return controller.ActionSuccessWithDetails(op.status, details)
 }
 
-// CheckDeployment verifies secret exists and is ready
-func (op *SecretPushOperations) CheckDeployment(ctx context.Context) (*controller.CheckResult, error) {
+// CheckDeployed verifies secret exists and is ready
+func (op *SecretPushOperations) CheckApplied(ctx context.Context) (*controller.CheckResult, error) {
 	log := logf.FromContext(ctx).WithValues("secretName", op.config.SecretName)
 
 	// If we don't have a secret ARN yet, deployment hasn't started

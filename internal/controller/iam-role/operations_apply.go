@@ -18,12 +18,12 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// Deploy creates or updates the IAM role with trust policy and managed policy attachments.
+// Apply creates or updates the IAM role with trust policy and managed policy attachments.
 // This method handles:
 // - Creating new roles with trust policy
 // - Updating trust policy on existing roles
 // - Reconciling managed policy attachments (add/remove to match desired state)
-func (op *IamRoleOperations) Deploy(ctx context.Context) (*controller.ActionResult, error) {
+func (op *IamRoleOperations) Apply(ctx context.Context) (*controller.ActionResult, error) {
 	log := logf.FromContext(ctx).WithValues("roleName", op.config.RoleName)
 
 	log.Info("Starting IAM role deployment")
@@ -114,9 +114,9 @@ func (op *IamRoleOperations) Deploy(ctx context.Context) (*controller.ActionResu
 	return controller.ActionSuccessWithDetails(op.status, details)
 }
 
-// CheckDeployment verifies if the IAM role exists and is in the desired state.
+// CheckDeployed verifies if the IAM role exists and is in the desired state.
 // Returns check result with updated handler status.
-func (op *IamRoleOperations) CheckDeployment(ctx context.Context) (*controller.CheckResult, error) {
+func (op *IamRoleOperations) CheckApplied(ctx context.Context) (*controller.CheckResult, error) {
 	log := logf.FromContext(ctx).WithValues("roleName", op.config.RoleName)
 
 	// If we don't have a role ARN yet, deployment hasn't started

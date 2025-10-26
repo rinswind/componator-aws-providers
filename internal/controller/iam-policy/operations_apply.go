@@ -20,8 +20,8 @@ const (
 	MaxNumberOfPolicyVersions = 5
 )
 
-// Deploy initiates IAM policy creation or update
-func (op *IamPolicyOperations) Deploy(ctx context.Context) (*controller.ActionResult, error) {
+// Apply initiates IAM policy creation or update
+func (op *IamPolicyOperations) Apply(ctx context.Context) (*controller.ActionResult, error) {
 	log := logf.FromContext(ctx).WithValues("policyName", op.config.PolicyName)
 
 	log.Info("Starting IAM policy deployment")
@@ -78,8 +78,8 @@ func (op *IamPolicyOperations) Deploy(ctx context.Context) (*controller.ActionRe
 	return controller.ActionSuccessWithDetails(op.status, details)
 }
 
-// CheckDeployment verifies policy exists and is ready
-func (op *IamPolicyOperations) CheckDeployment(ctx context.Context) (*controller.CheckResult, error) {
+// CheckDeployed verifies policy exists and is ready
+func (op *IamPolicyOperations) CheckApplied(ctx context.Context) (*controller.CheckResult, error) {
 	log := logf.FromContext(ctx).WithValues("policyName", op.config.PolicyName)
 
 	// If we don't have a policy ARN yet, deployment hasn't started

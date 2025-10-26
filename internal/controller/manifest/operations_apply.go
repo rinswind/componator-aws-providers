@@ -18,8 +18,8 @@ const (
 	fieldManager = "manifest-handler"
 )
 
-// Deploy initiates the deployment by applying all manifests to the cluster.
-func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.ActionResult, error) {
+// Apply initiates the deployment by applying all manifests to the cluster.
+func (m *ManifestOperations) Apply(ctx context.Context) (*controller.ActionResult, error) {
 	log := logf.FromContext(ctx).WithValues("manifestCount", len(m.config.Manifests))
 	log.Info("Deploying manifests")
 
@@ -78,8 +78,8 @@ func (m *ManifestOperations) Deploy(ctx context.Context) (*controller.ActionResu
 	return controller.ActionSuccessWithDetails(m.status, details)
 }
 
-// CheckDeployment verifies the readiness of all applied resources using kstatus.
-func (m *ManifestOperations) CheckDeployment(ctx context.Context) (*controller.CheckResult, error) {
+// CheckDeployed verifies the readiness of all applied resources using kstatus.
+func (m *ManifestOperations) CheckApplied(ctx context.Context) (*controller.CheckResult, error) {
 	log := logf.FromContext(ctx).WithValues("appliedCount", len(m.status.AppliedResources))
 	log.V(1).Info("Checking deployment status")
 

@@ -69,8 +69,8 @@ func (op *SecretPushOperations) deleteSecret(ctx context.Context) error {
 	return fmt.Errorf("failed to delete secret: %w", err)
 }
 
-// CheckDeletion verifies deletion is complete
-func (op *SecretPushOperations) CheckDeletion(ctx context.Context) (*controller.CheckResult, error) {
+// CheckDeleted verifies deletion is complete
+func (op *SecretPushOperations) CheckDeleted(ctx context.Context) (*controller.CheckResult, error) {
 	log := logf.FromContext(ctx).WithValues("secretName", op.config.SecretName)
 
 	// If no ARN in status or DeletionPolicy is Retain, deletion is complete

@@ -68,10 +68,10 @@ func (m *ManifestOperations) Delete(ctx context.Context) (*controller.ActionResu
 	return controller.ActionSuccessWithDetails(m.status, details)
 }
 
-// CheckDeletion verifies that all resources have been deleted.
+// CheckDeleted verifies that all resources have been deleted.
 // Since we use foreground deletion and don't set finalizers on applied resources,
 // this should complete immediately after Delete() returns.
-func (m *ManifestOperations) CheckDeletion(ctx context.Context) (*controller.CheckResult, error) {
+func (m *ManifestOperations) CheckDeleted(ctx context.Context) (*controller.CheckResult, error) {
 	log := logf.FromContext(ctx).WithValues("appliedCount", len(m.status.AppliedResources))
 	log.V(1).Info("Checking deletion status")
 

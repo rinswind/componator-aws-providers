@@ -55,8 +55,8 @@ func (op *IamPolicyOperations) Delete(ctx context.Context) (*controller.ActionRe
 	return controller.ActionSuccessWithDetails(op.status, details)
 }
 
-// CheckDeletion verifies deletion is complete
-func (op *IamPolicyOperations) CheckDeletion(ctx context.Context) (*controller.CheckResult, error) {
+// CheckDeleted verifies deletion is complete
+func (op *IamPolicyOperations) CheckDeleted(ctx context.Context) (*controller.CheckResult, error) {
 	log := logf.FromContext(ctx).WithValues("policyName", op.config.PolicyName)
 
 	// If no policy ARN in status, deletion is complete
