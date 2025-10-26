@@ -1,6 +1,6 @@
 apiVersion: v2
-name: componator-providers
-description: A Helm chart to distribute the project componator-providers
+name: componator-aws-providers
+description: A Helm chart to distribute the project componator-aws-providers
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

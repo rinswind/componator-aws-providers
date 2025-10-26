@@ -4,7 +4,6 @@
 package main
 
 import (
-	"context"
 	"crypto/tls"
 	"flag"
 
@@ -20,19 +19,15 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/rinswind/componator-providers/internal/controller/configreader"
-	"github.com/rinswind/componator-providers/internal/controller/helm"
-	iampolicy "github.com/rinswind/componator-providers/internal/controller/iam-policy"
-	iamrole "github.com/rinswind/componator-providers/internal/controller/iam-role"
-	"github.com/rinswind/componator-providers/internal/controller/manifest"
-	"github.com/rinswind/componator-providers/internal/controller/rds"
-	secretpush "github.com/rinswind/componator-providers/internal/controller/secret-push"
+	iampolicy "github.com/rinswind/componator-aws-providers/internal/controller/iam-policy"
+	iamrole "github.com/rinswind/componator-aws-providers/internal/controller/iam-role"
+	"github.com/rinswind/componator-aws-providers/internal/controller/rds"
+	secretpush "github.com/rinswind/componator-aws-providers/internal/controller/secret-push"
 	corev1beta1 "github.com/rinswind/componator/api/core/v1beta1"
 	// +kubebuilder:scaffold:imports
 )
@@ -152,7 +147,7 @@ func main() {
 		Metrics:                metricsServerOptions,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "0d76f43e.componator-providers.io",
+		LeaderElectionID:       "0d76f43e.componator-aws-providers.io",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -167,37 +162,6 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
-	}
-
-	// Setup field indexer for Components by handler for efficient lookups
-	if err := mgr.GetFieldIndexer().IndexField(
-		context.Background(),
-		&corev1beta1.Component{},
-		"spec.handler",
-		func(obj client.Object) []string {
-			component := obj.(*corev1beta1.Component)
-			return []string{component.Spec.Provider}
-		},
-	); err != nil {
-		setupLog.Error(err, "unable to setup field indexer for Components")
-		os.Exit(1)
-	}
-
-	// Initialize Helm controller with k8s client for OCI credential resolution
-	// The client is needed during factory initialization to create OCI chart sources
-	helmController, err := helm.NewComponentReconciler(mgr.GetClient())
-	if err != nil {
-		setupLog.Error(err, "unable to initialize helm controller")
-		os.Exit(1)
-	}
-	if err := helmController.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "HelmComponent")
-		os.Exit(1)
-	}
-
-	if err := rds.NewComponentReconciler().SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "RDSComponent")
 		os.Exit(1)
 	}
 
@@ -216,22 +180,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := configreader.NewComponentReconciler(mgr).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ConfigReaderComponent")
+	if err := rds.NewComponentReconciler().SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "RDSComponent")
 		os.Exit(1)
 	}
 
-	// Initialize Manifest controller with manager
-	// The controller extracts dynamic client and REST mapper for applying arbitrary resource types
-	manifestController, err := manifest.NewComponentReconciler(mgr)
-	if err != nil {
-		setupLog.Error(err, "unable to initialize manifest controller")
-		os.Exit(1)
-	}
-	if err := manifestController.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ManifestComponent")
-		os.Exit(1)
-	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

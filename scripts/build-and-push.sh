@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build and push componator-providers container to minikube and AWS ECR
+# Build and push componator-aws-providers container to minikube and AWS ECR
 set -e
 
 # Change to repository root (script is in scripts/ subdirectory)
@@ -104,7 +104,7 @@ log_success "AWS Account: $AWS_ACCOUNT_ID"
 log_success "AWS Region: $AWS_REGION"
 
 # Image configuration
-IMG_NAME="componator-providers"
+IMG_NAME="componator-aws-providers"
 LATEST_GIT_TAG=$(git tag --list | sort -V | tail -1)
 
 # Build list of tags: latest + git tag (if exists)

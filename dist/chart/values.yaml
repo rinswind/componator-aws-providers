@@ -3,7 +3,7 @@ controllerManager:
   replicas: 1
   container:
     image:
-      repository: rinswond/componator-providers
+      repository: rinswond/componator-aws-providers
       tag: latest
     imagePullPolicy: IfNotPresent
     args:
@@ -39,7 +39,7 @@ controllerManager:
     seccompProfile:
       type: RuntimeDefault
   terminationGracePeriodSeconds: 10
-  serviceAccountName: componator-providers-controller-manager
+  serviceAccountName: componator-aws-providers-controller-manager
 
 # [RBAC]: To enable RBAC (Permissions) configurations
 rbac:

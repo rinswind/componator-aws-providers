@@ -6,7 +6,7 @@ metadata:
   labels:
     {{- include "chart.labels" . | nindent 4 }}
   namespace: {{ .Release.Namespace }}
-  name: componator-providers-leader-election-role
+  name: componator-aws-providers-leader-election-role
 rules:
 - apiGroups:
   - ""

@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: componator-providers-controller-manager
+  name: componator-aws-providers-controller-manager
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "chart.labels" . | nindent 4 }}
@@ -53,10 +53,6 @@ spec:
           securityContext:
             {{- toYaml .Values.controllerManager.container.securityContext | nindent 12 }}
           volumeMounts:
-            {{- if .Values.helmCache.enabled }}
-            - name: helm-cache
-              mountPath: /helm
-            {{- end }}
             {{- if and .Values.metrics.enable .Values.certmanager.enable }}
             - name: metrics-certs
               mountPath: /tmp/k8s-metrics-server/metrics-certs
@@ -70,11 +66,6 @@ spec:
       serviceAccountName: {{ .Values.controllerManager.serviceAccountName }}
       terminationGracePeriodSeconds: {{ .Values.controllerManager.terminationGracePeriodSeconds }}
       volumes:
-        {{- if .Values.helmCache.enabled }}
-        - name: helm-cache
-          persistentVolumeClaim:
-            claimName: {{ include "chart.name" . }}-helm-cache
-        {{- end }}
         {{- if and .Values.metrics.enable .Values.certmanager.enable }}
         - name: metrics-certs
           secret:

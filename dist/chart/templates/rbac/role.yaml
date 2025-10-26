@@ -5,7 +5,7 @@ kind: ClusterRole
 metadata:
   labels:
     {{- include "chart.labels" . | nindent 4 }}
-  name: componator-providers-manager-role
+  name: componator-aws-providers-manager-role
 rules:
 - apiGroups:
   - '*'

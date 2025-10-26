@@ -13,7 +13,7 @@ spec:
   podSelector:
     matchLabels:
       control-plane: controller-manager
-      app.kubernetes.io/name: componator-providers
+      app.kubernetes.io/name: componator-aws-providers
   policyTypes:
     - Ingress
   ingress:
