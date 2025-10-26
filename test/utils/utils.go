@@ -16,7 +16,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	deploymentsv1alpha1 "github.com/rinswind/componator/api/core/v1alpha1"
+	deploymentsv1alpha1 "github.com/rinswind/componator/api/core/v1beta1"
 )
 
 const (

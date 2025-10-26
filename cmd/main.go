@@ -33,7 +33,7 @@ import (
 	"github.com/rinswind/componator-providers/internal/controller/manifest"
 	"github.com/rinswind/componator-providers/internal/controller/rds"
 	secretpush "github.com/rinswind/componator-providers/internal/controller/secret-push"
-	corev1alpha1 "github.com/rinswind/componator/api/core/v1alpha1"
+	corev1beta1 "github.com/rinswind/componator/api/core/v1beta1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -45,7 +45,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(corev1alpha1.AddToScheme(scheme))
+	utilruntime.Must(corev1beta1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -173,10 +173,10 @@ func main() {
 	// Setup field indexer for Components by handler for efficient lookups
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(),
-		&corev1alpha1.Component{},
+		&corev1beta1.Component{},
 		"spec.handler",
 		func(obj client.Object) []string {
-			component := obj.(*corev1alpha1.Component)
+			component := obj.(*corev1beta1.Component)
 			return []string{component.Spec.Provider}
 		},
 	); err != nil {

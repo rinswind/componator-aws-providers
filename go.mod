@@ -25,7 +25,7 @@ require (
 	sigs.k8s.io/controller-runtime v0.21.0
 )
 
-//replace github.com/rinswind/componator => ../componator
+replace github.com/rinswind/componator => ../componator
 
 require (
 	cel.dev/expr v0.24.0 // indirect

@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 
-	deploymentsv1alpha1 "github.com/rinswind/componator/api/core/v1alpha1"
+	deploymentsv1alpha1 "github.com/rinswind/componator/api/core/v1beta1"
 	"github.com/rinswind/componator/componentkit/controller"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
