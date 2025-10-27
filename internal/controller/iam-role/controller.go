@@ -6,8 +6,9 @@ package iamrole
 import (
 	"time"
 
-	"github.com/rinswind/componator/componentkit/controller"
+	componentkit "github.com/rinswind/componator/componentkit/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 )
 
 //+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
@@ -20,22 +21,26 @@ import (
 // This embeds the base controller directly, eliminating unnecessary delegation
 // while maintaining protocol compliance.
 type ComponentReconciler struct {
-	*controller.ComponentReconciler
+	*componentkit.ComponentReconciler
 }
 
 // NewComponentReconciler creates a new IAM role Component controller with the generic base
 func NewComponentReconciler() *ComponentReconciler {
 	factory := NewIamRoleOperationsFactory()
 
-	config := controller.DefaultComponentReconcilerConfig(HandlerName)
+	config := componentkit.DefaultComponentReconcilerConfig(HandlerName)
 	config.ErrorRequeue = 30 * time.Second       // Give more time for AWS throttling errors
 	config.DefaultRequeue = 15 * time.Second     // IAM operations are generally fast
 	config.StatusCheckRequeue = 10 * time.Second // Check role status frequently
 
-	return &ComponentReconciler{controller.NewComponentReconciler(factory, config)}
+	return &ComponentReconciler{componentkit.NewComponentReconciler(factory, config)}
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return r.ComponentReconciler.NewComponentController(mgr).Complete(r.ComponentReconciler)
+	return r.ComponentReconciler.NewComponentController(mgr).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 5,
+		}).
+		Complete(r.ComponentReconciler)
 }

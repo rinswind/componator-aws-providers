@@ -6,8 +6,9 @@ package secretpush
 import (
 	"time"
 
-	"github.com/rinswind/componator/componentkit/controller"
+	componentkit "github.com/rinswind/componator/componentkit/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 )
 
 //+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
@@ -20,23 +21,26 @@ import (
 // This embeds the base controller directly, eliminating unnecessary delegation
 // while maintaining protocol compliance.
 type ComponentReconciler struct {
-	*controller.ComponentReconciler
+	*componentkit.ComponentReconciler
 }
 
 // NewComponentReconciler creates a new secret-push Component controller with the generic base
 func NewComponentReconciler() *ComponentReconciler {
 	factory := NewSecretPushOperationsFactory()
 
-	config := controller.DefaultComponentReconcilerConfig(HandlerName)
+	config := componentkit.DefaultComponentReconcilerConfig(HandlerName)
 	config.ErrorRequeue = 30 * time.Second       // Give time for AWS throttling/transient errors
 	config.DefaultRequeue = 30 * time.Second     // Secrets Manager operations are generally fast
 	config.StatusCheckRequeue = 15 * time.Second // Check secret status frequently
 
-	return &ComponentReconciler{controller.NewComponentReconciler(factory, config)}
+	return &ComponentReconciler{componentkit.NewComponentReconciler(factory, config)}
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return r.ComponentReconciler.NewComponentController(mgr).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 5,
+		}).
 		Complete(r.ComponentReconciler)
 }

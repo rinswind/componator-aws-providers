@@ -148,8 +148,8 @@ github.com/prometheus/common v0.62.0 h1:xasJaQlnWAeyHdUBeGjXmutelfJHWMRr+Fg4QszZ
 github.com/prometheus/common v0.62.0/go.mod h1:vyBcEuLSvWos9B1+CyL7JZ2up+uFzXhkqml0W5zIY1I=
 github.com/prometheus/procfs v0.15.1 h1:YagwOFzUgYfKKHX6Dr+sHT7km/hxC76UB0learggepc=
 github.com/prometheus/procfs v0.15.1/go.mod h1:fB45yRUv8NstnjriLhBQLuOUt+WW4BsoGhij/e3PBqk=
-github.com/rinswind/componator v0.0.21 h1:SZ+uuCxmcaVNMzoQc1eVptnqupwXuH+IqbuzNST+XYo=
-github.com/rinswind/componator v0.0.21/go.mod h1:8GfsIeNi5YcqM10NrkR7SnW2/Of4zAif/EMNbrCmneY=
+github.com/rinswind/componator v0.0.22 h1:OicAVCX7kDAn2W0jPSD9xzQmZv8lJKw9hg4OZ83bxAs=
+github.com/rinswind/componator v0.0.22/go.mod h1:8GfsIeNi5YcqM10NrkR7SnW2/Of4zAif/EMNbrCmneY=
 github.com/rogpeppe/go-internal v1.13.1 h1:KvO1DLK/DRN07sQ1LQKScxyZJuNnedQ5/wKSR38lUII=
 github.com/rogpeppe/go-internal v1.13.1/go.mod h1:uMEvuHeurkdAXX61udpOXGD/AzZDWNMNyH2VO9fmH0o=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
