@@ -16,11 +16,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-const (
-	// HandlerName is the identifier for this secret-push handler
-	HandlerName = "secret-push"
-)
-
 // awsErrorClassifier wraps the AWS SDK retry logic for use with result builder utilities.
 var awsErrorClassifier = controller.ErrorClassifier(isRetryable)
 

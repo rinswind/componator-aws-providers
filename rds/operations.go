@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/retry"
@@ -18,11 +17,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/rinswind/componator/componentkit/controller"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-)
-
-const (
-	// HandlerName is the identifier for this RDS handler
-	HandlerName = "rds"
 )
 
 // rdsErrorClassifier wraps the AWS SDK retry logic for use with result builder utilities.
@@ -121,19 +115,6 @@ func NewRdsOperationsFactory() *RdsOperationsFactory {
 		rdsClient: rdsClient,
 		awsConfig: cfg,
 	}
-}
-
-// NewRdsOperationsConfig creates a ComponentHandlerConfig for RDS with appropriate settings
-func NewRdsOperationsConfig() controller.ComponentReconcilerConfig {
-	config := controller.DefaultComponentReconcilerConfig(HandlerName)
-
-	// RDS operations typically take longer than Helm operations
-	// Adjust timeouts to account for database creation/modification times
-	config.DefaultRequeue = 30 * time.Second     // RDS operations are slower
-	config.StatusCheckRequeue = 15 * time.Second // Check database status less frequently
-	config.ErrorRequeue = 30 * time.Second       // Give more time for transient errors
-
-	return config
 }
 
 // Helper methods for RDS operations

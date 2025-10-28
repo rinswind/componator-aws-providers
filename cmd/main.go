@@ -24,10 +24,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	iampolicy "github.com/rinswind/componator-aws-providers/internal/controller/iam-policy"
-	iamrole "github.com/rinswind/componator-aws-providers/internal/controller/iam-role"
-	"github.com/rinswind/componator-aws-providers/internal/controller/rds"
-	secretpush "github.com/rinswind/componator-aws-providers/internal/controller/secret-push"
+	"github.com/rinswind/componator-aws-providers/iampolicy"
+	"github.com/rinswind/componator-aws-providers/iamrole"
+	"github.com/rinswind/componator-aws-providers/rds"
+	"github.com/rinswind/componator-aws-providers/secretpush"
 	corev1beta1 "github.com/rinswind/componator/api/core/v1beta1"
 	// +kubebuilder:scaffold:imports
 )
@@ -165,23 +165,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := iampolicy.NewComponentReconciler().SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "IamPolicyComponent")
+	if err := iampolicy.Register(mgr, ""); err != nil {
+		setupLog.Error(err, "unable to register iam-policy controller")
 		os.Exit(1)
 	}
 
-	if err := iamrole.NewComponentReconciler().SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "IamRoleComponent")
+	if err := iamrole.Register(mgr, ""); err != nil {
+		setupLog.Error(err, "unable to register iam-role controller")
 		os.Exit(1)
 	}
 
-	if err := secretpush.NewComponentReconciler().SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "SecretPushComponent")
+	if err := secretpush.Register(mgr, ""); err != nil {
+		setupLog.Error(err, "unable to register secret-push controller")
 		os.Exit(1)
 	}
 
-	if err := rds.NewComponentReconciler().SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "RDSComponent")
+	if err := rds.Register(mgr, ""); err != nil {
+		setupLog.Error(err, "unable to register rds controller")
 		os.Exit(1)
 	}
 

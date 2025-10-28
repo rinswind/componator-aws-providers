@@ -26,7 +26,10 @@ RUN --mount=type=ssh go mod download
 # Copy the go source
 COPY cmd/main.go cmd/main.go
 COPY api/ api/
-COPY internal/ internal/
+COPY rds/ rds/
+COPY iamrole/ iamrole/
+COPY iampolicy/ iampolicy/
+COPY secretpush/ secretpush/
 
 # Build
 # the GOARCH has no default value to allow the binary to be built according to the host where the command

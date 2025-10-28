@@ -1,7 +1,7 @@
 // Copyright 2025.
 // SPDX-License-Identifier: Apache-2.0
 
-package iamrole
+package rds
 
 import (
 	"time"
@@ -11,12 +11,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 )
 
+const (
+	// HandlerName is the provider identifier for the RDS provider
+	HandlerName = "rds"
+)
+
 //+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=deployment-orchestrator.io,resources=components/finalizers,verbs=update
 
-// ComponentReconciler reconciles a Component object for iam-role handler using the generic
-// controller base with IAM-specific operations.
+// ComponentReconciler reconciles a Component object for rds handler using the generic
+// controller base with RDS-specific operations.
 //
 // This embeds the base controller directly, eliminating unnecessary delegation
 // while maintaining protocol compliance.
@@ -24,14 +29,17 @@ type ComponentReconciler struct {
 	*componentkit.ComponentReconciler
 }
 
-// NewComponentReconciler creates a new IAM role Component controller with the generic base
-func NewComponentReconciler() *ComponentReconciler {
-	factory := NewIamRoleOperationsFactory()
+// NewComponentReconciler creates a new RDS Component controller with the generic base.
+//
+// Parameters:
+//   - providerName: The provider identifier. Use "rds" for standalone mode, or namespaced like "wordpress-rds" for setkit embedding.
+func NewComponentReconciler(providerName string) *ComponentReconciler {
+	factory := NewRdsOperationsFactory()
 
-	config := componentkit.DefaultComponentReconcilerConfig(HandlerName)
-	config.ErrorRequeue = 30 * time.Second       // Give more time for AWS throttling errors
-	config.DefaultRequeue = 15 * time.Second     // IAM operations are generally fast
-	config.StatusCheckRequeue = 10 * time.Second // Check role status frequently
+	config := componentkit.DefaultComponentReconcilerConfig(providerName)
+	config.ErrorRequeue = 15 * time.Second
+	config.DefaultRequeue = 30 * time.Second
+	config.StatusCheckRequeue = 30 * time.Second
 
 	return &ComponentReconciler{componentkit.NewComponentReconciler(factory, config)}
 }

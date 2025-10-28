@@ -18,11 +18,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-const (
-	// HandlerName is the identifier for this IAM role handler
-	HandlerName = "iam-role"
-)
-
 // iamErrorClassifier wraps the AWS SDK retry logic for use with result builder utilities.
 // This allows IAM role handler to use the generic result builders while maintaining AWS-specific error classification.
 var iamErrorClassifier = controller.ErrorClassifier(isRetryable)
