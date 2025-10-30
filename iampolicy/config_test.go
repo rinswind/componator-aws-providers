@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 func TestResolveIamPolicyConfig(t *testing.T) {
@@ -160,7 +161,8 @@ func TestIamPolicyOperationsFactory(t *testing.T) {
 			"policyDocument": "{\"Version\": \"2012-10-17\"}"
 		}`)
 
-		ops, err := factory.NewOperations(ctx, rawConfig, nil)
+		componentName := types.NamespacedName{Namespace: "default", Name: "test-component"}
+		ops, err := factory.NewOperations(ctx, componentName, rawConfig, nil)
 		require.NoError(t, err)
 		require.NotNil(t, ops)
 
@@ -179,7 +181,8 @@ func TestIamPolicyOperationsFactory(t *testing.T) {
 			"policyName": "test-policy"
 		}`)
 
-		_, err := factory.NewOperations(ctx, rawConfig, nil)
+		componentName := types.NamespacedName{Namespace: "default", Name: "test-component"}
+		_, err := factory.NewOperations(ctx, componentName, rawConfig, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "policyDocument is required")
 	})
@@ -193,7 +196,8 @@ func TestIamPolicyOperationsFactory(t *testing.T) {
 		}`)
 		rawStatus := json.RawMessage(`invalid json`)
 
-		_, err := factory.NewOperations(ctx, rawConfig, rawStatus)
+		componentName := types.NamespacedName{Namespace: "default", Name: "test-component"}
+		_, err := factory.NewOperations(ctx, componentName, rawConfig, rawStatus)
 		require.Error(t, err)
 	})
 }

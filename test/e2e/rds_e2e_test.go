@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	rdscontroller "github.com/rinswind/componator-aws-providers/internal/controller/rds"
+	rdscontroller "github.com/rinswind/componator-aws-providers/rds"
 	deploymentsv1alpha1 "github.com/rinswind/componator/api/core/v1beta1"
 )
 

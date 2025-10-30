@@ -41,7 +41,7 @@ func NewComponentReconciler(providerName string) *ComponentReconciler {
 	config.DefaultRequeue = 30 * time.Second
 	config.StatusCheckRequeue = 30 * time.Second
 
-	return &ComponentReconciler{componentkit.NewComponentReconciler(factory, config)}
+	return &ComponentReconciler{componentkit.NewComponentReconciler(factory, config, nil)}
 }
 
 // SetupWithManager sets up the controller with the Manager.

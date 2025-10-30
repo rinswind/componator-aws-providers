@@ -41,7 +41,7 @@ func NewComponentReconciler(providerName string) *ComponentReconciler {
 	config.DefaultRequeue = 30 * time.Second     // Secrets Manager operations are generally fast
 	config.StatusCheckRequeue = 15 * time.Second // Check secret status frequently
 
-	return &ComponentReconciler{componentkit.NewComponentReconciler(factory, config)}
+	return &ComponentReconciler{componentkit.NewComponentReconciler(factory, config, nil)}
 }
 
 // SetupWithManager sets up the controller with the Manager.

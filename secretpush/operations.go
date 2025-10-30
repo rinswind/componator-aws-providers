@@ -13,6 +13,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/rinswind/componator/componentkit/controller"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -32,7 +33,10 @@ type SecretPushOperationsFactory struct {
 // This method is called once per reconciliation loop to eliminate repeated configuration parsing.
 // Uses the pre-initialized AWS client from the factory.
 func (f *SecretPushOperationsFactory) NewOperations(
-	ctx context.Context, config json.RawMessage, currentStatus json.RawMessage) (controller.ComponentOperations, error) {
+	ctx context.Context,
+	name k8stypes.NamespacedName,
+	config json.RawMessage,
+	currentStatus json.RawMessage) (controller.ComponentOperations, error) {
 
 	log := logf.FromContext(ctx)
 

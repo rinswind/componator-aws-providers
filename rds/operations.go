@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/rinswind/componator/componentkit/controller"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -35,7 +36,12 @@ type RdsOperationsFactory struct {
 // NewOperations creates a new stateful RdsOperations instance with pre-parsed configuration and status.
 // This method is called once per reconciliation loop to eliminate repeated configuration parsing.
 // Uses the pre-initialized AWS client from the factory.
-func (f *RdsOperationsFactory) NewOperations(ctx context.Context, config json.RawMessage, currentStatus json.RawMessage) (controller.ComponentOperations, error) {
+func (f *RdsOperationsFactory) NewOperations(
+	ctx context.Context,
+	name k8stypes.NamespacedName,
+	config json.RawMessage,
+	currentStatus json.RawMessage) (controller.ComponentOperations, error) {
+
 	log := logf.FromContext(ctx)
 
 	// Parse configuration once for this reconciliation loop

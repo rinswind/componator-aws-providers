@@ -41,7 +41,7 @@ func NewComponentReconciler(providerName string) *ComponentReconciler {
 	config.DefaultRequeue = 15 * time.Second     // IAM operations are generally fast
 	config.StatusCheckRequeue = 10 * time.Second // Check role status frequently
 
-	return &ComponentReconciler{componentkit.NewComponentReconciler(factory, config)}
+	return &ComponentReconciler{componentkit.NewComponentReconciler(factory, config, nil)}
 }
 
 // SetupWithManager sets up the controller with the Manager.
