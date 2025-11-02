@@ -8,11 +8,8 @@
 package iampolicy
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // IamPolicyConfig represents the configuration structure for IAM policy components
@@ -50,59 +47,31 @@ type IamPolicyStatus struct {
 	CurrentVersionId string `json:"currentVersionId,omitempty"`
 }
 
-// resolveIamPolicyConfig unmarshals Component.Spec.Config into IamPolicyConfig struct
-// and applies sensible defaults for optional fields
-func resolveIamPolicyConfig(ctx context.Context, rawConfig json.RawMessage) (*IamPolicyConfig, error) {
-	var config IamPolicyConfig
-	if err := json.Unmarshal(rawConfig, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse iam-policy config: %w", err)
-	}
-
+// resolveSpec validates config and applies defaults
+func resolveSpec(config *IamPolicyConfig) error {
 	// Validate required fields
 	if config.PolicyName == "" {
-		return nil, fmt.Errorf("policyName is required and cannot be empty")
+		return fmt.Errorf("policyName is required and cannot be empty")
 	}
 	if config.PolicyDocument == "" {
-		return nil, fmt.Errorf("policyDocument is required and cannot be empty")
+		return fmt.Errorf("policyDocument is required and cannot be empty")
 	}
 
 	// Validate policyDocument is valid JSON
 	if !json.Valid([]byte(config.PolicyDocument)) {
-		return nil, fmt.Errorf("policyDocument must be valid JSON")
+		return fmt.Errorf("policyDocument must be valid JSON")
 	}
 
-	// Apply defaults for optional fields
-	if err := applyIamPolicyConfigDefaults(&config); err != nil {
-		return nil, fmt.Errorf("failed to apply configuration defaults: %w", err)
+	// Apply defaults
+	if err := applyDefaults(config); err != nil {
+		return err
 	}
 
-	log := logf.FromContext(ctx)
-	log.V(1).Info("Resolved iam-policy config",
-		"policyName", config.PolicyName,
-		"path", config.Path,
-		"hasDescription", config.Description != "",
-		"tagCount", len(config.Tags))
-
-	return &config, nil
+	return nil
 }
 
-// resolveIamPolicyStatus unmarshals existing handler status or returns empty status
-func resolveIamPolicyStatus(ctx context.Context, rawStatus json.RawMessage) (*IamPolicyStatus, error) {
-	status := &IamPolicyStatus{}
-	if len(rawStatus) == 0 {
-		logf.FromContext(ctx).V(1).Info("No existing iam-policy status found, starting with empty status")
-		return status, nil
-	}
-
-	if err := json.Unmarshal(rawStatus, &status); err != nil {
-		return nil, fmt.Errorf("failed to parse iam-policy status: %w", err)
-	}
-
-	return status, nil
-}
-
-// applyIamPolicyConfigDefaults sets sensible defaults for optional IAM policy configuration fields
-func applyIamPolicyConfigDefaults(config *IamPolicyConfig) error {
+// applyDefaults sets sensible defaults for optional IAM policy configuration fields
+func applyDefaults(config *IamPolicyConfig) error {
 	// Default path to root if not specified
 	if config.Path == "" {
 		config.Path = "/"

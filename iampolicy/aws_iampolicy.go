@@ -6,10 +6,12 @@ package iampolicy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/rinswind/componator/componentkit/controller"
@@ -20,100 +22,57 @@ const (
 	MaxNumberOfPolicyVersions = 5
 )
 
-// Apply initiates IAM policy creation or update
-func (op *IamPolicyOperations) Apply(ctx context.Context) (*controller.ActionResult, error) {
-	log := logf.FromContext(ctx).WithValues("policyName", op.config.PolicyName)
+// Package-level singletons initialized during registration
+var (
+	awsConfig aws.Config
+	iamClient *iam.Client
+)
 
-	log.Info("Starting IAM policy deployment")
-
-	// Check if policy already exists
-	existingPolicy, err := op.getPolicyByName(ctx, op.config.PolicyName, op.config.Path)
-	if err != nil {
-		return controller.ActionResultForError(
-			op.status, fmt.Errorf("failed to check if policy exists: %w", err), iamErrorClassifier)
+// getPolicyByName retrieves policy by name (searches by path and name)
+func getPolicyByName(ctx context.Context, policyName, path string) (*types.Policy, error) {
+	// List policies to find a match
+	input := &iam.ListPoliciesInput{
+		Scope:      types.PolicyScopeTypeLocal,
+		PathPrefix: aws.String(path),
 	}
 
-	if existingPolicy == nil {
-		// Policy doesn't exist - create it
-		policy, err := op.createPolicy(ctx,
-			op.config.PolicyName,
-			op.config.PolicyDocument,
-			op.config.Path,
-			op.config.Description,
-			op.config.Tags)
-		if err != nil {
-			return controller.ActionResultForError(
-				op.status, fmt.Errorf("failed to create policy: %w", err), iamErrorClassifier)
+	output, err := iamClient.ListPolicies(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list policies: %w", err)
+	}
+
+	// Find policy with matching name
+	for i := range output.Policies {
+		policy := &output.Policies[i]
+		if aws.ToString(policy.PolicyName) == policyName {
+			return policy, nil
 		}
-
-		// Update status with created policy info
-		op.status.PolicyArn = aws.ToString(policy.Arn)
-		op.status.PolicyId = aws.ToString(policy.PolicyId)
-		op.status.PolicyName = aws.ToString(policy.PolicyName)
-		op.status.CurrentVersionId = aws.ToString(policy.DefaultVersionId)
-
-		log.Info("Successfully deployed new policy", "policyArn", op.status.PolicyArn)
-		details := fmt.Sprintf("Created policy %s", op.status.PolicyName)
-		return controller.ActionSuccessWithDetails(op.status, details)
 	}
 
-	// Policy exists - update status and create new version if needed
-	op.status.PolicyArn = aws.ToString(existingPolicy.Arn)
-	op.status.PolicyId = aws.ToString(existingPolicy.PolicyId)
-	op.status.PolicyName = aws.ToString(existingPolicy.PolicyName)
-
-	log.Info("Policy already exists, checking for updates", "policyArn", op.status.PolicyArn)
-
-	versionId, err := op.createPolicyVersion(ctx, op.status.PolicyArn, op.config.PolicyDocument)
-	if err != nil {
-		return controller.ActionResultForError(
-			op.status, fmt.Errorf("failed to update policy version: %w", err), iamErrorClassifier)
-	}
-
-	// Update status with current version
-	op.status.CurrentVersionId = versionId
-
-	log.Info("Successfully reconciled policy", "policyArn", op.status.PolicyArn, "versionId", versionId)
-	details := fmt.Sprintf("Updated policy %s to version %s", op.status.PolicyName, versionId)
-	return controller.ActionSuccessWithDetails(op.status, details)
+	return nil, nil // Not found
 }
 
-// CheckDeployed verifies policy exists and is ready
-func (op *IamPolicyOperations) CheckApplied(ctx context.Context) (*controller.CheckResult, error) {
-	log := logf.FromContext(ctx).WithValues("policyName", op.config.PolicyName)
-
-	// If we don't have a policy ARN yet, deployment hasn't started
-	if op.status.PolicyArn == "" {
-		log.V(1).Info("No policy ARN in status, deployment not started")
-		return controller.CheckInProgress(op.status)
+// getPolicyByArn retrieves policy by ARN
+func getPolicyByArn(ctx context.Context, arn string) (*types.Policy, error) {
+	input := &iam.GetPolicyInput{
+		PolicyArn: aws.String(arn),
 	}
 
-	// Verify policy exists
-	policy, err := op.getPolicyByArn(ctx, op.status.PolicyArn)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check policy status: %w", err)
+	output, err := iamClient.GetPolicy(ctx, input)
+	if err == nil {
+		return output.Policy, nil
 	}
 
-	if policy == nil {
-		return controller.CheckResultForError(op.status,
-			fmt.Errorf("policy not found at ARN %s", op.status.PolicyArn), iamErrorClassifier)
+	// Check if policy not found
+	if isNotFoundError(err) {
+		return nil, nil
 	}
 
-	// Update status with current policy info
-	op.status.PolicyArn = aws.ToString(policy.Arn)
-	op.status.PolicyId = aws.ToString(policy.PolicyId)
-	op.status.PolicyName = aws.ToString(policy.PolicyName)
-
-	log.Info("Policy deployment complete",
-		"policyArn", op.status.PolicyArn,
-		"policyId", op.status.PolicyId)
-
-	details := fmt.Sprintf("Policy %s ready (version %s)", op.status.PolicyName, op.status.CurrentVersionId)
-	return controller.CheckCompleteWithDetails(op.status, details)
+	return nil, fmt.Errorf("failed to get policy: %w", err)
 }
 
 // createPolicy creates a new IAM policy and returns the created policy
-func (op *IamPolicyOperations) createPolicy(
+func createPolicy(
 	ctx context.Context, policyName, policyDocument, path, description string, tags map[string]string) (*types.Policy, error) {
 
 	log := logf.FromContext(ctx).WithValues("policyName", policyName)
@@ -128,7 +87,7 @@ func (op *IamPolicyOperations) createPolicy(
 		Tags:           toIAMTags(tags),
 	}
 
-	output, err := op.iamClient.CreatePolicy(ctx, input)
+	output, err := iamClient.CreatePolicy(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create policy: %w", err)
 	}
@@ -142,7 +101,7 @@ func (op *IamPolicyOperations) createPolicy(
 
 // createPolicyVersion creates a new version of an existing policy and returns the version ID.
 // Returns the current version ID if policy document is unchanged (no new version created).
-func (op *IamPolicyOperations) createPolicyVersion(
+func createPolicyVersion(
 	ctx context.Context, policyArn, desiredDocument string) (string, error) {
 
 	log := logf.FromContext(ctx).WithValues("policyArn", policyArn)
@@ -150,7 +109,7 @@ func (op *IamPolicyOperations) createPolicyVersion(
 	log.Info("Checking if policy update needed")
 
 	// Get current default version to check for drift
-	currentDocument, versionId, err := op.getCurrentPolicyDocument(ctx, policyArn)
+	currentDocument, versionId, err := getCurrentPolicyDocument(ctx, policyArn)
 	if err != nil {
 		return "", fmt.Errorf("failed to get current policy document: %w", err)
 	}
@@ -164,7 +123,7 @@ func (op *IamPolicyOperations) createPolicyVersion(
 	log.Info("Policy document changed, creating new version")
 
 	// Check current version count and cleanup if needed
-	if err := op.deleteOldestPolicyVersion(ctx, policyArn); err != nil {
+	if err := deleteOldestPolicyVersion(ctx, policyArn); err != nil {
 		return "", fmt.Errorf("failed to cleanup old versions: %w", err)
 	}
 
@@ -175,7 +134,7 @@ func (op *IamPolicyOperations) createPolicyVersion(
 		SetAsDefault:   true, // Set new version as default
 	}
 
-	output, err := op.iamClient.CreatePolicyVersion(ctx, input)
+	output, err := iamClient.CreatePolicyVersion(ctx, input)
 	if err != nil {
 		return "", fmt.Errorf("failed to create policy version: %w", err)
 	}
@@ -188,7 +147,7 @@ func (op *IamPolicyOperations) createPolicyVersion(
 }
 
 // deleteOldestPolicyVersion removes oldest non-default version if at 5 version limit
-func (op *IamPolicyOperations) deleteOldestPolicyVersion(ctx context.Context, policyArn string) error {
+func deleteOldestPolicyVersion(ctx context.Context, policyArn string) error {
 	log := logf.FromContext(ctx).WithValues("policyArn", policyArn)
 
 	// List all versions
@@ -196,7 +155,7 @@ func (op *IamPolicyOperations) deleteOldestPolicyVersion(ctx context.Context, po
 		PolicyArn: aws.String(policyArn),
 	}
 
-	listOutput, err := op.iamClient.ListPolicyVersions(ctx, listInput)
+	listOutput, err := iamClient.ListPolicyVersions(ctx, listInput)
 	if err != nil {
 		return fmt.Errorf("failed to list policy versions: %w", err)
 	}
@@ -232,7 +191,7 @@ func (op *IamPolicyOperations) deleteOldestPolicyVersion(ctx context.Context, po
 		VersionId: oldestVersion.VersionId,
 	}
 
-	_, err = op.iamClient.DeletePolicyVersion(ctx, deleteInput)
+	_, err = iamClient.DeletePolicyVersion(ctx, deleteInput)
 	if err != nil {
 		return fmt.Errorf("failed to delete old policy version %s: %w", aws.ToString(oldestVersion.VersionId), err)
 	}
@@ -244,9 +203,9 @@ func (op *IamPolicyOperations) deleteOldestPolicyVersion(ctx context.Context, po
 }
 
 // getCurrentPolicyDocument retrieves the current default policy document
-func (op *IamPolicyOperations) getCurrentPolicyDocument(ctx context.Context, policyArn string) (string, string, error) {
+func getCurrentPolicyDocument(ctx context.Context, policyArn string) (string, string, error) {
 	// First get policy to find default version
-	policy, err := op.getPolicyByArn(ctx, policyArn)
+	policy, err := getPolicyByArn(ctx, policyArn)
 	if err != nil {
 		return "", "", err
 	}
@@ -262,13 +221,91 @@ func (op *IamPolicyOperations) getCurrentPolicyDocument(ctx context.Context, pol
 		VersionId: aws.String(defaultVersionId),
 	}
 
-	output, err := op.iamClient.GetPolicyVersion(ctx, input)
+	output, err := iamClient.GetPolicyVersion(ctx, input)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get policy version: %w", err)
 	}
 
 	document := aws.ToString(output.PolicyVersion.Document)
 	return document, defaultVersionId, nil
+}
+
+// deletePolicy deletes an IAM policy by ARN
+func deletePolicy(ctx context.Context, policyArn string) error {
+	log := logf.FromContext(ctx).WithValues("policyArn", policyArn)
+
+	deleteInput := &iam.DeletePolicyInput{
+		PolicyArn: aws.String(policyArn),
+	}
+
+	_, err := iamClient.DeletePolicy(ctx, deleteInput)
+	if err == nil {
+		log.Info("Successfully deleted IAM policy", "policyArn", policyArn)
+		return nil
+	}
+
+	// If policy not found, deletion already complete
+	if isNotFoundError(err) {
+		log.Info("Policy not found during deletion, already deleted", "policyArn", policyArn)
+		return nil
+	}
+
+	return fmt.Errorf("failed to delete policy: %w", err)
+}
+
+// deletePolicyAllVersions deletes all non-default versions of a policy
+func deletePolicyAllVersions(ctx context.Context, policyArn string) error {
+	log := logf.FromContext(ctx).WithValues("policyArn", policyArn)
+
+	// List all versions
+	listInput := &iam.ListPolicyVersionsInput{
+		PolicyArn: aws.String(policyArn),
+	}
+
+	listOutput, err := iamClient.ListPolicyVersions(ctx, listInput)
+	if err != nil {
+		// If policy not found, versions already gone
+		if isNotFoundError(err) {
+			log.V(1).Info("Policy not found when listing versions, already deleted")
+			return nil
+		}
+		return fmt.Errorf("failed to list policy versions: %w", err)
+	}
+
+	// Delete all non-default versions
+	var deletedCount int
+	for i := range listOutput.Versions {
+		version := &listOutput.Versions[i]
+
+		// Skip default version (will be deleted with policy)
+		if version.IsDefaultVersion {
+			continue
+		}
+
+		deleteInput := &iam.DeletePolicyVersionInput{
+			PolicyArn: aws.String(policyArn),
+			VersionId: version.VersionId,
+		}
+
+		_, err := iamClient.DeletePolicyVersion(ctx, deleteInput)
+		if err != nil {
+			// If version not found, it's already deleted - continue
+			if isNotFoundError(err) {
+				log.V(1).Info("Version already deleted", "versionId", aws.ToString(version.VersionId))
+				continue
+			}
+			return fmt.Errorf("failed to delete policy version %s: %w", aws.ToString(version.VersionId), err)
+		}
+
+		deletedCount++
+		log.V(1).Info("Deleted policy version", "versionId", aws.ToString(version.VersionId))
+	}
+
+	if deletedCount > 0 {
+		log.Info("Deleted non-default policy versions", "count", deletedCount)
+	}
+
+	return nil
 }
 
 // toIAMTags converts map to IAM tag slice
@@ -307,4 +344,34 @@ func jsonEquals(a, b string) bool {
 
 	// Compare semantically using reflect.DeepEqual
 	return reflect.DeepEqual(objA, objB)
+}
+
+// isNotFoundError checks if error indicates policy not found
+func isNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Check for IAM NoSuchEntity error
+	var notFoundErr *types.NoSuchEntityException
+	return errors.As(err, &notFoundErr)
+}
+
+// iamErrorClassifier wraps the AWS SDK retry logic for use with result builder utilities.
+var iamErrorClassifier = controller.ErrorClassifier(isRetryable)
+
+// isRetryable determines if an error is retryable using AWS SDK's built-in error classification.
+func isRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Use AWS SDK's built-in retry classification
+	// This handles all AWS API errors, network errors, and HTTP status codes
+	for _, checker := range retry.DefaultRetryables {
+		if checker.IsErrorRetryable(err) == aws.TrueTernary {
+			return true
+		}
+	}
+
+	return false
 }
