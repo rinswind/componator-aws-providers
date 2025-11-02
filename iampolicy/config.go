@@ -34,16 +34,9 @@ type IamPolicyConfig struct {
 // IamPolicyStatus contains handler-specific status data for IAM policy deployments.
 // This data is persisted across reconciliation loops in Component.Status.ProviderStatus.
 type IamPolicyStatus struct {
-	// PolicyArn is the AWS ARN of the created IAM policy
-	PolicyArn string `json:"policyArn,omitempty"`
-
-	// PolicyId is the AWS-assigned unique identifier for the policy
-	PolicyId string `json:"policyId,omitempty"`
-
-	// PolicyName is the name of the policy as created in AWS
-	PolicyName string `json:"policyName,omitempty"`
-
-	// CurrentVersionId is the version ID of the current default policy version
+	PolicyArn        string `json:"policyArn,omitempty"`
+	PolicyId         string `json:"policyId,omitempty"`
+	PolicyName       string `json:"policyName,omitempty"`
 	CurrentVersionId string `json:"currentVersionId,omitempty"`
 }
 

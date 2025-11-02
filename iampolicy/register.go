@@ -42,7 +42,6 @@ func Register(mgr ctrl.Manager, providerName string) error {
 		return fmt.Errorf("failed to load AWS configuration: %w", err)
 	}
 
-	awsConfig = cfg
 	iamClient = iam.NewFromConfig(cfg)
 
 	// Log client initialization
@@ -50,5 +49,5 @@ func Register(mgr ctrl.Manager, providerName string) error {
 	log.Info("Initialized AWS IAM client", "region", cfg.Region)
 
 	// Register with functional API (no health check)
-	return componentkit.RegisterFunc(mgr, providerName, applyAction, checkAppliedAction, deleteAction, checkDeletedAction, nil)
+	return componentkit.RegisterFunc(mgr, providerName, applyAction, checkApplied, deleteAction, checkDeleted, nil)
 }

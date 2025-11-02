@@ -24,7 +24,6 @@ const (
 
 // Package-level singletons initialized during registration
 var (
-	awsConfig aws.Config
 	iamClient *iam.Client
 )
 
@@ -73,7 +72,9 @@ func getPolicyByArn(ctx context.Context, arn string) (*types.Policy, error) {
 
 // createPolicy creates a new IAM policy and returns the created policy
 func createPolicy(
-	ctx context.Context, policyName, policyDocument, path, description string, tags map[string]string) (*types.Policy, error) {
+	ctx context.Context,
+	policyName, policyDocument, path, description string,
+	tags map[string]string) (*types.Policy, error) {
 
 	log := logf.FromContext(ctx).WithValues("policyName", policyName)
 
@@ -101,9 +102,7 @@ func createPolicy(
 
 // createPolicyVersion creates a new version of an existing policy and returns the version ID.
 // Returns the current version ID if policy document is unchanged (no new version created).
-func createPolicyVersion(
-	ctx context.Context, policyArn, desiredDocument string) (string, error) {
-
+func createPolicyVersion(ctx context.Context, policyArn, desiredDocument string) (string, error) {
 	log := logf.FromContext(ctx).WithValues("policyArn", policyArn)
 
 	log.Info("Checking if policy update needed")

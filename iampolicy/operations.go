@@ -70,8 +70,8 @@ func applyAction(
 	return controller.ActionSuccessFunc(status, details)
 }
 
-// checkAppliedAction verifies policy exists and is ready
-func checkAppliedAction(
+// checkApplied verifies policy exists and is ready
+func checkApplied(
 	ctx context.Context,
 	name k8stypes.NamespacedName,
 	spec IamPolicyConfig,
@@ -148,8 +148,8 @@ func deleteAction(
 	return controller.ActionSuccessFunc(status, details)
 }
 
-// checkDeletedAction verifies deletion is complete
-func checkDeletedAction(
+// checkDeleted verifies deletion is complete
+func checkDeleted(
 	ctx context.Context,
 	name k8stypes.NamespacedName,
 	spec IamPolicyConfig,
