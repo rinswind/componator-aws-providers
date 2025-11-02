@@ -4,7 +4,14 @@
 package rds
 
 import (
+	"time"
+
+	componentkit "github.com/rinswind/componator/componentkit/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
+)
+
+const (
+	DefaultProviderName = "rds"
 )
 
 // Register creates and registers an RDS component provider controller with the manager.
@@ -12,8 +19,11 @@ import (
 //
 // Parameters:
 //   - mgr: The controller-runtime manager that provides client, scheme, and controller registration.
-//   - namespace: The setkit namespace for provider isolation. Use "" for standalone deployment (provider name becomes "rds").
-//     For setkit embedding, use the setkit name (e.g., "wordpress") to create provider "wordpress-rds".
+//   - providerName: The full provider name to register. Use "" to register with the default name "rds".
+//     For setkit embedding, use a prefixed name (e.g., "wordpress-rds") to avoid conflicts.
+//
+// CRITICAL: Provider names must be unique across all providers in the cluster. Multiple providers with
+// the same name will conflict and cause undefined behavior in Component claiming and status reporting.
 //
 // Returns:
 //   - error: Initialization or registration errors.
@@ -27,20 +37,23 @@ import (
 //
 // Example setkit usage (in wordpress-operator/cmd/main.go):
 //
-//	if err := rds.Register(mgr, "wordpress"); err != nil {
+//	if err := rds.Register(mgr, "wordpress-rds"); err != nil {
 //	    setupLog.Error(err, "unable to register rds provider")
 //	    os.Exit(1)
 //	}
-func Register(mgr ctrl.Manager, namespace string) error {
-	// Determine provider name based on namespace
-	providerName := HandlerName
-	if namespace != "" {
-		providerName = namespace + "-" + HandlerName
+func Register(mgr ctrl.Manager, providerName string) error {
+	// Use default provider name if not specified
+	if providerName == "" {
+		providerName = DefaultProviderName
 	}
 
-	// Create controller with namespaced provider name
-	controller := NewComponentReconciler(providerName)
+	// Create operations factory and config
+	factory := NewRdsOperationsFactory()
+	config := componentkit.DefaultComponentReconcilerConfig(providerName)
+	config.ErrorRequeue = 15 * time.Second
+	config.DefaultRequeue = 30 * time.Second
+	config.StatusCheckRequeue = 30 * time.Second
 
-	// Register with manager
-	return controller.SetupWithManager(mgr)
+	// Register directly with componentkit
+	return componentkit.Register(mgr, factory, config, nil)
 }

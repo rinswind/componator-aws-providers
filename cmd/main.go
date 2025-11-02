@@ -52,6 +52,7 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var providerPrefix string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -67,6 +68,10 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics server")
+	flag.StringVar(&providerPrefix, "provider-prefix", "",
+		"Prefix for all provider names (default: none). "+
+			"Example: 'team-a' creates 'team-a-iam-policy', 'team-a-rds', etc. "+
+			"Use this to avoid conflicts when running multiple instances in the same cluster.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -165,22 +170,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := iampolicy.Register(mgr, ""); err != nil {
+	if err := iampolicy.Register(mgr, buildProviderName(providerPrefix, "iam-policy")); err != nil {
 		setupLog.Error(err, "unable to register iam-policy controller")
 		os.Exit(1)
 	}
 
-	if err := iamrole.Register(mgr, ""); err != nil {
+	if err := iamrole.Register(mgr, buildProviderName(providerPrefix, "iam-role")); err != nil {
 		setupLog.Error(err, "unable to register iam-role controller")
 		os.Exit(1)
 	}
 
-	if err := secretpush.Register(mgr, ""); err != nil {
+	if err := secretpush.Register(mgr, buildProviderName(providerPrefix, "secret-push")); err != nil {
 		setupLog.Error(err, "unable to register secret-push controller")
 		os.Exit(1)
 	}
 
-	if err := rds.Register(mgr, ""); err != nil {
+	if err := rds.Register(mgr, buildProviderName(providerPrefix, "rds")); err != nil {
 		setupLog.Error(err, "unable to register rds controller")
 		os.Exit(1)
 	}
@@ -201,4 +206,14 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+// buildProviderName constructs a provider name from prefix and base name.
+// If prefix is empty, returns empty string to use the provider's default name.
+// Otherwise returns "prefix-base" (e.g., "team-a-iam-policy").
+func buildProviderName(prefix, base string) string {
+	if prefix == "" {
+		return "" // Use default from provider package
+	}
+	return prefix + "-" + base
 }

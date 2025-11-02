@@ -4,7 +4,14 @@
 package iampolicy
 
 import (
+	"time"
+
+	componentkit "github.com/rinswind/componator/componentkit/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
+)
+
+const (
+	DefaultProviderName = "iam-policy"
 )
 
 // Register creates and registers an IAM Policy component provider controller with the manager.
@@ -12,8 +19,11 @@ import (
 //
 // Parameters:
 //   - mgr: The controller-runtime manager that provides client, scheme, and controller registration.
-//   - namespace: The setkit namespace for provider isolation. Use "" for standalone deployment (provider name becomes "iam-policy").
-//     For setkit embedding, use the setkit name (e.g., "wordpress") to create provider "wordpress-iam-policy".
+//   - providerName: The full provider name to register. Use "" to register with the default name "iam-policy".
+//     For setkit embedding, use a prefixed name (e.g., "wordpress-iam-policy") to avoid conflicts.
+//
+// CRITICAL: Provider names must be unique across all providers in the cluster. Multiple providers with
+// the same name will conflict and cause undefined behavior in Component claiming and status reporting.
 //
 // Returns:
 //   - error: Initialization or registration errors.
@@ -27,20 +37,23 @@ import (
 //
 // Example setkit usage (in wordpress-operator/cmd/main.go):
 //
-//	if err := iampolicy.Register(mgr, "wordpress"); err != nil {
+//	if err := iampolicy.Register(mgr, "wordpress-iam-policy"); err != nil {
 //	    setupLog.Error(err, "unable to register iam-policy provider")
 //	    os.Exit(1)
 //	}
-func Register(mgr ctrl.Manager, namespace string) error {
-	// Determine provider name based on namespace
-	providerName := HandlerName
-	if namespace != "" {
-		providerName = namespace + "-" + HandlerName
+func Register(mgr ctrl.Manager, providerName string) error {
+	// Use default provider name if not specified
+	if providerName == "" {
+		providerName = DefaultProviderName
 	}
 
-	// Create controller with namespaced provider name
-	controller := NewComponentReconciler(providerName)
+	// Create operations factory and config
+	factory := NewIamPolicyOperationsFactory()
+	config := componentkit.DefaultComponentReconcilerConfig(providerName)
+	config.ErrorRequeue = 30 * time.Second       // Give more time for AWS throttling errors
+	config.DefaultRequeue = 15 * time.Second     // IAM operations are generally fast
+	config.StatusCheckRequeue = 10 * time.Second // Check policy status frequently
 
-	// Register with manager
-	return controller.SetupWithManager(mgr)
+	// Register directly with componentkit
+	return componentkit.Register(mgr, factory, config, nil)
 }

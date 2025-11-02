@@ -4,43 +4,51 @@
 package secretpush
 
 import (
+	"context"
+	"fmt"
+
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	componentkit "github.com/rinswind/componator/componentkit/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// Register creates and registers a Secret Push component provider controller with the manager.
-// This is the primary API for embedding the Secret Push provider in setkit distributions.
+const (
+	DefaultProviderName = "secret-push"
+)
+
+// Register registers the secret-push Component provider with the controller manager.
 //
-// Parameters:
-//   - mgr: The controller-runtime manager that provides client, scheme, and controller registration.
-//   - namespace: The setkit namespace for provider isolation. Use "" for standalone deployment (provider name becomes "secret-push").
-//     For setkit embedding, use the setkit name (e.g., "wordpress") to create provider "wordpress-secret-push".
+// The providerName parameter specifies the unique name used for Component claiming.
+// Pass empty string to use the default "secret-push". For setkit embedding, use a
+// prefixed name (e.g., "wordpress-secret-push") to avoid conflicts with other providers.
 //
-// Returns:
-//   - error: Initialization or registration errors.
+// Provider names must be unique across all providers in the cluster. Multiple providers
+// with the same name will conflict during Component claiming.
 //
-// Example standalone usage (in componator-aws-providers/cmd/main.go):
-//
-//	if err := secretpush.Register(mgr, ""); err != nil {
-//	    setupLog.Error(err, "unable to register secret-push controller")
-//	    os.Exit(1)
-//	}
-//
-// Example setkit usage (in wordpress-operator/cmd/main.go):
-//
-//	if err := secretpush.Register(mgr, "wordpress"); err != nil {
-//	    setupLog.Error(err, "unable to register secret-push provider")
-//	    os.Exit(1)
-//	}
-func Register(mgr ctrl.Manager, namespace string) error {
-	// Determine provider name based on namespace
-	providerName := HandlerName
-	if namespace != "" {
-		providerName = namespace + "-" + HandlerName
+// Initializes AWS Secrets Manager client using the default credential chain
+// (environment variables, EC2 instance metadata, etc.).
+func Register(mgr ctrl.Manager, providerName string) error {
+	// Use default provider name if not specified
+	if providerName == "" {
+		providerName = DefaultProviderName
 	}
 
-	// Create controller with namespaced provider name
-	controller := NewComponentReconciler(providerName)
+	// Load AWS config with default chain (uses AWS_REGION, EC2 metadata, etc.)
+	// Disable retries - controller handles requeue
+	cfg, err := awsconfig.LoadDefaultConfig(context.Background(), awsconfig.WithRetryMaxAttempts(1))
+	if err != nil {
+		return fmt.Errorf("failed to load AWS configuration: %w", err)
+	}
 
-	// Register with manager
-	return controller.SetupWithManager(mgr)
+	awsConfig = cfg
+	smClient = secretsmanager.NewFromConfig(cfg)
+
+	// Log client initialization
+	log := logf.Log.WithName("secret-push")
+	log.Info("Initialized AWS Secrets Manager client", "region", cfg.Region)
+
+	// Register with functional API
+	return componentkit.RegisterFuncImmediate(mgr, providerName, applyAction, deleteAction)
 }
