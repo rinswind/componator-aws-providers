@@ -1,18 +1,10 @@
 // Copyright 2025.
 // SPDX-License-Identifier: Apache-2.0
 
-// config.go contains RDS configuration parsing and status logic.
-// This includes the RdsConfig struct definition and related parsing functions
-// that handle Component.Spec.Config unmarshaling for RDS components.
-
 package rds
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // RdsConfig represents the configuration structure for RDS components
@@ -79,50 +71,23 @@ type RdsStatus struct {
 	MasterUserSecretArn string `json:"masterUserSecretArn,omitempty"`
 }
 
-// resolveRdsConfig unmarshals Component.Spec.Config into RdsConfig struct
-// and applies sensible defaults for optional fields
-func resolveRdsConfig(ctx context.Context, rawConfig json.RawMessage) (*RdsConfig, error) {
-	var config RdsConfig
-	if err := json.Unmarshal(rawConfig, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse rds config: %w", err)
-	}
-
+// resolveSpec validates config and applies defaults
+func resolveSpec(config *RdsConfig) error {
 	// Validate required fields
 	if config.InstanceID == "" {
-		return nil, fmt.Errorf("InstanceID is required and cannot be empty")
+		return fmt.Errorf("InstanceID is required and cannot be empty")
 	}
 
-	// Apply defaults for optional fields
-	if err := applyRdsConfigDefaults(&config); err != nil {
-		return nil, fmt.Errorf("failed to apply configuration defaults: %w", err)
+	// Apply defaults
+	if err := applyDefaults(config); err != nil {
+		return err
 	}
 
-	log := logf.FromContext(ctx)
-	log.V(1).Info("Resolved rds config",
-		"instanceIdentifier", config.InstanceID,
-		"databaseEngine", config.DatabaseEngine,
-		"instanceClass", config.InstanceClass,
-		"databaseName", config.DatabaseName)
-
-	return &config, nil
+	return nil
 }
 
-func resolveRdsStatus(ctx context.Context, rawStatus json.RawMessage) (*RdsStatus, error) {
-	status := &RdsStatus{}
-	if len(rawStatus) == 0 {
-		logf.FromContext(ctx).V(1).Info("No existing rds status found, starting with empty status")
-		return status, nil
-	}
-
-	if err := json.Unmarshal(rawStatus, &status); err != nil {
-		return nil, err
-	}
-
-	return status, nil
-}
-
-// applyRdsConfigDefaults sets sensible defaults for optional RDS configuration fields
-func applyRdsConfigDefaults(config *RdsConfig) error {
+// applyDefaults sets sensible defaults for optional RDS configuration fields
+func applyDefaults(config *RdsConfig) error {
 	// Validate required credentials fields
 	if config.MasterUsername == "" {
 		return fmt.Errorf("masterUsername is required and cannot be empty")

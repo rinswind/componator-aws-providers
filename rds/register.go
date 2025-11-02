@@ -4,56 +4,56 @@
 package rds
 
 import (
-	"time"
+	"context"
+	"fmt"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/rds"
 	componentkit "github.com/rinswind/componator/componentkit/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
 	DefaultProviderName = "rds"
 )
 
-// Register creates and registers an RDS component provider controller with the manager.
-// This is the primary API for embedding the RDS provider in setkit distributions.
+// Register registers the rds Component provider with the controller manager.
 //
-// Parameters:
-//   - mgr: The controller-runtime manager that provides client, scheme, and controller registration.
-//   - providerName: The full provider name to register. Use "" to register with the default name "rds".
-//     For setkit embedding, use a prefixed name (e.g., "wordpress-rds") to avoid conflicts.
+// The providerName parameter specifies the unique name used for Component claiming.
+// Pass empty string to use the default "rds". For setkit embedding, use a
+// prefixed name (e.g., "wordpress-rds") to avoid conflicts with other providers.
 //
-// CRITICAL: Provider names must be unique across all providers in the cluster. Multiple providers with
-// the same name will conflict and cause undefined behavior in Component claiming and status reporting.
+// Provider names must be unique across all providers in the cluster. Multiple providers
+// with the same name will conflict during Component claiming.
 //
-// Returns:
-//   - error: Initialization or registration errors.
-//
-// Example standalone usage (in componator-aws-providers/cmd/main.go):
-//
-//	if err := rds.Register(mgr, ""); err != nil {
-//	    setupLog.Error(err, "unable to register rds controller")
-//	    os.Exit(1)
-//	}
-//
-// Example setkit usage (in wordpress-operator/cmd/main.go):
-//
-//	if err := rds.Register(mgr, "wordpress-rds"); err != nil {
-//	    setupLog.Error(err, "unable to register rds provider")
-//	    os.Exit(1)
-//	}
+// Initializes AWS RDS client using the default credential chain
+// (environment variables, EC2 instance metadata, etc.).
 func Register(mgr ctrl.Manager, providerName string) error {
 	// Use default provider name if not specified
 	if providerName == "" {
 		providerName = DefaultProviderName
 	}
 
-	// Create operations factory and config
-	factory := NewRdsOperationsFactory()
-	config := componentkit.DefaultComponentReconcilerConfig(providerName)
-	config.ErrorRequeue = 15 * time.Second
-	config.DefaultRequeue = 30 * time.Second
-	config.StatusCheckRequeue = 30 * time.Second
+	// Load AWS config with default chain (uses AWS_REGION, EC2 metadata, etc.)
+	// Disable retries - controller handles requeue
+	cfg, err := awsconfig.LoadDefaultConfig(context.Background(), awsconfig.WithRetryMaxAttempts(1))
+	if err != nil {
+		return fmt.Errorf("failed to load AWS configuration: %w", err)
+	}
 
-	// Register directly with componentkit
-	return componentkit.Register(mgr, factory, config, nil)
+	rdsClient = rds.NewFromConfig(cfg)
+
+	// Log client initialization
+	log := logf.Log.WithName("rds")
+	log.Info("Initialized AWS RDS client", "region", cfg.Region)
+
+	// Register with functional API (no health check)
+	// TODO: RegisterFunc doesn't support passing reconciler config (retry/timeout settings).
+	// We previously used:
+	//   config.ErrorRequeue = 15 * time.Second
+	//   config.DefaultRequeue = 30 * time.Second
+	//   config.StatusCheckRequeue = 30 * time.Second
+	// Need to update componentkit.RegisterFunc to accept optional config parameter.
+	return componentkit.RegisterFunc(mgr, providerName, applyAction, checkApplied, deleteAction, checkDeleted, nil)
 }

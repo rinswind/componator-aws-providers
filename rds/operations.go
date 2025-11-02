@@ -5,206 +5,204 @@ package rds
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/retry"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/rds"
-	"github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/rinswind/componator/componentkit/controller"
-	k8stypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// rdsErrorClassifier wraps the AWS SDK retry logic for use with result builder utilities.
-// This allows RDS handler to use the generic result builders while maintaining AWS-specific error classification.
-var rdsErrorClassifier = controller.ErrorClassifier(isRetryable)
-
-// RdsOperationsFactory implements the ComponentOperationsFactory interface for RDS deployments.
-// This factory creates stateful RdsOperations instances with pre-parsed configuration,
-// eliminating repeated configuration parsing during reconciliation loops.
-// It maintains a single AWS RDS client created at factory initialization.
-type RdsOperationsFactory struct {
-	rdsClient *rds.Client
-	awsConfig aws.Config
-}
-
-// NewOperations creates a new stateful RdsOperations instance with pre-parsed configuration and status.
-// This method is called once per reconciliation loop to eliminate repeated configuration parsing.
-// Uses the pre-initialized AWS client from the factory.
-func (f *RdsOperationsFactory) NewOperations(
+// applyAction handles all RDS-specific deployment operations
+func applyAction(
 	ctx context.Context,
-	name k8stypes.NamespacedName,
-	config json.RawMessage,
-	currentStatus json.RawMessage) (controller.ComponentOperations, error) {
+	name types.NamespacedName,
+	spec RdsConfig,
+	status RdsStatus) (*controller.ActionResultFunc[RdsStatus], error) {
 
-	log := logf.FromContext(ctx)
+	// Validate and apply defaults to config
+	if err := resolveSpec(&spec); err != nil {
+		return controller.ActionFailureFunc(status, fmt.Sprintf("config validation failed: %v", err))
+	}
 
-	// Parse configuration once for this reconciliation loop
-	rdsConfig, err := resolveRdsConfig(ctx, config)
+	instanceID := spec.InstanceID
+
+	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)
+	log.Info("Starting RDS deployment")
+
+	// Check if the instance exists
+	instance, err := getInstanceData(ctx, instanceID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse rds configuration: %w", err)
+		return controller.ActionResultForErrorFunc(status, fmt.Errorf("failed to check RDS instance existence: %w", err), rdsErrorClassifier)
 	}
 
-	// Parse existing handler status
-	status, err := resolveRdsStatus(ctx, currentStatus)
+	if instance != nil {
+		log.Info("RDS instance exists, modifying existing instance")
+		instance, err = modifyInstance(ctx, &spec)
+		if err != nil {
+			return controller.ActionResultForErrorFunc(status, err, rdsErrorClassifier)
+		}
+
+		// Update status with modification information
+		updateStatusFromInstance(&status, instance)
+
+		details := fmt.Sprintf("Modifying RDS instance %s (%s)", instanceID, spec.InstanceClass)
+		return controller.ActionSuccessFunc(status, details)
+	}
+
+	log.Info("RDS instance does not exist, creating new instance")
+	instance, err = createInstance(ctx, &spec)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse rds status: %w", err)
+		return controller.ActionResultForErrorFunc(status, err, rdsErrorClassifier)
 	}
 
-	log.V(1).Info("Created RDS operations",
-		"region", f.awsConfig.Region,
-		"databaseEngine", rdsConfig.DatabaseEngine,
-		"instanceClass", rdsConfig.InstanceClass)
+	// Update status with deployment information
+	updateStatusFromInstance(&status, instance)
 
-	// Return stateful operations instance with pre-parsed configuration and status
-	return &RdsOperations{
-		config:    rdsConfig,
-		status:    status,
-		rdsClient: f.rdsClient,
-		awsConfig: f.awsConfig,
-	}, nil
-}
-
-// RdsOperations implements the ComponentOperations interface for RDS-based deployments.
-// This struct provides all RDS-specific deployment, upgrade, and deletion operations
-// for managing AWS RDS instances through the AWS SDK with pre-parsed configuration.
-//
-// This is a stateful operations instance created by RdsOperationsFactory that eliminates
-// repeated configuration parsing by maintaining parsed configuration state.
-type RdsOperations struct {
-	// config holds the pre-parsed RDS configuration for this reconciliation loop
-	config *RdsConfig
-
-	// status holds the pre-parsed RDS status for this reconciliation loop
-	status *RdsStatus
-
-	// AWS SDK clients for RDS operations
-	rdsClient *rds.Client
-	awsConfig aws.Config
-}
-
-// NewRdsOperationsFactory creates a new RdsOperationsFactory instance
-// with a pre-initialized AWS RDS client.
-// This is called once during controller setup, not during reconciliation.
-func NewRdsOperationsFactory() *RdsOperationsFactory {
-	// Use background context for AWS SDK initialization during controller setup
-	// This is safe because:
-	// 1. Controller setup happens once at startup, not during reconciliation
-	// 2. AWS SDK uses context for credential loading and metadata calls
-	// 3. These operations complete quickly during initialization
-	ctx := context.Background()
-
-	// Load AWS config with default chain (uses AWS_REGION, EC2 metadata, etc.)
-	// Disable retries - controller handles requeue
-	cfg, err := awsconfig.LoadDefaultConfig(ctx,
-		awsconfig.WithRetryMaxAttempts(1),
-	)
-	if err != nil {
-		// Fatal error - controller cannot function without AWS credentials
-		panic(fmt.Sprintf("failed to load AWS configuration: %v", err))
-	}
-
-	// Create RDS client once
-	rdsClient := rds.NewFromConfig(cfg)
-
-	// Log client initialization (using background context logger)
-	log := logf.Log.WithName("rds-factory")
-	log.Info("Initialized AWS RDS client",
-		"region", cfg.Region)
-
-	return &RdsOperationsFactory{
-		rdsClient: rdsClient,
-		awsConfig: cfg,
-	}
-}
-
-// Helper methods for RDS operations
-
-// updateStatus updates RdsStatus fields from AWS DBInstance data
-// This eliminates repetitive field-by-field copying across all RDS operations
-func (r *RdsOperations) updateStatus(instance *types.DBInstance) {
-	r.status.InstanceStatus = stringValue(instance.DBInstanceStatus)
-	r.status.InstanceARN = stringValue(instance.DBInstanceArn)
-	r.status.Endpoint = endpointAddress(instance.Endpoint)
-	r.status.Port = endpointPort(instance.Endpoint)
-	r.status.AvailabilityZone = stringValue(instance.AvailabilityZone)
-
-	// Preserve or update managed password secret ARN
-	// The ARN is immutable once created, but may be present in DescribeDBInstances response
+	// Capture managed password secret ARN from RDS response
+	// AWS RDS guarantees this is present when ManageMasterUserPassword=true
 	if instance.MasterUserSecret != nil && instance.MasterUserSecret.SecretArn != nil {
-		r.status.MasterUserSecretArn = *instance.MasterUserSecret.SecretArn
+		status.MasterUserSecretArn = *instance.MasterUserSecret.SecretArn
+		log.Info("Captured RDS managed password secret ARN", "secretArn", status.MasterUserSecretArn)
 	}
-	// If not present in response but already in status, keep existing value (ARN doesn't change)
+
+	details := fmt.Sprintf("Creating RDS instance %s (%s)", instanceID, spec.InstanceClass)
+	return controller.ActionSuccessFunc(status, details)
 }
 
-// getInstanceData retrieves RDS instance data, handling not-found cases consistently
-func (r *RdsOperations) getInstanceData(ctx context.Context, instanceID string) (*types.DBInstance, error) {
-	input := &rds.DescribeDBInstancesInput{
-		DBInstanceIdentifier: stringPtr(instanceID),
-	}
+// checkApplied verifies the current deployment status
+func checkApplied(
+	ctx context.Context,
+	name types.NamespacedName,
+	spec RdsConfig,
+	status RdsStatus) (*controller.CheckResultFunc[RdsStatus], error) {
 
-	result, err := r.rdsClient.DescribeDBInstances(ctx, input)
+	instanceID := spec.InstanceID
+
+	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)
+	log.Info("Checking RDS deployment status")
+
+	// Query RDS instance status
+	instance, err := getInstanceData(ctx, instanceID)
 	if err != nil {
-		if isInstanceNotFoundError(err) {
-			return nil, nil // Instance not found - return nil without error
-		}
-		return nil, fmt.Errorf("failed to describe RDS instance: %w", err)
+		return controller.CheckResultForErrorFunc(status, fmt.Errorf("failed to describe RDS instance: %w", err), rdsErrorClassifier)
 	}
 
-	if len(result.DBInstances) == 0 {
-		return nil, nil // No instances returned - treat as not found
+	if instance == nil {
+		return controller.CheckResultForErrorFunc(status,
+			fmt.Errorf("RDS instance %s not found during deployment check", instanceID), rdsErrorClassifier)
 	}
 
-	return &result.DBInstances[0], nil
+	// Update status with current instance information
+	updateStatusFromInstance(&status, instance)
+
+	// Check if deployment is complete
+	log = log.WithValues("status", status.InstanceStatus)
+
+	switch status.InstanceStatus {
+	case "available":
+		log.Info("RDS instance deployment completed successfully",
+			"endpoint", status.Endpoint,
+			"port", status.Port)
+
+		details := fmt.Sprintf("Instance %s available at %s:%d", instanceID, status.Endpoint, status.Port)
+		return controller.CheckCompleteFunc(status, details)
+
+	case "creating", "backing-up", "modifying":
+		// Still in progress
+		log.Info("RDS instance deployment in progress")
+		details := fmt.Sprintf("Instance %s status: %s", instanceID, status.InstanceStatus)
+		return controller.CheckInProgressFunc(status, details)
+
+	case "failed", "incompatible-restore", "incompatible-network":
+		// Failed states
+		return controller.CheckResultForErrorFunc(status,
+			fmt.Errorf("RDS instance deployment failed with status: %s", status.InstanceStatus), rdsErrorClassifier)
+
+	default:
+		// Unknown status - continue checking
+		log.Info("RDS instance in unknown status, continuing to monitor")
+		return controller.CheckInProgressFunc(status, "")
+	}
 }
 
-// isInstanceNotFoundError checks if the error indicates the RDS instance was not found
-// Uses AWS SDK error types instead of string matching
-func isInstanceNotFoundError(err error) bool {
-	if err == nil {
-		return false
+// deleteAction handles all RDS-specific deletion operations
+func deleteAction(
+	ctx context.Context,
+	name types.NamespacedName,
+	spec RdsConfig,
+	status RdsStatus) (*controller.ActionResultFunc[RdsStatus], error) {
+
+	instanceID := spec.InstanceID
+
+	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)
+
+	instance, err := deleteInstance(ctx, &spec)
+	if err != nil {
+		return controller.ActionResultForErrorFunc(status, err, rdsErrorClassifier)
 	}
 
-	// Check for specific AWS RDS error type
-	var notFoundErr *types.DBInstanceNotFoundFault
-	return errors.As(err, &notFoundErr)
+	if instance == nil {
+		// Already deleted
+		log.Info("RDS instance already deleted")
+		return controller.ActionSuccessFunc(status, "RDS instance already deleted")
+	}
+
+	// Update status with AWS response data
+	updateStatusFromInstance(&status, instance)
+
+	details := fmt.Sprintf("Deleting RDS instance %s", instanceID)
+	return controller.ActionSuccessFunc(status, details)
 }
 
-// isInstanceAlreadyBeingDeletedError checks if the error indicates the RDS instance is already being deleted
-func isInstanceAlreadyBeingDeletedError(err error) bool {
-	if err == nil {
-		return false
+// checkDeleted verifies the current deletion status
+func checkDeleted(
+	ctx context.Context,
+	name types.NamespacedName,
+	spec RdsConfig,
+	status RdsStatus) (*controller.CheckResultFunc[RdsStatus], error) {
+
+	instanceID := spec.InstanceID
+
+	log := logf.FromContext(ctx).WithValues("instanceId", instanceID)
+	log.Info("Checking RDS deleted")
+
+	// Query RDS instance existence
+	instance, err := getInstanceData(ctx, instanceID)
+	if err != nil {
+		return controller.CheckResultForErrorFunc(status,
+			fmt.Errorf("failed to describe RDS instance during deletion check: %w", err), rdsErrorClassifier)
 	}
 
-	// Check for InvalidDBInstanceState error when instance is already being deleted
-	var invalidStateErr *types.InvalidDBInstanceStateFault
-	if errors.As(err, &invalidStateErr) {
-		// Check if the error message indicates the instance is already being deleted
-		return strings.Contains(strings.ToLower(invalidStateErr.ErrorMessage()), "already being deleted")
+	if instance == nil {
+		log.Info("RDS instance successfully deleted")
+		details := fmt.Sprintf("Instance %s deleted", instanceID)
+		return controller.CheckCompleteFunc(status, details)
 	}
 
-	return false
-}
+	instanceStatus := stringValue(instance.DBInstanceStatus)
 
-// isRetryable determines if an error is retryable.
-// Uses AWS SDK's built-in error classification instead of custom logic.
-func isRetryable(err error) bool {
-	if err == nil {
-		return false
+	log = log.WithValues("status", instanceStatus)
+
+	// Update status with current instance information
+	status.InstanceStatus = instanceStatus
+
+	log.Info("RDS instance still exists, checking deletion status")
+
+	switch instanceStatus {
+	case "deleting":
+		// Still deleting - continue waiting
+		log.Info("RDS instance deletion in progress")
+		details := fmt.Sprintf("Waiting for instance %s deletion", instanceID)
+		return controller.CheckInProgressFunc(status, details)
+
+	case "failed":
+		// Deletion failed, but don't block cleanup
+		log.Info("RDS instance deletion failed, but allowing cleanup to continue")
+		return controller.CheckCompleteFunc(status, "")
+
+	default:
+		// Instance still exists in some other state
+		log.Info("RDS instance in unexpected state during deletion, continuing to wait", "status", instanceStatus)
+		return controller.CheckInProgressFunc(status, "")
 	}
-
-	// Use AWS SDK's built-in retry classification
-	// This handles all AWS API errors, network errors, and HTTP status codes
-	for _, checker := range retry.DefaultRetryables {
-		if checker.IsErrorRetryable(err) == aws.TrueTernary {
-			return true
-		}
-	}
-
-	return false
 }
