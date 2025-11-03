@@ -6,10 +6,11 @@ package rds
 import (
 	"context"
 	"fmt"
+	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
-	componentkit "github.com/rinswind/componator/componentkit/controller"
+	"github.com/rinswind/componator/componentkit/functional"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -48,12 +49,14 @@ func Register(mgr ctrl.Manager, providerName string) error {
 	log := logf.Log.WithName("rds")
 	log.Info("Initialized AWS RDS client", "region", cfg.Region)
 
-	// Register with functional API (no health check)
-	// TODO: RegisterFunc doesn't support passing reconciler config (retry/timeout settings).
-	// We previously used:
-	//   config.ErrorRequeue = 15 * time.Second
-	//   config.DefaultRequeue = 30 * time.Second
-	//   config.StatusCheckRequeue = 30 * time.Second
-	// Need to update componentkit.RegisterFunc to accept optional config parameter.
-	return componentkit.RegisterFunc(mgr, providerName, applyAction, checkApplied, deleteAction, checkDeleted, nil)
+	// Register with functional API using custom timeouts for RDS operations
+	return functional.NewBuilder[RdsConfig, RdsStatus](providerName).
+		WithApply(applyAction).
+		WithApplyCheck(checkApplied).
+		WithDelete(deleteAction).
+		WithDeleteCheck(checkDeleted).
+		WithErrorRequeue(15 * time.Second).
+		WithDefaultRequeue(30 * time.Second).
+		WithStatusCheckRequeue(30 * time.Second).
+		Register(mgr)
 }

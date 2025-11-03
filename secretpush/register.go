@@ -9,7 +9,7 @@ import (
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
-	componentkit "github.com/rinswind/componator/componentkit/controller"
+	"github.com/rinswind/componator/componentkit/functional"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -49,6 +49,9 @@ func Register(mgr ctrl.Manager, providerName string) error {
 	log := logf.Log.WithName("secret-push")
 	log.Info("Initialized AWS Secrets Manager client", "region", cfg.Region)
 
-	// Register with functional API
-	return componentkit.RegisterFuncImmediate(mgr, providerName, applyAction, deleteAction)
+	// Register with functional API (immediate operations - no progress checks)
+	return functional.NewBuilder[SecretPushSpec, SecretPushStatus](providerName).
+		WithApply(applyAction).
+		WithDelete(deleteAction).
+		Register(mgr)
 }

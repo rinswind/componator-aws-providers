@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rinswind/componator/componentkit/controller"
+	"github.com/rinswind/componator/componentkit/functional"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -17,11 +17,11 @@ func applyAction(
 	ctx context.Context,
 	name k8stypes.NamespacedName,
 	spec SecretPushSpec,
-	status SecretPushStatus) (*controller.ActionResultFunc[SecretPushStatus], error) {
+	status SecretPushStatus) (*functional.ActionResult[SecretPushStatus], error) {
 
 	// Validate and apply defaults to config
 	if err := resolveSpec(&spec); err != nil {
-		return controller.ActionFailureFunc(status, fmt.Sprintf("config validation failed: %v", err))
+		return functional.ActionFailure(status, fmt.Sprintf("config validation failed: %v", err))
 	}
 
 	log := logf.FromContext(ctx).WithValues("secretName", spec.SecretName)
@@ -30,13 +30,13 @@ func applyAction(
 	// Build secret data: generate passwords and combine with static fields
 	secretData, generatedCount, staticCount, err := buildSecretData(ctx, spec)
 	if err != nil {
-		return controller.ActionResultForErrorFunc(status, err, awsErrorClassifier)
+		return functional.ActionResultForError(status, err, awsErrorClassifier)
 	}
 
 	// Check if secret exists
 	existingArn, _, err := findSecret(ctx, spec.SecretName)
 	if err != nil {
-		return controller.ActionResultForErrorFunc(status, err, awsErrorClassifier)
+		return functional.ActionResultForError(status, err, awsErrorClassifier)
 	}
 
 	var secretArn, versionId string
@@ -47,7 +47,7 @@ func applyAction(
 		tags := buildSecretTags(name)
 		secretArn, versionId, err = createSecret(ctx, spec.SecretName, secretData, tags, spec.KmsKeyId)
 		if err != nil {
-			return controller.ActionResultForErrorFunc(status, err, awsErrorClassifier)
+			return functional.ActionResultForError(status, err, awsErrorClassifier)
 		}
 
 		details = fmt.Sprintf("Created secret %s with %d fields (%d generated, %d static)",
@@ -63,7 +63,7 @@ func applyAction(
 		// Update existing secret
 		secretArn, versionId, err = updateSecret(ctx, spec.SecretName, secretData)
 		if err != nil {
-			return controller.ActionResultForErrorFunc(status, err, awsErrorClassifier)
+			return functional.ActionResultForError(status, err, awsErrorClassifier)
 		}
 
 		details = fmt.Sprintf("Updated secret %s with %d fields (%d generated, %d static)",
@@ -77,7 +77,7 @@ func applyAction(
 	status.Region = awsConfig.Region
 	status.FieldCount = len(spec.Fields)
 
-	return controller.ActionSuccessFunc(status, details)
+	return functional.ActionSuccess(status, details)
 }
 
 // deleteAction implements deletion operations for secrets
@@ -85,21 +85,21 @@ func deleteAction(
 	ctx context.Context,
 	name k8stypes.NamespacedName,
 	spec SecretPushSpec,
-	status SecretPushStatus) (*controller.ActionResultFunc[SecretPushStatus], error) {
+	status SecretPushStatus) (*functional.ActionResult[SecretPushStatus], error) {
 
 	log := logf.FromContext(ctx).WithValues("secretName", spec.SecretName, "secretArn", status.SecretArn)
 
 	// If no secret ARN in status, nothing to delete
 	if status.SecretArn == "" {
 		log.Info("No secret ARN in status, nothing to delete")
-		return controller.ActionSuccessFunc(status, "No secret to delete")
+		return functional.ActionSuccess(status, "No secret to delete")
 	}
 
 	// Check deletion policy
 	if spec.DeletionPolicy == DeletionPolicyRetain {
 		log.Info("DeletionPolicy is Retain, skipping secret deletion", "secretArn", status.SecretArn)
 		details := fmt.Sprintf("Secret %s retained (Retain policy)", spec.SecretName)
-		return controller.ActionSuccessFunc(status, details)
+		return functional.ActionSuccess(status, details)
 	}
 
 	log.Info("Starting secret deletion")
@@ -107,12 +107,12 @@ func deleteAction(
 	// Delete secret from AWS
 	err := deleteSecret(ctx, status.SecretArn)
 	if err != nil {
-		return controller.ActionResultForErrorFunc(status, err, awsErrorClassifier)
+		return functional.ActionResultForError(status, err, awsErrorClassifier)
 	}
 
 	// Status remains unchanged (no update needed for deletion)
 	details := fmt.Sprintf("Deleted secret %s", spec.SecretName)
-	return controller.ActionSuccessFunc(status, details)
+	return functional.ActionSuccess(status, details)
 }
 
 // buildSecretData generates passwords and combines with static fields

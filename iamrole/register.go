@@ -9,7 +9,7 @@ import (
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
-	componentkit "github.com/rinswind/componator/componentkit/controller"
+	"github.com/rinswind/componator/componentkit/functional"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -48,6 +48,11 @@ func Register(mgr ctrl.Manager, providerName string) error {
 	log := logf.Log.WithName("iam-role")
 	log.Info("Initialized AWS IAM client", "region", cfg.Region)
 
-	// Register with functional API (no health check)
-	return componentkit.RegisterFunc(mgr, providerName, applyAction, checkApplied, deleteAction, checkDeleted, nil)
+	// Register with functional API
+	return functional.NewBuilder[IamRoleConfig, IamRoleStatus](providerName).
+		WithApply(applyAction).
+		WithApplyCheck(checkApplied).
+		WithDelete(deleteAction).
+		WithDeleteCheck(checkDeleted).
+		Register(mgr)
 }
