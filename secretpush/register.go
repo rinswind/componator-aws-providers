@@ -9,7 +9,9 @@ import (
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	corev1beta1 "github.com/rinswind/componator/api/core/v1beta1"
 	"github.com/rinswind/componator/componentkit/functional"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -30,6 +32,14 @@ const (
 // Initializes AWS Secrets Manager client using the default credential chain
 // (environment variables, EC2 instance metadata, etc.).
 func Register(mgr ctrl.Manager, providerName string) error {
+	// Ensure required schemes are registered (safe to call multiple times)
+	if err := clientgoscheme.AddToScheme(mgr.GetScheme()); err != nil {
+		return err
+	}
+	if err := corev1beta1.AddToScheme(mgr.GetScheme()); err != nil {
+		return err
+	}
+
 	// Use default provider name if not specified
 	if providerName == "" {
 		providerName = DefaultProviderName
