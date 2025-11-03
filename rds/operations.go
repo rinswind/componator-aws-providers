@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rinswind/componator/componentkit/controller"
+	"github.com/rinswind/componator/componentkit/functional"
 	"k8s.io/apimachinery/pkg/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -17,11 +17,11 @@ func applyAction(
 	ctx context.Context,
 	name types.NamespacedName,
 	spec RdsConfig,
-	status RdsStatus) (*controller.ActionResultFunc[RdsStatus], error) {
+	status RdsStatus) (*functional.ActionResult[RdsStatus], error) {
 
 	// Validate and apply defaults to config
 	if err := resolveSpec(&spec); err != nil {
-		return controller.ActionFailureFunc(status, fmt.Sprintf("config validation failed: %v", err))
+		return functional.ActionFailure(status, fmt.Sprintf("config validation failed: %v", err))
 	}
 
 	instanceID := spec.InstanceID
@@ -32,27 +32,27 @@ func applyAction(
 	// Check if the instance exists
 	instance, err := getInstanceData(ctx, instanceID)
 	if err != nil {
-		return controller.ActionResultForErrorFunc(status, fmt.Errorf("failed to check RDS instance existence: %w", err), rdsErrorClassifier)
+		return functional.ActionResultForError(status, fmt.Errorf("failed to check RDS instance existence: %w", err), rdsErrorClassifier)
 	}
 
 	if instance != nil {
 		log.Info("RDS instance exists, modifying existing instance")
 		instance, err = modifyInstance(ctx, &spec)
 		if err != nil {
-			return controller.ActionResultForErrorFunc(status, err, rdsErrorClassifier)
+			return functional.ActionResultForError(status, err, rdsErrorClassifier)
 		}
 
 		// Update status with modification information
 		updateStatusFromInstance(&status, instance)
 
 		details := fmt.Sprintf("Modifying RDS instance %s (%s)", instanceID, spec.InstanceClass)
-		return controller.ActionSuccessFunc(status, details)
+		return functional.ActionSuccess(status, details)
 	}
 
 	log.Info("RDS instance does not exist, creating new instance")
 	instance, err = createInstance(ctx, &spec)
 	if err != nil {
-		return controller.ActionResultForErrorFunc(status, err, rdsErrorClassifier)
+		return functional.ActionResultForError(status, err, rdsErrorClassifier)
 	}
 
 	// Update status with deployment information
@@ -66,7 +66,7 @@ func applyAction(
 	}
 
 	details := fmt.Sprintf("Creating RDS instance %s (%s)", instanceID, spec.InstanceClass)
-	return controller.ActionSuccessFunc(status, details)
+	return functional.ActionSuccess(status, details)
 }
 
 // checkApplied verifies the current deployment status
@@ -74,7 +74,7 @@ func checkApplied(
 	ctx context.Context,
 	name types.NamespacedName,
 	spec RdsConfig,
-	status RdsStatus) (*controller.CheckResultFunc[RdsStatus], error) {
+	status RdsStatus) (*functional.CheckResult[RdsStatus], error) {
 
 	instanceID := spec.InstanceID
 
@@ -84,11 +84,11 @@ func checkApplied(
 	// Query RDS instance status
 	instance, err := getInstanceData(ctx, instanceID)
 	if err != nil {
-		return controller.CheckResultForErrorFunc(status, fmt.Errorf("failed to describe RDS instance: %w", err), rdsErrorClassifier)
+		return functional.CheckResultForError(status, fmt.Errorf("failed to describe RDS instance: %w", err), rdsErrorClassifier)
 	}
 
 	if instance == nil {
-		return controller.CheckResultForErrorFunc(status,
+		return functional.CheckResultForError(status,
 			fmt.Errorf("RDS instance %s not found during deployment check", instanceID), rdsErrorClassifier)
 	}
 
@@ -105,23 +105,23 @@ func checkApplied(
 			"port", status.Port)
 
 		details := fmt.Sprintf("Instance %s available at %s:%d", instanceID, status.Endpoint, status.Port)
-		return controller.CheckCompleteFunc(status, details)
+		return functional.CheckComplete(status, details)
 
 	case "creating", "backing-up", "modifying":
 		// Still in progress
 		log.Info("RDS instance deployment in progress")
 		details := fmt.Sprintf("Instance %s status: %s", instanceID, status.InstanceStatus)
-		return controller.CheckInProgressFunc(status, details)
+		return functional.CheckInProgress(status, details)
 
 	case "failed", "incompatible-restore", "incompatible-network":
 		// Failed states
-		return controller.CheckResultForErrorFunc(status,
+		return functional.CheckResultForError(status,
 			fmt.Errorf("RDS instance deployment failed with status: %s", status.InstanceStatus), rdsErrorClassifier)
 
 	default:
 		// Unknown status - continue checking
 		log.Info("RDS instance in unknown status, continuing to monitor")
-		return controller.CheckInProgressFunc(status, "")
+		return functional.CheckInProgress(status, "")
 	}
 }
 
@@ -130,7 +130,7 @@ func deleteAction(
 	ctx context.Context,
 	name types.NamespacedName,
 	spec RdsConfig,
-	status RdsStatus) (*controller.ActionResultFunc[RdsStatus], error) {
+	status RdsStatus) (*functional.ActionResult[RdsStatus], error) {
 
 	instanceID := spec.InstanceID
 
@@ -138,20 +138,20 @@ func deleteAction(
 
 	instance, err := deleteInstance(ctx, &spec)
 	if err != nil {
-		return controller.ActionResultForErrorFunc(status, err, rdsErrorClassifier)
+		return functional.ActionResultForError(status, err, rdsErrorClassifier)
 	}
 
 	if instance == nil {
 		// Already deleted
 		log.Info("RDS instance already deleted")
-		return controller.ActionSuccessFunc(status, "RDS instance already deleted")
+		return functional.ActionSuccess(status, "RDS instance already deleted")
 	}
 
 	// Update status with AWS response data
 	updateStatusFromInstance(&status, instance)
 
 	details := fmt.Sprintf("Deleting RDS instance %s", instanceID)
-	return controller.ActionSuccessFunc(status, details)
+	return functional.ActionSuccess(status, details)
 }
 
 // checkDeleted verifies the current deletion status
@@ -159,7 +159,7 @@ func checkDeleted(
 	ctx context.Context,
 	name types.NamespacedName,
 	spec RdsConfig,
-	status RdsStatus) (*controller.CheckResultFunc[RdsStatus], error) {
+	status RdsStatus) (*functional.CheckResult[RdsStatus], error) {
 
 	instanceID := spec.InstanceID
 
@@ -169,14 +169,14 @@ func checkDeleted(
 	// Query RDS instance existence
 	instance, err := getInstanceData(ctx, instanceID)
 	if err != nil {
-		return controller.CheckResultForErrorFunc(status,
+		return functional.CheckResultForError(status,
 			fmt.Errorf("failed to describe RDS instance during deletion check: %w", err), rdsErrorClassifier)
 	}
 
 	if instance == nil {
 		log.Info("RDS instance successfully deleted")
 		details := fmt.Sprintf("Instance %s deleted", instanceID)
-		return controller.CheckCompleteFunc(status, details)
+		return functional.CheckComplete(status, details)
 	}
 
 	instanceStatus := stringValue(instance.DBInstanceStatus)
@@ -193,16 +193,16 @@ func checkDeleted(
 		// Still deleting - continue waiting
 		log.Info("RDS instance deletion in progress")
 		details := fmt.Sprintf("Waiting for instance %s deletion", instanceID)
-		return controller.CheckInProgressFunc(status, details)
+		return functional.CheckInProgress(status, details)
 
 	case "failed":
 		// Deletion failed, but don't block cleanup
 		log.Info("RDS instance deletion failed, but allowing cleanup to continue")
-		return controller.CheckCompleteFunc(status, "")
+		return functional.CheckComplete(status, "")
 
 	default:
 		// Instance still exists in some other state
 		log.Info("RDS instance in unexpected state during deletion, continuing to wait", "status", instanceStatus)
-		return controller.CheckInProgressFunc(status, "")
+		return functional.CheckInProgress(status, "")
 	}
 }

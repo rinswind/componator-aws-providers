@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/rinswind/componator/componentkit/controller"
+	"github.com/rinswind/componator/componentkit/functional"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -18,11 +18,11 @@ func applyAction(
 	ctx context.Context,
 	name k8stypes.NamespacedName,
 	spec IamRoleConfig,
-	status IamRoleStatus) (*controller.ActionResultFunc[IamRoleStatus], error) {
+	status IamRoleStatus) (*functional.ActionResult[IamRoleStatus], error) {
 
 	// Validate and apply defaults to config
 	if err := resolveSpec(&spec); err != nil {
-		return controller.ActionFailureFunc(status, fmt.Sprintf("config validation failed: %v", err))
+		return functional.ActionFailure(status, fmt.Sprintf("config validation failed: %v", err))
 	}
 
 	log := logf.FromContext(ctx).WithValues("roleName", spec.RoleName)
@@ -31,14 +31,14 @@ func applyAction(
 	// Check if role already exists
 	existingRole, err := getRoleByName(ctx, spec.RoleName)
 	if err != nil {
-		return controller.ActionResultForErrorFunc(status, fmt.Errorf("failed to check if role exists: %w", err), iamErrorClassifier)
+		return functional.ActionResultForError(status, fmt.Errorf("failed to check if role exists: %w", err), iamErrorClassifier)
 	}
 
 	if existingRole == nil {
 		// Role doesn't exist - create it
 		role, err := createRole(ctx, spec.RoleName, spec.AssumeRolePolicy, spec.Path, spec.Description, spec.MaxSessionDuration, spec.Tags)
 		if err != nil {
-			return controller.ActionResultForErrorFunc(status, fmt.Errorf("failed to create role: %w", err), iamErrorClassifier)
+			return functional.ActionResultForError(status, fmt.Errorf("failed to create role: %w", err), iamErrorClassifier)
 		}
 
 		// Update status with created role info
@@ -56,11 +56,11 @@ func applyAction(
 		}
 
 		if err != nil {
-			return controller.ActionResultForErrorFunc(status, fmt.Errorf("failed to attach policies: %w", err), iamErrorClassifier)
+			return functional.ActionResultForError(status, fmt.Errorf("failed to attach policies: %w", err), iamErrorClassifier)
 		}
 
 		details := fmt.Sprintf("Created role %s with %d policies", status.RoleName, len(result.AttachedPolicies))
-		return controller.ActionSuccessFunc(status, details)
+		return functional.ActionSuccess(status, details)
 	}
 
 	// Role exists - update status and reconcile configuration
@@ -73,7 +73,7 @@ func applyAction(
 	// Update trust policy if changed
 	currentPolicy := aws.ToString(existingRole.AssumeRolePolicyDocument)
 	if err := updateTrustPolicy(ctx, spec.RoleName, currentPolicy, spec.AssumeRolePolicy); err != nil {
-		return controller.ActionResultForErrorFunc(status, fmt.Errorf("failed to update trust policy: %w", err), iamErrorClassifier)
+		return functional.ActionResultForError(status, fmt.Errorf("failed to update trust policy: %w", err), iamErrorClassifier)
 	}
 
 	// Reconcile policy attachments
@@ -85,7 +85,7 @@ func applyAction(
 	}
 
 	if err != nil {
-		return controller.ActionResultForErrorFunc(status, fmt.Errorf("failed to reconcile policy attachments: %w", err), iamErrorClassifier)
+		return functional.ActionResultForError(status, fmt.Errorf("failed to reconcile policy attachments: %w", err), iamErrorClassifier)
 	}
 
 	// Build detailed message about changes
@@ -96,7 +96,7 @@ func applyAction(
 	} else {
 		details = fmt.Sprintf("Role %s unchanged with %d policies", status.RoleName, len(result.AttachedPolicies))
 	}
-	return controller.ActionSuccessFunc(status, details)
+	return functional.ActionSuccess(status, details)
 }
 
 // checkApplied verifies role exists and is ready
@@ -104,24 +104,24 @@ func checkApplied(
 	ctx context.Context,
 	name k8stypes.NamespacedName,
 	spec IamRoleConfig,
-	status IamRoleStatus) (*controller.CheckResultFunc[IamRoleStatus], error) {
+	status IamRoleStatus) (*functional.CheckResult[IamRoleStatus], error) {
 
 	log := logf.FromContext(ctx).WithValues("roleName", spec.RoleName)
 
 	// If we don't have a role ARN yet, deployment hasn't started
 	if status.RoleArn == "" {
 		log.V(1).Info("No role ARN in status, deployment not started")
-		return controller.CheckInProgressFunc(status, "")
+		return functional.CheckInProgress(status, "")
 	}
 
 	// Verify role exists
 	role, err := getRoleByName(ctx, spec.RoleName)
 	if err != nil {
-		return controller.CheckResultForErrorFunc(status, fmt.Errorf("failed to check role status: %w", err), iamErrorClassifier)
+		return functional.CheckResultForError(status, fmt.Errorf("failed to check role status: %w", err), iamErrorClassifier)
 	}
 
 	if role == nil {
-		return controller.CheckResultForErrorFunc(status,
+		return functional.CheckResultForError(status,
 			fmt.Errorf("role not found: %s", spec.RoleName), iamErrorClassifier)
 	}
 
@@ -131,7 +131,7 @@ func checkApplied(
 	status.RoleName = aws.ToString(role.RoleName)
 
 	details := fmt.Sprintf("Role %s ready with %d policies", status.RoleName, len(status.AttachedPolicies))
-	return controller.CheckCompleteFunc(status, details)
+	return functional.CheckComplete(status, details)
 }
 
 // deleteAction removes the IAM role after detaching all managed policies
@@ -139,7 +139,7 @@ func deleteAction(
 	ctx context.Context,
 	name k8stypes.NamespacedName,
 	spec IamRoleConfig,
-	status IamRoleStatus) (*controller.ActionResultFunc[IamRoleStatus], error) {
+	status IamRoleStatus) (*functional.ActionResult[IamRoleStatus], error) {
 
 	log := logf.FromContext(ctx).WithValues("roleName", spec.RoleName)
 	log.Info("Starting IAM role deletion")
@@ -147,18 +147,18 @@ func deleteAction(
 	// Check if role exists - if not, deletion is already complete
 	role, err := getRoleByName(ctx, spec.RoleName)
 	if err != nil {
-		return controller.ActionResultForErrorFunc(status, fmt.Errorf("failed to check if role exists: %w", err), iamErrorClassifier)
+		return functional.ActionResultForError(status, fmt.Errorf("failed to check if role exists: %w", err), iamErrorClassifier)
 	}
 
 	if role == nil {
 		log.Info("Role already deleted")
-		return controller.ActionSuccessFunc(status, "Role already deleted")
+		return functional.ActionSuccess(status, "Role already deleted")
 	}
 
 	// List all attached managed policies
 	attachedPolicies, err := listAttachedPolicies(ctx, spec.RoleName)
 	if err != nil {
-		return controller.ActionResultForErrorFunc(status, fmt.Errorf("failed to list attached policies: %w", err), iamErrorClassifier)
+		return functional.ActionResultForError(status, fmt.Errorf("failed to list attached policies: %w", err), iamErrorClassifier)
 	}
 
 	detachedCount := 0
@@ -168,7 +168,7 @@ func deleteAction(
 		for _, policyArn := range attachedPolicies {
 			log.V(1).Info("Detaching policy", "policyArn", policyArn)
 			if err := detachPolicy(ctx, spec.RoleName, policyArn); err != nil {
-				return controller.ActionResultForErrorFunc(status, fmt.Errorf("failed to detach policy %s: %w", policyArn, err), iamErrorClassifier)
+				return functional.ActionResultForError(status, fmt.Errorf("failed to detach policy %s: %w", policyArn, err), iamErrorClassifier)
 			}
 			detachedCount++
 		}
@@ -177,11 +177,11 @@ func deleteAction(
 
 	// Delete the role
 	if err := deleteRole(ctx, spec.RoleName); err != nil {
-		return controller.ActionResultForErrorFunc(status, fmt.Errorf("failed to delete role: %w", err), iamErrorClassifier)
+		return functional.ActionResultForError(status, fmt.Errorf("failed to delete role: %w", err), iamErrorClassifier)
 	}
 
 	details := fmt.Sprintf("Deleting role %s (detached %d policies)", spec.RoleName, detachedCount)
-	return controller.ActionSuccessFunc(status, details)
+	return functional.ActionSuccess(status, details)
 }
 
 // checkDeleted verifies deletion is complete
@@ -189,23 +189,23 @@ func checkDeleted(
 	ctx context.Context,
 	name k8stypes.NamespacedName,
 	spec IamRoleConfig,
-	status IamRoleStatus) (*controller.CheckResultFunc[IamRoleStatus], error) {
+	status IamRoleStatus) (*functional.CheckResult[IamRoleStatus], error) {
 
 	log := logf.FromContext(ctx).WithValues("roleName", spec.RoleName)
 
 	// Check if role still exists
 	role, err := getRoleByName(ctx, spec.RoleName)
 	if err != nil {
-		return controller.CheckResultForErrorFunc(status, fmt.Errorf("failed to check role deletion status: %w", err), iamErrorClassifier)
+		return functional.CheckResultForError(status, fmt.Errorf("failed to check role deletion status: %w", err), iamErrorClassifier)
 	}
 
 	if role == nil {
 		log.Info("Role deletion confirmed")
 		details := fmt.Sprintf("Role %s deleted", spec.RoleName)
-		return controller.CheckCompleteFunc(status, details)
+		return functional.CheckComplete(status, details)
 	}
 
 	log.V(1).Info("Role still exists, deletion in progress")
 	details := fmt.Sprintf("Waiting for role %s deletion", spec.RoleName)
-	return controller.CheckInProgressFunc(status, details)
+	return functional.CheckInProgress(status, details)
 }

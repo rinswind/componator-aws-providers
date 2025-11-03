@@ -10,7 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.39.7
 	github.com/onsi/ginkgo/v2 v2.25.3
 	github.com/onsi/gomega v1.38.2
-	github.com/rinswind/componator v0.0.32
+	github.com/rinswind/componator v0.0.33
 	github.com/stretchr/testify v1.11.1
 	k8s.io/apiextensions-apiserver v0.34.0
 	k8s.io/apimachinery v0.34.0
@@ -18,7 +18,7 @@ require (
 	sigs.k8s.io/controller-runtime v0.21.0
 )
 
-replace github.com/rinswind/componator => ../componator
+//replace github.com/rinswind/componator => ../componator
 
 require (
 	cel.dev/expr v0.24.0 // indirect
