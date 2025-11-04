@@ -6,7 +6,6 @@
 # NOTE: This is a consumer-only controller project. It does not own any CRDs.
 # It implements controllers for Component resources defined in github.com/rinswind/componator.
 # The domain and resources list are intentionally minimal as this project only consumes external APIs.
-cliVersion: 4.8.0
 domain: componator-aws-providers.io
 layout:
 - go.kubebuilder.io/v4

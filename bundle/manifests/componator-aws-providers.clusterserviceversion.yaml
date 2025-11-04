@@ -1,0 +1,266 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+    createdAt: "2025-11-04T20:15:49Z"
+    operators.operatorframework.io/builder: operator-sdk-v1.37.0
+    operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
+  name: componator-aws-providers.v0.1.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: Component represents a deployable unit managed by a handler controller
+      displayName: Component
+      kind: Component
+      name: components.core.componator.io
+      version: v1beta1
+  description: |
+    AWS component handlers for the Componator orchestration system.
+    This operator provides AWS service deployment capabilities including RDS, IAM roles,
+    IAM policies, and secret management as component handlers.
+
+    This operator includes the Component CRD from the Componator framework.
+  displayName: Componator AWS Providers
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      clusterPermissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - '*'
+          resources:
+          - '*'
+          verbs:
+          - '*'
+        - apiGroups:
+          - deployment-orchestrator.io
+          resources:
+          - components
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - deployment-orchestrator.io
+          resources:
+          - components/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - deployment-orchestrator.io
+          resources:
+          - components/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - authentication.k8s.io
+          resources:
+          - tokenreviews
+          verbs:
+          - create
+        - apiGroups:
+          - authorization.k8s.io
+          resources:
+          - subjectaccessreviews
+          verbs:
+          - create
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - '*'
+          resources:
+          - '*'
+          verbs:
+          - '*'
+        - apiGroups:
+          - deployment-orchestrator.io
+          resources:
+          - components
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - deployment-orchestrator.io
+          resources:
+          - components/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - deployment-orchestrator.io
+          resources:
+          - components/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - authentication.k8s.io
+          resources:
+          - tokenreviews
+          verbs:
+          - create
+        - apiGroups:
+          - authorization.k8s.io
+          resources:
+          - subjectaccessreviews
+          verbs:
+          - create
+        serviceAccountName: deployment-handlers-controller-manager
+      deployments:
+      - label:
+          app.kubernetes.io/managed-by: kustomize
+          app.kubernetes.io/name: deployment-handlers
+          control-plane: controller-manager
+        name: deployment-handlers-controller-manager
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app.kubernetes.io/name: deployment-handlers
+              control-plane: controller-manager
+          strategy: {}
+          template:
+            metadata:
+              annotations:
+                kubectl.kubernetes.io/default-container: manager
+              labels:
+                app.kubernetes.io/name: deployment-handlers
+                control-plane: controller-manager
+            spec:
+              containers:
+              - args:
+                - --metrics-bind-address=:8443
+                - --leader-elect
+                - --health-probe-bind-address=:8081
+                command:
+                - /manager
+                image: 350996934557.dkr.ecr.us-east-1.amazonaws.com/rinswind/componator-aws-providers:latest
+                livenessProbe:
+                  httpGet:
+                    path: /healthz
+                    port: 8081
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+                name: manager
+                readinessProbe:
+                  httpGet:
+                    path: /readyz
+                    port: 8081
+                  initialDelaySeconds: 5
+                  periodSeconds: 10
+                resources:
+                  limits:
+                    cpu: 500m
+                    memory: 512Mi
+                  requests:
+                    cpu: 10m
+                    memory: 256Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                    - ALL
+                  readOnlyRootFilesystem: true
+              securityContext:
+                runAsNonRoot: true
+                seccompProfile:
+                  type: RuntimeDefault
+              serviceAccountName: deployment-handlers-controller-manager
+              terminationGracePeriodSeconds: 10
+      permissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - coordination.k8s.io
+          resources:
+          - leases
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        serviceAccountName: deployment-handlers-controller-manager
+    strategy: deployment
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - componator
+  - deployment
+  - orchestration
+  - aws
+  - rds
+  - iam
+  - terraform
+  links:
+  - name: GitHub Repository
+    url: https://github.com/rinswind/componator-aws-providers
+  - name: Documentation
+    url: https://github.com/rinswind/componator-aws-providers/blob/main/README.md
+  maintainers:
+  - email: wile.e.coyotee@acme.com
+    name: Componator Team
+  maturity: alpha
+  minKubeVersion: 1.28.0
+  provider:
+    name: Componator Project
+    url: https://github.com/rinswind/componator
+  version: 0.1.0

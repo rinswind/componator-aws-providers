@@ -1,0 +1,62 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+  name: componator-aws-providers.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: Component represents a deployable unit managed by a handler controller
+      displayName: Component
+      kind: Component
+      name: components.core.componator.io
+      version: v1beta1
+  description: |
+    AWS component handlers for the Componator orchestration system.
+    This operator provides AWS service deployment capabilities including RDS, IAM roles,
+    IAM policies, and secret management as component handlers.
+
+    This operator includes the Component CRD from the Componator framework.
+  displayName: Componator AWS Providers
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      deployments: null
+    strategy: ""
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - componator
+  - deployment
+  - orchestration
+  - aws
+  - rds
+  - iam
+  - terraform
+  links:
+  - name: GitHub Repository
+    url: https://github.com/rinswind/componator-aws-providers
+  - name: Documentation
+    url: https://github.com/rinswind/componator-aws-providers/blob/main/README.md
+  maintainers:
+  - email: wile.e.coyotee@acme.com
+    name: Componator Team
+  maturity: alpha
+  minKubeVersion: 1.28.0
+  provider:
+    name: Componator Project
+    url: https://github.com/rinswind/componator
+  version: 0.0.0

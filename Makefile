@@ -1,6 +1,16 @@
 # Image URL to use all building/pushing image targets
 IMG ?= rinswind/componator-aws-providers:$(shell git tag --list | sort -V | tail -1)
 
+# OLM bundle configuration
+VERSION ?= 0.1.0
+AWS_ACCOUNT_ID ?= 350996934557
+AWS_REGION ?= us-east-1
+IMAGE_TAG_BASE ?= $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/rinswind/componator-aws-providers
+OPERATOR_IMG ?= $(IMAGE_TAG_BASE):latest
+BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
+CHANNELS ?= stable
+DEFAULT_CHANNEL ?= stable
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -183,6 +193,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
@@ -192,6 +203,7 @@ ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.3.0
+OPERATOR_SDK_VERSION ?= v1.37.0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -220,6 +232,36 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+
+.PHONY: operator-sdk
+operator-sdk: $(OPERATOR_SDK) ## Download operator-sdk locally if necessary.
+$(OPERATOR_SDK): $(LOCALBIN)
+	@if [ ! -f $(OPERATOR_SDK)-$(OPERATOR_SDK_VERSION) ]; then \
+		echo "Downloading operator-sdk $(OPERATOR_SDK_VERSION)"; \
+		curl -sSLo $(OPERATOR_SDK)-$(OPERATOR_SDK_VERSION) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_linux_amd64; \
+		chmod +x $(OPERATOR_SDK)-$(OPERATOR_SDK_VERSION); \
+	fi
+	@ln -sf $(OPERATOR_SDK)-$(OPERATOR_SDK_VERSION) $(OPERATOR_SDK)
+
+##@ OLM Bundle
+
+.PHONY: bundle
+bundle: manifests kustomize operator-sdk ## Generate OLM bundle manifests.
+	$(OPERATOR_SDK) generate kustomize manifests -q
+	cd config/manager && $(KUSTOMIZE) edit set image controller=$(OPERATOR_IMG)
+	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(OPERATOR_SDK) bundle validate ./bundle
+
+.PHONY: bundle-build
+bundle-build: ## Build the OLM bundle image.
+	$(CONTAINER_TOOL) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+
+.PHONY: bundle-push
+bundle-push: ## Push the OLM bundle image.
+	@echo "Logging into AWS ECR..."
+	@aws ecr get-login-password --region $(AWS_REGION) | \
+		$(CONTAINER_TOOL) login --username AWS --password-stdin $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com
+	$(CONTAINER_TOOL) push $(BUNDLE_IMG)
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
