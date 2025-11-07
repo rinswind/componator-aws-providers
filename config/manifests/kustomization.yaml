@@ -2,4 +2,3 @@ resources:
 - ../default
 - ../samples
 - ../rbac
-- core.componator.io_components.yaml

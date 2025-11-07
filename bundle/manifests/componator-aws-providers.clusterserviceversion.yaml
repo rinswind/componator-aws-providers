@@ -4,7 +4,7 @@ metadata:
   annotations:
     alm-examples: '[]'
     capabilities: Basic Install
-    createdAt: "2025-11-04T20:15:49Z"
+    createdAt: "2025-11-06T18:25:20Z"
     operators.operatorframework.io/builder: operator-sdk-v1.37.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
   name: componator-aws-providers.v0.1.0
@@ -12,7 +12,7 @@ metadata:
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
-    owned:
+    required:
     - description: Component represents a deployable unit managed by a handler controller
       displayName: Component
       kind: Component
@@ -136,13 +136,13 @@ spec:
           - subjectaccessreviews
           verbs:
           - create
-        serviceAccountName: deployment-handlers-controller-manager
+        serviceAccountName: componator-aws-controller-manager
       deployments:
       - label:
           app.kubernetes.io/managed-by: kustomize
           app.kubernetes.io/name: deployment-handlers
           control-plane: controller-manager
-        name: deployment-handlers-controller-manager
+        name: componator-aws-controller-manager
         spec:
           replicas: 1
           selector:
@@ -196,7 +196,7 @@ spec:
                 runAsNonRoot: true
                 seccompProfile:
                   type: RuntimeDefault
-              serviceAccountName: deployment-handlers-controller-manager
+              serviceAccountName: componator-aws-controller-manager
               terminationGracePeriodSeconds: 10
       permissions:
       - rules:
@@ -231,7 +231,7 @@ spec:
           verbs:
           - create
           - patch
-        serviceAccountName: deployment-handlers-controller-manager
+        serviceAccountName: componator-aws-controller-manager
     strategy: deployment
   installModes:
   - supported: false

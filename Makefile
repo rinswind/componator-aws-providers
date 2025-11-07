@@ -258,9 +258,6 @@ bundle-build: ## Build the OLM bundle image.
 
 .PHONY: bundle-push
 bundle-push: ## Push the OLM bundle image.
-	@echo "Logging into AWS ECR..."
-	@aws ecr get-login-password --region $(AWS_REGION) | \
-		$(CONTAINER_TOOL) login --username AWS --password-stdin $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com
 	$(CONTAINER_TOOL) push $(BUNDLE_IMG)
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist

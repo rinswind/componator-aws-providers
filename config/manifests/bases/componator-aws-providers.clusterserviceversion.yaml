@@ -9,7 +9,7 @@ metadata:
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
-    owned:
+    required:
     - description: Component represents a deployable unit managed by a handler controller
       displayName: Component
       kind: Component
