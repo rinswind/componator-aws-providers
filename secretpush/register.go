@@ -47,7 +47,12 @@ func Register(mgr ctrl.Manager, providerName string) error {
 
 	// Load AWS config with default chain (uses AWS_REGION, EC2 metadata, etc.)
 	// Disable retries - controller handles requeue
-	cfg, err := awsconfig.LoadDefaultConfig(context.Background(), awsconfig.WithRetryMaxAttempts(1))
+	// Use WithEC2IMDSRegion to auto-detect region from EC2 metadata when in EKS
+	cfg, err := awsconfig.LoadDefaultConfig(
+		context.Background(),
+		awsconfig.WithRetryMaxAttempts(1),
+		awsconfig.WithEC2IMDSRegion(),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS configuration: %w", err)
 	}
