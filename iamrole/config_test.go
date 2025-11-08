@@ -4,6 +4,7 @@
 package iamrole
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,7 +14,7 @@ import (
 func TestResolveSpec(t *testing.T) {
 	t.Run("missing roleName", func(t *testing.T) {
 		config := &IamRoleConfig{
-			AssumeRolePolicy:  "{\"Version\":\"2012-10-17\"}",
+			AssumeRolePolicy:  json.RawMessage(`{"Version":"2012-10-17"}`),
 			ManagedPolicyArns: []string{"arn:aws:iam::123456789012:policy/test"},
 		}
 
@@ -36,7 +37,7 @@ func TestResolveSpec(t *testing.T) {
 	t.Run("empty managedPolicyArns", func(t *testing.T) {
 		config := &IamRoleConfig{
 			RoleName:          "test-role",
-			AssumeRolePolicy:  "{\"Version\":\"2012-10-17\"}",
+			AssumeRolePolicy:  json.RawMessage(`{"Version":"2012-10-17"}`),
 			ManagedPolicyArns: []string{},
 		}
 
@@ -48,7 +49,7 @@ func TestResolveSpec(t *testing.T) {
 	t.Run("invalid assumeRolePolicy JSON", func(t *testing.T) {
 		config := &IamRoleConfig{
 			RoleName:          "test-role",
-			AssumeRolePolicy:  "not valid json",
+			AssumeRolePolicy:  json.RawMessage(`not valid json`),
 			ManagedPolicyArns: []string{"arn:aws:iam::123456789012:policy/test"},
 		}
 

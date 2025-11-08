@@ -36,7 +36,7 @@ func applyAction(
 
 	if existingRole == nil {
 		// Role doesn't exist - create it
-		role, err := createRole(ctx, spec.RoleName, spec.AssumeRolePolicy, spec.Path, spec.Description, spec.MaxSessionDuration, spec.Tags)
+		role, err := createRole(ctx, spec.RoleName, string(spec.AssumeRolePolicy), spec.Path, spec.Description, spec.MaxSessionDuration, spec.Tags)
 		if err != nil {
 			return functional.ActionResultForError(status, fmt.Errorf("failed to create role: %w", err), iamErrorClassifier)
 		}
@@ -72,7 +72,7 @@ func applyAction(
 
 	// Update trust policy if changed
 	currentPolicy := aws.ToString(existingRole.AssumeRolePolicyDocument)
-	if err := updateTrustPolicy(ctx, spec.RoleName, currentPolicy, spec.AssumeRolePolicy); err != nil {
+	if err := updateTrustPolicy(ctx, spec.RoleName, currentPolicy, string(spec.AssumeRolePolicy)); err != nil {
 		return functional.ActionResultForError(status, fmt.Errorf("failed to update trust policy: %w", err), iamErrorClassifier)
 	}
 

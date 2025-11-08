@@ -36,7 +36,7 @@ func applyAction(
 
 	if existingPolicy == nil {
 		// Policy doesn't exist - create it
-		policy, err := createPolicy(ctx, spec.PolicyName, spec.PolicyDocument, spec.Path, spec.Description, spec.Tags)
+		policy, err := createPolicy(ctx, spec.PolicyName, string(spec.PolicyDocument), spec.Path, spec.Description, spec.Tags)
 		if err != nil {
 			return functional.ActionResultForError(status, fmt.Errorf("failed to create policy: %w", err), iamErrorClassifier)
 		}
@@ -58,7 +58,7 @@ func applyAction(
 
 	log.Info("Policy already exists, checking for updates", "policyArn", status.PolicyArn)
 
-	versionId, err := createPolicyVersion(ctx, status.PolicyArn, spec.PolicyDocument)
+	versionId, err := createPolicyVersion(ctx, status.PolicyArn, string(spec.PolicyDocument))
 	if err != nil {
 		return functional.ActionResultForError(status, fmt.Errorf("failed to update policy version: %w", err), iamErrorClassifier)
 	}

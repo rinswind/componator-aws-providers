@@ -19,7 +19,7 @@ type IamPolicyConfig struct {
 	PolicyName string `json:"policyName"`
 
 	// PolicyDocument is the JSON policy document following AWS IAM policy syntax
-	PolicyDocument string `json:"policyDocument"`
+	PolicyDocument json.RawMessage `json:"policyDocument"`
 
 	// Description is an optional description for the policy
 	Description string `json:"description,omitempty"`
@@ -46,12 +46,12 @@ func resolveSpec(config *IamPolicyConfig) error {
 	if config.PolicyName == "" {
 		return fmt.Errorf("policyName is required and cannot be empty")
 	}
-	if config.PolicyDocument == "" {
+	if len(config.PolicyDocument) == 0 {
 		return fmt.Errorf("policyDocument is required and cannot be empty")
 	}
 
 	// Validate policyDocument is valid JSON
-	if !json.Valid([]byte(config.PolicyDocument)) {
+	if !json.Valid(config.PolicyDocument) {
 		return fmt.Errorf("policyDocument must be valid JSON")
 	}
 
