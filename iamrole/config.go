@@ -19,7 +19,8 @@ type IamRoleConfig struct {
 	RoleName string `json:"roleName"`
 
 	// AssumeRolePolicy is the trust policy JSON document that defines which entities can assume the role
-	AssumeRolePolicy json.RawMessage `json:"assumeRolePolicy"`
+	// Must be a valid JSON string in AWS IAM trust policy format
+	AssumeRolePolicy string `json:"assumeRolePolicy"`
 
 	// Description is an optional description for the role
 	Description string `json:"description,omitempty"`
@@ -52,7 +53,7 @@ func resolveSpec(config *IamRoleConfig) error {
 	if config.RoleName == "" {
 		return fmt.Errorf("roleName is required and cannot be empty")
 	}
-	if len(config.AssumeRolePolicy) == 0 {
+	if config.AssumeRolePolicy == "" {
 		return fmt.Errorf("assumeRolePolicy is required and cannot be empty")
 	}
 	if len(config.ManagedPolicyArns) == 0 {
@@ -60,7 +61,7 @@ func resolveSpec(config *IamRoleConfig) error {
 	}
 
 	// Validate assumeRolePolicy is valid JSON
-	if !json.Valid(config.AssumeRolePolicy) {
+	if !json.Valid([]byte(config.AssumeRolePolicy)) {
 		return fmt.Errorf("assumeRolePolicy must be valid JSON")
 	}
 
