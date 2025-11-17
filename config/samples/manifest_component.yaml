@@ -1,6 +1,6 @@
 ---
 # Example: Deploying cert-manager ClusterIssuer and external-secrets SecretStore
-apiVersion: deployment-orchestrator.io/v1alpha1
+apiVersion: componator.io/v1alpha1
 kind: Component
 metadata:
   name: platform-config
@@ -43,7 +43,7 @@ spec:
 
 ---
 # Example: Deploying simple ConfigMap and Secret
-apiVersion: deployment-orchestrator.io/v1alpha1
+apiVersion: componator.io/v1alpha1
 kind: Component
 metadata:
   name: app-config
@@ -73,7 +73,7 @@ spec:
 
 ---
 # Example: Cluster-scoped resource (no namespace)
-apiVersion: deployment-orchestrator.io/v1alpha1
+apiVersion: componator.io/v1alpha1
 kind: Component
 metadata:
   name: cluster-role-config

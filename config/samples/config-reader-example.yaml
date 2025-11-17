@@ -15,7 +15,7 @@ data:
 
 ---
 # Config-reader Component that reads the ConfigMap
-apiVersion: deployment-orchestrator.io/v1alpha1
+apiVersion: componator.io/v1alpha1
 kind: Component
 metadata:
   name: infra-config

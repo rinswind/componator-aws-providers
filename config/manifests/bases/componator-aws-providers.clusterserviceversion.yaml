@@ -13,7 +13,7 @@ spec:
     - description: Component represents a deployable unit managed by a handler controller
       displayName: Component
       kind: Component
-      name: components.core.componator.io
+      name: components.componator.io
       version: v1beta1
   description: |
     AWS component handlers for the Componator orchestration system.

@@ -16,7 +16,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	deploymentsv1alpha1 "github.com/rinswind/componator/api/core/v1beta1"
+	v1beta1 "github.com/rinswind/componator/api/v1beta1"
 )
 
 const (
@@ -232,7 +232,7 @@ func SetupK8sClient() (client.Client, error) {
 
 	// Register our API types with the scheme
 	s := scheme.Scheme
-	err = deploymentsv1alpha1.AddToScheme(s)
+	err = v1beta1.AddToScheme(s)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add deployment API types to scheme: %w", err)
 	}

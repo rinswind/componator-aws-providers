@@ -4,7 +4,7 @@ metadata:
   annotations:
     alm-examples: '[]'
     capabilities: Basic Install
-    createdAt: "2025-11-06T18:25:20Z"
+    createdAt: "2025-11-16T20:01:59Z"
     operators.operatorframework.io/builder: operator-sdk-v1.37.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
   name: componator-aws-providers.v0.1.0
@@ -16,7 +16,7 @@ spec:
     - description: Component represents a deployable unit managed by a handler controller
       displayName: Component
       kind: Component
-      name: components.core.componator.io
+      name: components.componator.io
       version: v1beta1
   description: |
     AWS component handlers for the Componator orchestration system.
@@ -47,7 +47,7 @@ spec:
           verbs:
           - '*'
         - apiGroups:
-          - deployment-orchestrator.io
+          - componator.io
           resources:
           - components
           verbs:
@@ -59,13 +59,13 @@ spec:
           - update
           - watch
         - apiGroups:
-          - deployment-orchestrator.io
+          - componator.io
           resources:
           - components/finalizers
           verbs:
           - update
         - apiGroups:
-          - deployment-orchestrator.io
+          - componator.io
           resources:
           - components/status
           verbs:
@@ -99,7 +99,7 @@ spec:
           verbs:
           - '*'
         - apiGroups:
-          - deployment-orchestrator.io
+          - componator.io
           resources:
           - components
           verbs:
@@ -111,13 +111,13 @@ spec:
           - update
           - watch
         - apiGroups:
-          - deployment-orchestrator.io
+          - componator.io
           resources:
           - components/finalizers
           verbs:
           - update
         - apiGroups:
-          - deployment-orchestrator.io
+          - componator.io
           resources:
           - components/status
           verbs:

@@ -9,7 +9,7 @@ import (
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
-	corev1beta1 "github.com/rinswind/componator/api/core/v1beta1"
+	v1beta1 "github.com/rinswind/componator/api/v1beta1"
 	"github.com/rinswind/componator/componentkit/functional"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -36,7 +36,7 @@ func Register(mgr ctrl.Manager, providerName string) error {
 	if err := clientgoscheme.AddToScheme(mgr.GetScheme()); err != nil {
 		return err
 	}
-	if err := corev1beta1.AddToScheme(mgr.GetScheme()); err != nil {
+	if err := v1beta1.AddToScheme(mgr.GetScheme()); err != nil {
 		return err
 	}
 

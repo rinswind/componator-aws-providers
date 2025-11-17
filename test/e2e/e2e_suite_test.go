@@ -18,7 +18,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	deploymentsv1alpha1 "github.com/rinswind/componator/api/core/v1beta1"
+	v1beta1 "github.com/rinswind/componator/api/v1beta1"
 )
 
 // Shared variables for all e2e tests
@@ -44,7 +44,7 @@ var _ = BeforeSuite(func() {
 	_, _ = fmt.Fprintf(GinkgoWriter, "Running Component Handler controllers locally against real cluster\n")
 
 	// Register our API types with the scheme
-	err := deploymentsv1alpha1.AddToScheme(scheme.Scheme)
+	err := v1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred(), "Failed to add deployment API to scheme")
 })
 

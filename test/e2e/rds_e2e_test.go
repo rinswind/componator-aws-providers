@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	rdscontroller "github.com/rinswind/componator-aws-providers/rds"
-	deploymentsv1alpha1 "github.com/rinswind/componator/api/core/v1beta1"
+	v1beta1 "github.com/rinswind/componator/api/v1beta1"
 )
 
 var _ = Describe("RDS Handler E2E", Ordered, func() {
@@ -52,7 +52,7 @@ var _ = Describe("RDS Handler E2E", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred(), "Failed to build kubeconfig")
 
 		// Register our API types with the scheme
-		err = deploymentsv1alpha1.AddToScheme(scheme.Scheme)
+		err = v1beta1.AddToScheme(scheme.Scheme)
 		Expect(err).NotTo(HaveOccurred(), "Failed to add deployment API to scheme")
 
 		// Create Kubernetes client
@@ -90,7 +90,7 @@ var _ = Describe("RDS Handler E2E", Ordered, func() {
 		rdsCancel()
 
 		By("cleaning up any test components")
-		componentList := &deploymentsv1alpha1.ComponentList{}
+		componentList := &v1beta1.ComponentList{}
 		if err := rdsK8sClient.List(rdsCtx, componentList, client.InNamespace("default")); err == nil {
 			for i := range componentList.Items {
 				if componentList.Items[i].Spec.Type == "rds" {
@@ -103,7 +103,7 @@ var _ = Describe("RDS Handler E2E", Ordered, func() {
 	// Clean up individual test resources if test fails
 	AfterEach(func() {
 		By("cleaning up test components")
-		componentList := &deploymentsv1alpha1.ComponentList{}
+		componentList := &v1beta1.ComponentList{}
 		if err := rdsK8sClient.List(rdsCtx, componentList, client.InNamespace("default")); err == nil {
 			for i := range componentList.Items {
 				if componentList.Items[i].Name == "test-mysql-db" {
@@ -120,7 +120,7 @@ var _ = Describe("RDS Handler E2E", Ordered, func() {
 	Context("RDS Database Deployment", func() {
 		BeforeEach(func() {
 			By("ensuring no test components exist before test starts")
-			component := &deploymentsv1alpha1.Component{
+			component := &v1beta1.Component{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-mysql-db",
 					Namespace: "default",
@@ -168,12 +168,12 @@ var _ = Describe("RDS Handler E2E", Ordered, func() {
 			configBytes, err := json.Marshal(rdsConfig)
 			Expect(err).NotTo(HaveOccurred(), "Failed to marshal RDS config")
 
-			mysqlComponent := &deploymentsv1alpha1.Component{
+			mysqlComponent := &v1beta1.Component{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-mysql-db",
 					Namespace: "default",
 				},
-				Spec: deploymentsv1alpha1.ComponentSpec{
+				Spec: v1beta1.ComponentSpec{
 					Name:    "mysql-test-instance",
 					Handler: "rds",
 					Config: &apiextensionsv1.JSON{
@@ -186,38 +186,38 @@ var _ = Describe("RDS Handler E2E", Ordered, func() {
 
 			By("waiting for Component to be claimed by RDS handler")
 			Eventually(func(g Gomega) {
-				var component deploymentsv1alpha1.Component
+				var component v1beta1.Component
 				err := rdsK8sClient.Get(rdsCtx, types.NamespacedName{
 					Name:      "test-mysql-db",
 					Namespace: "default",
 				}, &component)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(component.Finalizers).To(ContainElement(ContainSubstring("rds.deployment-orchestrator.io")), "Component should be claimed by RDS handler")
+				g.Expect(component.Finalizers).To(ContainElement(ContainSubstring("rds.componator.io")), "Component should be claimed by RDS handler")
 			}, 1*time.Minute, 5*time.Second).Should(Succeed())
 
 			By("waiting for Component to progress through deployment phases")
 			Eventually(func(g Gomega) {
-				var component deploymentsv1alpha1.Component
+				var component v1beta1.Component
 				err := rdsK8sClient.Get(rdsCtx, types.NamespacedName{
 					Name:      "test-mysql-db",
 					Namespace: "default",
 				}, &component)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(component.Status.Phase).To(Or(
-					Equal(deploymentsv1alpha1.ComponentPhaseDeploying),
-					Equal(deploymentsv1alpha1.ComponentPhaseReady),
+					Equal(v1beta1.ComponentPhaseDeploying),
+					Equal(v1beta1.ComponentPhaseReady),
 				), "Component should progress through deployment phases")
 			}, 3*time.Minute, 15*time.Second).Should(Succeed())
 
 			By("waiting for Component to reach Ready status")
 			Eventually(func(g Gomega) {
-				var component deploymentsv1alpha1.Component
+				var component v1beta1.Component
 				err := rdsK8sClient.Get(rdsCtx, types.NamespacedName{
 					Name:      "test-mysql-db",
 					Namespace: "default",
 				}, &component)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(component.Status.Phase).To(Equal(deploymentsv1alpha1.ComponentPhaseReady), "Component should reach Ready phase")
+				g.Expect(component.Status.Phase).To(Equal(v1beta1.ComponentPhaseReady), "Component should reach Ready phase")
 
 				// Verify status contains database endpoint information
 				g.Expect(Component.Status.ProviderStatus).NotTo(BeNil(), "HandlerStatus should be populated")
@@ -232,7 +232,7 @@ var _ = Describe("RDS Handler E2E", Ordered, func() {
 			}, 20*time.Minute, 30*time.Second).Should(Succeed())
 
 			By("verifying Component status is properly set")
-			var finalComponent deploymentsv1alpha1.Component
+			var finalComponent v1beta1.Component
 			err = rdsK8sClient.Get(rdsCtx, types.NamespacedName{
 				Name:      "test-mysql-db",
 				Namespace: "default",
@@ -240,7 +240,7 @@ var _ = Describe("RDS Handler E2E", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify component is in Ready phase
-			Expect(finalComponent.Status.Phase).To(Equal(deploymentsv1alpha1.ComponentPhaseReady), "Component should be in Ready phase")
+			Expect(finalComponent.Status.Phase).To(Equal(v1beta1.ComponentPhaseReady), "Component should be in Ready phase")
 
 			// Verify handler status contains RDS information
 			Expect(finalComponent.Status.ProviderStatus).NotTo(BeNil(), "HandlerStatus should be populated")
@@ -250,7 +250,7 @@ var _ = Describe("RDS Handler E2E", Ordered, func() {
 
 			By("waiting for Component deletion to complete")
 			Eventually(func(g Gomega) {
-				var component deploymentsv1alpha1.Component
+				var component v1beta1.Component
 				err := rdsK8sClient.Get(rdsCtx, types.NamespacedName{
 					Name:      "test-mysql-db",
 					Namespace: "default",
