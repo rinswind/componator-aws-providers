@@ -98,8 +98,15 @@ func checkApplied(
 	// Check if deployment is complete
 	log = log.WithValues("status", status.InstanceStatus)
 
-	switch status.InstanceStatus {
-	case "available":
+	switch RDSInstanceStatus(status.InstanceStatus) {
+	case StatusAvailable, StatusStorageOptimization, StatusBackingUp,
+		StatusConfiguringEnhancedMonitoring, StatusConfiguringIAMDatabaseAuth,
+		StatusConfiguringLogExports:
+		// Instance is available for connections
+		// - available: fully operational
+		// - storage-optimization: post-creation optimization, DB fully functional
+		// - backing-up: automated backups don't block connections
+		// - configuring-*: enabling features doesn't require downtime
 		log.Info("RDS instance deployment completed successfully",
 			"endpoint", status.Endpoint,
 			"port", status.Port)
@@ -107,19 +114,39 @@ func checkApplied(
 		details := fmt.Sprintf("Instance %s available at %s:%d", instanceID, status.Endpoint, status.Port)
 		return functional.CheckComplete(status, details)
 
-	case "creating", "backing-up", "modifying":
-		// Still in progress
+	case StatusModifying:
+		// Most modifications keep DB available, but some cause brief downtime
+		// Treat as in-progress to be safe - will become "available" when done
+		log.Info("RDS instance modification in progress")
+		details := fmt.Sprintf("Instance %s status: %s", instanceID, status.InstanceStatus)
+		return functional.CheckInProgress(status, details)
+
+	case StatusCreating, StatusUpgrading, StatusRenaming, StatusResettingMasterCredentials:
+		// Deployment/modification operations in progress
 		log.Info("RDS instance deployment in progress")
 		details := fmt.Sprintf("Instance %s status: %s", instanceID, status.InstanceStatus)
 		return functional.CheckInProgress(status, details)
 
-	case "failed", "incompatible-restore", "incompatible-network":
-		// Failed states
+	case StatusMaintenance, StatusRebooting, StatusStarting:
+		// Operational states that can occur after deployment
+		// Treat as in-progress during deployment phase
+		// Health checks will monitor these as degraded once Ready
+		log.Info("RDS instance in operational transition state")
+		details := fmt.Sprintf("Instance %s status: %s", instanceID, status.InstanceStatus)
+		return functional.CheckInProgress(status, details)
+
+	case StatusFailed, StatusInaccessibleEncryptionCredentials, StatusIncompatibleNetwork,
+		StatusIncompatibleOptionGroup, StatusIncompatibleParameters, StatusIncompatibleRestore,
+		StatusInsufficientCapacity, StatusStopped, StatusStopping, StatusStorageFull:
+		// Failed states or problematic states during deployment
+		// stopped/stopping should not occur during normal deployment
+		// storage-full during deployment indicates provisioning issue
 		return functional.CheckResultForError(status,
 			fmt.Errorf("RDS instance deployment failed with status: %s", status.InstanceStatus), rdsErrorClassifier)
 
 	default:
-		// Unknown status - continue checking
+		// Unknown status - continue checking to be safe
+		// This handles any new AWS statuses we haven't categorized yet
 		log.Info("RDS instance in unknown status, continuing to monitor")
 		return functional.CheckInProgress(status, "")
 	}
@@ -188,14 +215,14 @@ func checkDeleted(
 
 	log.Info("RDS instance still exists, checking deletion status")
 
-	switch instanceStatus {
-	case "deleting":
+	switch RDSInstanceStatus(instanceStatus) {
+	case StatusDeleting:
 		// Still deleting - continue waiting
 		log.Info("RDS instance deletion in progress")
 		details := fmt.Sprintf("Waiting for instance %s deletion", instanceID)
 		return functional.CheckInProgress(status, details)
 
-	case "failed":
+	case StatusFailed:
 		// Deletion failed, but don't block cleanup
 		log.Info("RDS instance deletion failed, but allowing cleanup to continue")
 		return functional.CheckComplete(status, "")

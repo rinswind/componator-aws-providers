@@ -70,6 +70,8 @@ func Register(mgr ctrl.Manager, providerName string) error {
 		WithApplyCheck(checkApplied).
 		WithDelete(deleteAction).
 		WithDeleteCheck(checkDeleted).
+		WithHealthCheck(checkHealth).
+		WithHealthCheckInterval(1 * time.Minute).
 		WithErrorRequeue(15 * time.Second).
 		WithDefaultRequeue(30 * time.Second).
 		WithStatusCheckRequeue(30 * time.Second).

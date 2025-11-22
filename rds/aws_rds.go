@@ -22,6 +22,57 @@ var (
 	rdsClient *rds.Client
 )
 
+// RDSInstanceStatus represents AWS RDS instance status values.
+// These constants provide a canonical list of all known RDS instance states.
+// Each lifecycle function (checkApplied, checkHealth, checkDeleted) interprets
+// these states according to its specific responsibilities.
+type RDSInstanceStatus string
+
+// Deployment and modification states - operations that change instance configuration
+const (
+	StatusCreating                   RDSInstanceStatus = "creating"
+	StatusModifying                  RDSInstanceStatus = "modifying"
+	StatusUpgrading                  RDSInstanceStatus = "upgrading"
+	StatusRenaming                   RDSInstanceStatus = "renaming"
+	StatusResettingMasterCredentials RDSInstanceStatus = "resetting-master-credentials"
+)
+
+// Operational healthy states - instance is available and accepting connections
+const (
+	StatusAvailable                     RDSInstanceStatus = "available"
+	StatusStorageOptimization           RDSInstanceStatus = "storage-optimization"
+	StatusBackingUp                     RDSInstanceStatus = "backing-up"
+	StatusConfiguringEnhancedMonitoring RDSInstanceStatus = "configuring-enhanced-monitoring"
+	StatusConfiguringIAMDatabaseAuth    RDSInstanceStatus = "configuring-iam-database-auth"
+	StatusConfiguringLogExports         RDSInstanceStatus = "configuring-log-exports"
+)
+
+// Operational degraded states - instance has operational issues
+const (
+	StatusMaintenance RDSInstanceStatus = "maintenance"
+	StatusRebooting   RDSInstanceStatus = "rebooting"
+	StatusStarting    RDSInstanceStatus = "starting"
+	StatusStopped     RDSInstanceStatus = "stopped"
+	StatusStopping    RDSInstanceStatus = "stopping"
+	StatusStorageFull RDSInstanceStatus = "storage-full"
+)
+
+// Failed states - deployment or operational failures
+const (
+	StatusFailed                            RDSInstanceStatus = "failed"
+	StatusInaccessibleEncryptionCredentials RDSInstanceStatus = "inaccessible-encryption-credentials"
+	StatusIncompatibleNetwork               RDSInstanceStatus = "incompatible-network"
+	StatusIncompatibleOptionGroup           RDSInstanceStatus = "incompatible-option-group"
+	StatusIncompatibleParameters            RDSInstanceStatus = "incompatible-parameters"
+	StatusIncompatibleRestore               RDSInstanceStatus = "incompatible-restore"
+	StatusInsufficientCapacity              RDSInstanceStatus = "insufficient-capacity"
+)
+
+// Deletion states
+const (
+	StatusDeleting RDSInstanceStatus = "deleting"
+)
+
 // getInstanceData retrieves RDS instance data, handling not-found cases consistently
 func getInstanceData(ctx context.Context, instanceID string) (*types.DBInstance, error) {
 	input := &rds.DescribeDBInstancesInput{
